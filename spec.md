@@ -34,6 +34,8 @@ Protect the command post through all eight enemy waves.
 - The alien portal is located in the northeast; the command post is in the southwest.
 - Enemies travel between adjacent grid cells and dynamically recalculate their route around structures.
 - Enemies choose the closest soldier, combat emplacement, or wall with equal targeting priority and will reroute to attack it.
+- Friendly infantry and mobile crewed weapons use grid routes around walls and other solid fortifications instead of moving through them.
+- Every wall has visible access stairs. A move order onto a wall routes units to a stair approach, animates the climb, and leaves them stationed on top.
 - Construction may redirect enemies but may never completely seal the route to the command post.
 - Elevated weapon positions gain additional range, rewarding control of ridges and high ground.
 - The camera supports orbiting, panning, zooming, and 90-degree rotation.
@@ -67,7 +69,7 @@ A static four-tube missile launcher with the longest base range and widest blast
 
 ### Hesco Wall — 70 credits
 
-A non-attacking fortification used to alter enemy paths and create kill zones. The game rejects any wall placement that would make the command post unreachable.
+A non-attacking fortification used to alter enemy paths and create kill zones. It includes access stairs for friendly units ordered onto the wall. The game rejects any wall placement that would make the command post unreachable.
 
 ### Shock Mine — 100 credits
 
