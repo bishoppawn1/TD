@@ -724,6 +724,7 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, apiRef }: { s
       }
       for (const s of structures) {
         s.cooldown -= dt;
+        const isMoving = isMobileEmplacement(s) && Math.hypot(s.targetX - s.x, s.targetY - s.y) > 0.025;
         if (s.kind === "barracks") {
           s.spawnTimer = Math.max(0, s.spawnTimer - dt);
         }
@@ -738,6 +739,7 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, apiRef }: { s
         }
         syncHealthBar(s.group);
         if (!isCombatStructure(s)) continue;
+        if (isMoving) continue;
         const terrainX = clamp(Math.round(s.x), 0, GRID_W - 1), terrainY = clamp(Math.round(s.y), 0, GRID_H - 1);
         const stats = TURRET_STATS[s.kind], levelDamage = 1 + (s.level - 1) * 0.42, levelSpeed = 1 + (s.level - 1) * 0.18;
         const range = ASSETS[s.kind].range + (s.level - 1) * 0.65 + heights[terrainY][terrainX] * 0.9; const target = enemies.filter(e => e.hp > 0 && Math.hypot(e.x - s.x, e.y - s.y) <= range).sort((a, b) => b.index - a.index)[0];
@@ -748,12 +750,13 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, apiRef }: { s
       }
       for (const m of marines) {
         m.cooldown -= dt; const mdx = m.targetX - m.x, mdy = m.targetY - m.y, moveDist = Math.hypot(mdx, mdy);
-        if (moveDist > 0.035) { const accel = 5.2; m.vx += mdx / moveDist * accel * dt; m.vy += mdy / moveDist * accel * dt; const speed = Math.hypot(m.vx, m.vy), max = 1.65; if (speed > max) { m.vx *= max / speed; m.vy *= max / speed; } m.x += m.vx * dt; m.y += m.vy * dt; m.group.rotation.y = Math.atan2(-m.vx, -m.vy); }
+        const isMoving = moveDist > 0.035;
+        if (isMoving) { const accel = 5.2; m.vx += mdx / moveDist * accel * dt; m.vy += mdy / moveDist * accel * dt; const speed = Math.hypot(m.vx, m.vy), max = 1.65; if (speed > max) { m.vx *= max / speed; m.vy *= max / speed; } m.x += m.vx * dt; m.y += m.vy * dt; m.group.rotation.y = Math.atan2(-m.vx, -m.vy); }
         else { m.x = m.targetX; m.y = m.targetY; m.vx *= Math.exp(-dt * 10); m.vy *= Math.exp(-dt * 10); }
         m.vx *= Math.exp(-dt * 3.2); m.vy *= Math.exp(-dt * 3.2); const settledOnWall = m.mountedOn && moveDist < 0.12; m.group.position.lerp(worldPos(m.x, m.y, settledOnWall ? 0.62 : 0), Math.min(1, dt * 14)); syncHealthBar(m.group);
         const soldierLegs = m.group.userData.legs as THREE.Group[] | undefined; if (soldierLegs) soldierLegs.forEach((leg, i) => { leg.rotation.x = moveDist > 0.06 ? Math.sin(elapsed * 11 + i * Math.PI) * 0.5 : 0; });
         const target = enemies.find(e => e.hp > 0 && Math.hypot(e.x - m.x, e.y - m.y) < (settledOnWall ? 4.2 : 3.25));
-        if (target) {
+        if (target && !isMoving) {
           turnToward(m.group, Math.atan2(-(target.x - m.x), -(target.y - m.y)), 10, dt);
           if (m.cooldown <= 0) { const muzzle = m.group.userData.muzzle as THREE.Object3D | undefined; fire(muzzle ? muzzle.getWorldPosition(new THREE.Vector3()) : m.group.position.clone().add(new THREE.Vector3(0, 0.72, 0)), target, settledOnWall ? 12 : 9, 0, 0xbaff77); m.cooldown = 0.55; }
         }
