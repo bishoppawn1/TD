@@ -325,8 +325,6 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
     renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
     renderer.setSize(host.clientWidth, host.clientHeight);
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.05;
@@ -347,9 +345,6 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
     scene.add(new THREE.HemisphereLight(0x9fc9bd, 0x162018, 1.2));
     const sun = new THREE.DirectionalLight(0xffe4c2, 3.8);
     sun.position.set(-14, 24, 12);
-    sun.castShadow = true;
-    sun.shadow.mapSize.set(1024, 1024);
-    sun.shadow.camera.left = -45; sun.shadow.camera.right = 45; sun.shadow.camera.top = 45; sun.shadow.camera.bottom = -45;
     scene.add(sun);
     const rim = new THREE.DirectionalLight(0x55ffb0, 0.9);
     rim.position.set(18, 9, -18);
@@ -367,19 +362,18 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       return THREE.MathUtils.lerp(THREE.MathUtils.lerp(heights[y0][x0], heights[y0][x1], tx), THREE.MathUtils.lerp(heights[y1][x0], heights[y1][x1], tx), ty);
     };
     const worldPos = (x: number, y: number, lift = 0) => new THREE.Vector3((x - (GRID_W - 1) / 2) * TILE, terrainHeightAt(x, y) + lift, (y - (GRID_H - 1) / 2) * TILE);
-    const shadowify = (obj: THREE.Object3D) => obj.traverse(o => { if (o instanceof THREE.Mesh) { o.castShadow = true; o.receiveShadow = true; } });
     const box = (parent: THREE.Object3D, size: [number, number, number], pos: [number, number, number], color: number, rough = 0.8) => {
       const m = new THREE.Mesh(new THREE.BoxGeometry(...size), new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: rough < 0.5 ? 0.55 : 0.05 }));
-      m.position.set(...pos); m.castShadow = true; m.receiveShadow = true; parent.add(m); return m;
+      m.position.set(...pos); parent.add(m); return m;
     };
     const cyl = (parent: THREE.Object3D, radii: [number, number, number, number], pos: [number, number, number], color: number, rot: [number, number, number] = [0, 0, 0]) => {
       const m = new THREE.Mesh(new THREE.CylinderGeometry(...radii), new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.3 }));
-      m.position.set(...pos); m.rotation.set(...rot); m.castShadow = true; parent.add(m); return m;
+      m.position.set(...pos); m.rotation.set(...rot); parent.add(m); return m;
     };
     const beam = (parent: THREE.Object3D, a: THREE.Vector3, b: THREE.Vector3, radius: number, color: number) => {
       const mid = a.clone().add(b).multiplyScalar(0.5); const len = a.distanceTo(b);
       const m = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, len, 7), new THREE.MeshStandardMaterial({ color, roughness: 0.7 }));
-      m.position.copy(mid); m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize()); m.castShadow = true; parent.add(m); return m;
+      m.position.copy(mid); m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize()); parent.add(m); return m;
     };
 
     const tileMeshes: THREE.Mesh[] = [];
@@ -391,7 +385,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       const color = water ? new THREE.Color(map.waterColor).offsetHSL(0, 0, ((x + y) % 3 - 1) * 0.025) : new THREE.Color().setHSL(map.hue + ((x * 7 + y * 3) % 5) * 0.006, map.saturation, 0.20 + h * 0.035);
       const material = new THREE.MeshStandardMaterial({ color, roughness: water ? 0.18 : 0.98, metalness: water ? 0.34 : 0, emissive: water ? map.waterGlow : 0x000000, emissiveIntensity: water ? 0.8 : 1 });
       const tile = new THREE.Mesh(new THREE.BoxGeometry(TILE - 0.045, 0.55 + h, TILE - 0.045), material);
-      const p = worldPos(x, y); tile.position.set(p.x, (h - 0.55) / 2, p.z); tile.receiveShadow = true; tile.userData = { x, y, base: color.clone(), water };
+      const p = worldPos(x, y); tile.position.set(p.x, (h - 0.55) / 2, p.z); tile.userData = { x, y, base: color.clone(), water };
       world.add(tile); tileMeshes.push(tile);
       if (water && terrainNoise(x, y, 71) > 0.58) {
         const rippleMaterial = new THREE.MeshBasicMaterial({ color: new THREE.Color(map.waterColor).offsetHSL(0.02, 0.12, 0.25), transparent: true, opacity: 0.25, side: THREE.DoubleSide, depthWrite: false });
@@ -450,11 +444,10 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
             const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.13, 8, 6), new THREE.MeshBasicMaterial({ color: 0xe84dff })); bulb.position.copy(tip); landmark.add(bulb);
           }
         }
-        shadowify(landmark);
       }
     }
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(130, 130), new THREE.MeshStandardMaterial({ color: map.ground, roughness: 1 }));
-    ground.rotation.x = -Math.PI / 2; ground.position.y = -0.58; ground.receiveShadow = true; scene.add(ground);
+    ground.rotation.x = -Math.PI / 2; ground.position.y = -0.58; scene.add(ground);
 
     function makeSoldier(scale = 1, kind: MarineKind = "rifleman") {
       const g = new THREE.Group();
@@ -509,7 +502,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
         muzzle.position.set(-0.08, 0.82, -0.78);
       }
       g.userData.legs = legPivots; g.userData.muzzle = muzzle;
-      g.scale.setScalar(scale * (kind === "gunner" ? 1.08 : kind === "rocketeer" ? 1.04 : 1)); shadowify(g); return g;
+      g.scale.setScalar(scale * (kind === "gunner" ? 1.08 : kind === "rocketeer" ? 1.04 : 1)); return g;
     }
     function makeRifleTeam() {
       const g = new THREE.Group();
@@ -654,7 +647,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 7), new THREE.MeshStandardMaterial({ color: 0xfff5bb, emissive: 0xffd85a, emissiveIntensity: 2.8, roughness: 0.2 })); beacon.position.y = 0.34; head.add(beacon);
       const halo = new THREE.PointLight(0xffe795, 2.8, 8.5); halo.position.y = 0.2; head.add(halo);
       g.userData.searchlights = searchlights; g.userData.lightHalo = halo; g.userData.lightBeacon = beacon;
-      shadowify(g); return g;
+      return g;
     }
     function addWallElevators(g: THREE.Group, top = 0.72) {
       for (const side of [-1, 1]) {
@@ -718,7 +711,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
         for (const x of [-0.62, 0.62]) cyl(connector, [0.11, 0.13, 0.54, 8], [x, 0.06, sign * 0.91], 0x9d895f, [Math.PI / 2, 0, 0]);
       }
       g.userData.trenchEdges = edges; g.userData.trenchConnectors = connectors;
-      shadowify(g); return g;
+      return g;
     }
     function makeWire() {
       const g = new THREE.Group();
@@ -733,7 +726,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
           const barb = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.2, 4), wireMat); const a = i / 8 * Math.PI * 2; barb.position.set(Math.cos(a) * 0.42, y + Math.sin(a) * 0.42, (i % 2 ? -0.55 : 0.55)); barb.rotation.z = a; g.add(barb);
         }
       }
-      shadowify(g); return g;
+      return g;
     }
     function makeMine() {
       const g = new THREE.Group();
@@ -744,7 +737,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
     function makeBarracks() {
       const g = new THREE.Group();
       box(g, [1.68, 0.95, 1.48], [0, 0.52, 0], 0x556554);
-      const roof = new THREE.Mesh(new THREE.CylinderGeometry(0.93, 0.93, 1.5, 4), new THREE.MeshStandardMaterial({ color: 0x3c4c40, roughness: 0.92 })); roof.rotation.set(0, 0, Math.PI / 2); roof.position.y = 1.05; roof.castShadow = true; g.add(roof);
+      const roof = new THREE.Mesh(new THREE.CylinderGeometry(0.93, 0.93, 1.5, 4), new THREE.MeshStandardMaterial({ color: 0x3c4c40, roughness: 0.92 })); roof.rotation.set(0, 0, Math.PI / 2); roof.position.y = 1.05; g.add(roof);
       box(g, [0.48, 0.71, 0.04], [0, 0.38, -0.76], 0x151d1a);
       box(g, [0.45, 0.35, 0.45], [1, 0.18, 0.42], 0x7c6844); box(g, [0.34, 0.3, 0.34], [0.88, 0.15, -0.31], 0x8a744b);
       cyl(g, [0.025, 0.025, 1.25, 7], [0.63, 1.55, 0.3], 0x9aa59d); return g;
@@ -934,7 +927,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       const classScale = brute ? 0.9 : broodmother ? 0.82 : spitter ? 0.68 : razortail ? 0.74 : strider ? 0.72 : prowler ? 0.62 : stalker ? 0.4 : flyer ? 0.62 : 0.52;
       g.scale.setScalar(classScale * (0.94 + Math.random() * 0.12));
       g.userData.legs = legs; g.userData.legPhases = legPhases; g.userData.tails = tails; g.userData.wings = wings; g.userData.bodyRig = bodyRig; g.userData.kind = kind;
-      g.traverse(o => { if (o instanceof THREE.Mesh) { o.castShadow = false; o.receiveShadow = false; } }); return g;
+      return g;
     }
     function makeBase() {
       const g = new THREE.Group();
@@ -944,7 +937,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       cyl(g, [0.08, 0.08, 2.1, 8], [0, 2, 0], 0x6c7b74);
       const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 7), new THREE.MeshBasicMaterial({ color: 0x76ffac })); beacon.position.y = 3.08; g.add(beacon);
       const light = new THREE.PointLight(0x66ffad, 2, 7); light.position.y = 2.8; g.add(light);
-      shadowify(g); return g;
+      return g;
     }
 
     const baseCell = map.baseCell, spawnCells = map.spawnCells;
@@ -1502,7 +1495,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       let speed = 7.5, arcHeight = 0.08, color = 0xff9857, impactCount = 5;
       if (kind === "drone") {
         const needle = new THREE.Mesh(new THREE.ConeGeometry(0.065, 0.46, 6), new THREE.MeshStandardMaterial({ color: 0xe6b56d, emissive: 0x6d2816, emissiveIntensity: 0.7, roughness: 0.38 }));
-        needle.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), end.clone().sub(start).normalize()); needle.castShadow = true; group.add(needle);
+        needle.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), end.clone().sub(start).normalize()); group.add(needle);
       } else if (kind === "prowler") {
         speed = 8.6; arcHeight = 0.03; color = 0xffb36a; impactCount = 7;
         const bite = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.42, 5), new THREE.MeshStandardMaterial({ color: 0xe7c18e, emissive: 0x7a3517, emissiveIntensity: 1.5, roughness: 0.35 }));
@@ -1523,12 +1516,12 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
         const light = new THREE.PointLight(color, 2.5, 4); group.add(light);
       } else if (kind === "brute") {
         speed = 3.25; arcHeight = 0.38; color = 0xff493c; impactCount = 15;
-        const chunk = new THREE.Mesh(new THREE.OctahedronGeometry(0.22, 0), new THREE.MeshStandardMaterial({ color: 0x5c211d, emissive: 0x7e1812, emissiveIntensity: 1.1, roughness: 0.46, metalness: 0.15 })); chunk.scale.set(0.85, 0.85, 1.8); chunk.castShadow = true; group.add(chunk);
+        const chunk = new THREE.Mesh(new THREE.OctahedronGeometry(0.22, 0), new THREE.MeshStandardMaterial({ color: 0x5c211d, emissive: 0x7e1812, emissiveIntensity: 1.1, roughness: 0.46, metalness: 0.15 })); chunk.scale.set(0.85, 0.85, 1.8); group.add(chunk);
         for (const side of [-1, 1]) { const barb = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.34, 5), new THREE.MeshStandardMaterial({ color: 0xd16a4d, roughness: 0.5 })); barb.position.x = side * 0.18; barb.rotation.z = side * 0.9; group.add(barb); }
       } else if (kind === "razortail") {
         speed = 4.1; arcHeight = 0.22; color = 0xe66bff; impactCount = 13;
         const barb = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.72, 7), new THREE.MeshStandardMaterial({ color: 0xd58ce0, emissive: 0x4f145d, emissiveIntensity: 1.25, roughness: 0.36, metalness: 0.28 }));
-        barb.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), end.clone().sub(start).normalize()); barb.castShadow = true; group.add(barb);
+        barb.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), end.clone().sub(start).normalize()); group.add(barb);
       } else if (kind === "strider") {
         speed = 5.8; arcHeight = 0.12; color = 0xffe56d; impactCount = 9;
         const lance = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.72, 6), new THREE.MeshStandardMaterial({ color: 0xffed8a, emissive: 0x8e741b, emissiveIntensity: 2.4, roughness: 0.18 }));
