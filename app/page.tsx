@@ -769,25 +769,42 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       const shell = new THREE.MeshStandardMaterial({ color: shellColor, roughness: 0.48, metalness: 0.18 });
       const skin = new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.82 });
       const glow = new THREE.MeshBasicMaterial({ color: glowColor });
+      const legBladeGeometry = new THREE.ConeGeometry(1, 1, 5);
+      const legJointGeometry = new THREE.OctahedronGeometry(1, 0);
 
       const addOrb = (parent: THREE.Object3D, radius: number, position: [number, number, number], scale: [number, number, number], material: THREE.Material) => {
         const mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, 12, 8), material); mesh.position.set(...position); mesh.scale.set(...scale); parent.add(mesh); return mesh;
       };
+      const addTaperedLimb = (parent: THREE.Object3D, start: THREE.Vector3, end: THREE.Vector3, radius: number, material: THREE.Material) => {
+        const direction = end.clone().sub(start), length = direction.length();
+        const segment = new THREE.Mesh(legBladeGeometry, material); segment.position.copy(start).lerp(end, 0.5); segment.scale.set(radius, length, radius); segment.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize()); parent.add(segment); return segment;
+      };
       const addLeg = (side: number, z: number, phase: number, upper: number, lower: number, thickness: number, rootY: number) => {
         const pivot = new THREE.Group(); pivot.position.set(side * 0.34, rootY, z); g.add(pivot);
-        const knee = new THREE.Vector3(side * upper, -0.13, side * 0.03);
-        const foot = new THREE.Vector3(side * (upper + lower), -rootY + 0.055, -0.08);
-        beam(pivot, new THREE.Vector3(), knee, thickness, shellColor);
-        beam(pivot, knee, foot, thickness * 0.72, skinColor);
-        const claw = new THREE.Mesh(new THREE.ConeGeometry(thickness * 1.25, 0.2, 6), skin); claw.position.copy(foot).add(new THREE.Vector3(0, 0.025, -0.09)); claw.rotation.x = -Math.PI / 2; pivot.add(claw);
+        const hip = new THREE.Vector3(side * upper * 0.48, 0.08, 0.02);
+        const knee = new THREE.Vector3(side * upper, -0.16, side * 0.04);
+        const ankle = new THREE.Vector3(side * (upper + lower * 0.7), -rootY + 0.15, -0.06);
+        const foot = new THREE.Vector3(side * (upper + lower * 1.12), -rootY + 0.035, -0.2);
+        beam(pivot, new THREE.Vector3(), hip, thickness * 1.12, shellColor);
+        addTaperedLimb(pivot, hip, knee, thickness * 1.32, shell);
+        addTaperedLimb(pivot, knee, ankle, thickness * 1.12, skin);
+        addTaperedLimb(pivot, ankle, foot, thickness * 0.92, skin);
+        const joint = new THREE.Mesh(legJointGeometry, shell); joint.position.copy(knee); joint.scale.set(thickness * 2.15, thickness * 1.65, thickness * 1.9); pivot.add(joint);
+        const kneeSpike = knee.clone().add(new THREE.Vector3(side * (0.28 + upper * 0.16), 0.19 + thickness * 1.3, 0.11));
+        addTaperedLimb(pivot, knee, kneeSpike, thickness * 1.72, shell);
+        const rearBarb = ankle.clone().add(new THREE.Vector3(-side * 0.06, 0.17 + thickness, 0.2));
+        addTaperedLimb(pivot, ankle, rearBarb, thickness * 1.18, skin);
         legs.push(pivot); legPhases.push(phase);
       };
       const addUnderLeg = (x: number, z: number, phase: number) => {
-        const pivot = new THREE.Group(), rootY = 0.46; pivot.position.set(x, rootY, z); g.add(pivot);
-        const knee = new THREE.Vector3(x * 0.5, -0.22, z + (z < 0 ? -0.12 : 0.12));
-        const foot = new THREE.Vector3(x * 0.68, -rootY + 0.05, z + (z < 0 ? -0.23 : 0.23));
-        beam(pivot, new THREE.Vector3(), knee, 0.052, shellColor); beam(pivot, knee, foot, 0.037, skinColor);
-        const paw = new THREE.Mesh(new THREE.SphereGeometry(0.075, 8, 6), skin); paw.position.copy(foot); paw.scale.set(1.2, 0.45, 1.45); pivot.add(paw);
+        const pivot = new THREE.Group(), rootY = 0.46, side = Math.sign(x) || 1, fore = z < 0 ? -1 : 1; pivot.position.set(x, rootY, z); g.add(pivot);
+        const hip = new THREE.Vector3(side * 0.2, 0.04, fore * 0.04);
+        const knee = new THREE.Vector3(side * 0.48, -0.18, fore * 0.13);
+        const ankle = new THREE.Vector3(side * 0.65, -rootY + 0.14, fore * 0.25);
+        const foot = new THREE.Vector3(side * 0.86, -rootY + 0.035, fore * 0.38);
+        beam(pivot, new THREE.Vector3(), hip, 0.052, shellColor); addTaperedLimb(pivot, hip, knee, 0.064, shell); addTaperedLimb(pivot, knee, ankle, 0.052, skin); addTaperedLimb(pivot, ankle, foot, 0.038, skin);
+        const joint = new THREE.Mesh(legJointGeometry, shell); joint.position.copy(knee); joint.scale.set(0.13, 0.09, 0.11); pivot.add(joint);
+        const spur = knee.clone().add(new THREE.Vector3(side * 0.34, 0.2, -fore * 0.08)); addTaperedLimb(pivot, knee, spur, 0.075, shell);
         legs.push(pivot); legPhases.push(phase);
       };
       const addEye = (x: number, y: number, z: number, radius: number) => {
