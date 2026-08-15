@@ -113,7 +113,9 @@ type HostileProjectile = { group: THREE.Group; kind: AlienKind; from: THREE.Vect
 type Particle = { mesh: THREE.Mesh; velocity: THREE.Vector3; life: number; maxLife: number };
 type SelectedUnit = { id: number; kind: UpgradableKey; name: string; level: number; maxLevel: number; upgradeCost: number | null; damage: number; range: number; maxHp: number; support: boolean };
 type BarracksInfo = { id: number };
-type BattlefieldApi = { start: () => void; restart: () => void; rotate: () => void; upgradeSelected: () => void; recruit: (kind: MarineKind) => void };
+type GameMode = "campaign" | "tester";
+type TestWaveConfig = { wave: number; enemyCount: number };
+type BattlefieldApi = { start: (config?: TestWaveConfig) => void; restart: () => void; rotate: () => void; upgradeSelected: () => void; recruit: (kind: MarineKind) => void };
 type MapKey = "ridge" | "basin" | "divide" | "ruins" | "homeworld";
 type DecorKind = "supply" | "pine" | "cactus" | "bones" | "crystal" | "vent" | "pillar" | "obelisk" | "growth";
 type MapConfig = {
@@ -303,7 +305,7 @@ const MAPS: Record<MapKey, MapConfig> = {
 };
 const MAP_ORDER: MapKey[] = ["ridge", "basin", "divide", "ruins", "homeworld"];
 
-function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBarracksSelected, apiRef }: { selected: AssetKey; mapKey: MapKey; onHud: (h: Hud) => void; onMessage: (s: string) => void; onUnitSelected: (unit: SelectedUnit | null) => void; onBarracksSelected: (barracks: BarracksInfo | null) => void; apiRef: React.MutableRefObject<BattlefieldApi | null> }) {
+function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSelected, onBarracksSelected, apiRef }: { selected: AssetKey; mapKey: MapKey; testerMode: boolean; onHud: (h: Hud) => void; onMessage: (s: string) => void; onUnitSelected: (unit: SelectedUnit | null) => void; onBarracksSelected: (barracks: BarracksInfo | null) => void; apiRef: React.MutableRefObject<BattlefieldApi | null> }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const selectedRef = useRef(selected);
   const callbacks = useRef({ onHud, onMessage, onUnitSelected, onBarracksSelected });
@@ -984,7 +986,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     function removeHealthBar(group: THREE.Group) {
       const bar = group.userData.healthBar as THREE.Group | undefined; if (bar) world.remove(bar); (group.userData.tierTexture as THREE.CanvasTexture | undefined)?.dispose(); (group.userData.stackTexture as THREE.CanvasTexture | undefined)?.dispose(); (group.userData.stackBadge as THREE.Sprite | undefined)?.material.dispose(); group.userData.healthBar = undefined; group.userData.healthFill = undefined; group.userData.tierBadge = undefined; group.userData.tierTexture = undefined; group.userData.tierCanvas = undefined; group.userData.stackBadge = undefined; group.userData.stackTexture = undefined; group.userData.stackCanvas = undefined;
     }
-    let credits = 750, integrity = 100, wave = 0, kills = 0, active = false, buildTimer = 0, gameOver = false, victory = false;
+    let credits = testerMode ? Infinity : 750, integrity = 100, wave = 0, kills = 0, active = false, buildTimer = 0, gameOver = false, victory = false;
     let spawnLeft = 0, spawnTimer = 0, assaultFront = 0, nextId = 1, elapsed = 0, lastHud = -1;
     let structures: Structure[] = [], enemies: Enemy[] = [], marines: Marine[] = [], bullets: Bullet[] = [], hostileProjectiles: HostileProjectile[] = [], particles: Particle[] = [];
     type EnemyRoute = { path: Cell[]; travelTime: number };
@@ -1255,8 +1257,8 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       const s = structures.find(item => selectedEmplacements.has(item.id) && isUpgradableStructure(item));
       if (!s || selectedEmplacements.size !== 1 || selectedMarines.size) return message("SELECT ONE DEFENSIVE UNIT TO UPGRADE");
       const cost = getUpgradeCost(s); if (cost === null) return message(`${ASSETS[s.kind].name.toUpperCase()} IS AT MAXIMUM LEVEL`);
-      if (credits < cost) return message(`UPGRADE REQUIRES ${cost} COMMAND CREDITS`);
-      credits -= cost; const oldMax = s.maxHp; s.level++; s.maxHp = Math.round(STRUCTURE_HP[s.kind] * (1 + (s.level - 1) * 0.35)); s.hp = Math.min(s.maxHp, s.hp + (s.maxHp - oldMax) + Math.round(oldMax * 0.2));
+      if (!testerMode && credits < cost) return message(`UPGRADE REQUIRES ${cost} COMMAND CREDITS`);
+      if (!testerMode) credits -= cost; const oldMax = s.maxHp; s.level++; s.maxHp = Math.round(STRUCTURE_HP[s.kind] * (1 + (s.level - 1) * 0.35)); s.hp = Math.min(s.maxHp, s.hp + (s.maxHp - oldMax) + Math.round(oldMax * 0.2));
       if (s.kind === "light") updateLightUpgradeVisual(s);
       setHealthVisual(s.group, s.hp, s.maxHp); updateTierBadge(s.group, s.level); addUpgradeVisual(s); publishStructureSelection(); emitHud(true);
       burst(s.group.position.clone().add(new THREE.Vector3(0, 0.8, 0)), s.level === 3 ? 0xffd36a : 0x62e8ff, 14); message(`${ASSETS[s.kind].name.toUpperCase()} UPGRADED TO TIER ${s.level}`);
@@ -1290,7 +1292,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       }
       const maxHp = STRUCTURE_HP[kind], structure = { id: nextId++, kind, level: 1, x, y, targetX: x, targetY: y, hp: maxHp, maxHp, mountedOn, movePath: [], pathIndex: 0, lift, stackLevel, group, cooldown: Math.random() } satisfies Structure; structures.push(structure);
       if (kind === "trench") refreshTrenchConnections();
-      if (!free) credits -= ASSETS[kind].cost;
+      if (!free && !testerMode) credits -= ASSETS[kind].cost;
       return structure;
     }
     function deployStartingForces() {
@@ -1315,8 +1317,8 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     function tryPlace(x: number, y: number) {
       const kind = selectedRef.current, asset = ASSETS[kind];
       if (gameOver) return;
-      if (active) return message("CONSTRUCTION LOCKED · BUILDINGS DEPLOY BETWEEN WAVES ONLY");
-      if (credits < asset.cost) return message("INSUFFICIENT COMMAND CREDITS");
+      if (active && !testerMode) return message("CONSTRUCTION LOCKED · BUILDINGS DEPLOY BETWEEN WAVES ONLY");
+      if (!testerMode && credits < asset.cost) return message("INSUFFICIENT COMMAND CREDITS");
       if (isWaterCell(x, y)) return message("WATERLOGGED GROUND · CONSTRUCTION REQUIRES DRY LAND");
       const wall = topWallAt(x, y), stackingWall = !!wall && (kind === "wall" || kind === "bastion");
       const canMount = !!wall && (kind in TURRET_STATS || kind === "light");
@@ -1345,7 +1347,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       selectedEmplacements.delete(s.id);
       if (selectedBarracksId === s.id) { selectedBarracksId = null; publishBarracksSelection(); }
       publishStructureSelection();
-      if (salvaged) credits += Math.floor(ASSETS[s.kind].cost * 0.6);
+      if (salvaged && !testerMode) credits += Math.floor(ASSETS[s.kind].cost * 0.6);
       burst(s.group.position.clone().add(new THREE.Vector3(0, 0.5, 0)), salvaged ? 0x9dff8b : 0xff553f, salvaged ? 5 : 15);
       removeHealthBar(s.group); world.remove(s.group); structures.splice(structures.indexOf(s), 1);
       if (s.kind === "trench") refreshTrenchConnections();
@@ -1354,7 +1356,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     function removeStructureAt(x: number, y: number) {
       const s = structures.filter(item => Math.hypot(item.x - x, item.y - y) < 0.72).sort((a, b) => Number(!!b.mountedOn) - Number(!!a.mountedOn) || b.stackLevel - a.stackLevel)[0]; if (!s) return;
       destroyStructure(s, true);
-      message(`${ASSETS[s.kind].name.toUpperCase()} SALVAGED · +${Math.floor(ASSETS[s.kind].cost * 0.6)} CREDITS`); emitHud(true);
+      message(testerMode ? `${ASSETS[s.kind].name.toUpperCase()} REMOVED FROM TEST RANGE` : `${ASSETS[s.kind].name.toUpperCase()} SALVAGED · +${Math.floor(ASSETS[s.kind].cost * 0.6)} CREDITS`); emitHud(true);
     }
     function spawnMarine(kind: MarineKind, x: number, y: number, mountedOn?: number) {
       const stats = MARINE_STATS[kind], mountedWall = mountedOn ? structures.find(s => s.id === mountedOn && isWall(s)) : undefined, lift = mountedWall ? wallTopLift(mountedWall) : 0;
@@ -1425,8 +1427,8 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     function recruit(kind: MarineKind) {
       const stats = MARINE_STATS[kind], barracks = structures.find(s => s.id === selectedBarracksId && s.kind === "barracks");
       if (!barracks) return message("SELECT A FIELD BARRACKS FIRST");
-      if (credits < stats.cost) return message(`${stats.name.toUpperCase()} REQUIRES ${stats.cost} COMMAND CREDITS`);
-      credits -= stats.cost; const n = marines.length; spawnMarine(kind, clamp(barracks.x + 0.6 + (n % 3) * 0.28, 0, GRID_W - 1), clamp(barracks.y - 0.7 + (n % 2) * 0.45, 0, GRID_H - 1)); publishBarracksSelection(); message(`${stats.name.toUpperCase()} DEPLOYED INSTANTLY · DRAG A BOX TO ADD THEM TO A SQUAD`); emitHud(true);
+      if (!testerMode && credits < stats.cost) return message(`${stats.name.toUpperCase()} REQUIRES ${stats.cost} COMMAND CREDITS`);
+      if (!testerMode) credits -= stats.cost; const n = marines.length; spawnMarine(kind, clamp(barracks.x + 0.6 + (n % 3) * 0.28, 0, GRID_W - 1), clamp(barracks.y - 0.7 + (n % 2) * 0.45, 0, GRID_H - 1)); publishBarracksSelection(); message(`${stats.name.toUpperCase()} DEPLOYED INSTANTLY · DRAG A BOX TO ADD THEM TO A SQUAD`); emitHud(true);
     }
     function assaultOffset(spawnCell: Cell, formationIndex: number): Cell {
       const column = formationIndex % 6, rank = Math.floor(formationIndex / 6);
@@ -1470,10 +1472,19 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       const gateBurstLabel = smallestGateBurst === largestGateBurst ? `${smallestGateBurst} PER GATE` : `${smallestGateBurst}–${largestGateBurst} PER GATE`;
       message(`CONTACT · ${groupSize}-ALIEN MASS SURGE · ${gateBurstLabel}`);
     }
-    function startWave() {
+    function startWave(config?: TestWaveConfig) {
       if (active || gameOver) return;
-      if (wave >= map.waveCount) { victory = true; gameOver = true; message("SECTOR SECURED · ALL WAVES REPELLED"); emitHud(true); return; }
-      buildTimer = 0; wave++; active = true; spawnLeft = Math.round((14 + Math.floor(wave * 2.35)) * ENEMY_SWARM_MULTIPLIER * (map.waveMultiplier ?? 1)); spawnTimer = 0.45; assaultFront = Math.floor(Math.random() * spawnCells.length); message(`WAVE ${String(wave).padStart(2, "0")} INBOUND · ${spawnLeft} LIFE SIGNS · ${spawnCells.length} FRONTS · CONSTRUCTION LOCKED`); emitHud(true);
+      if (!testerMode && wave >= map.waveCount) { victory = true; gameOver = true; message("SECTOR SECURED · ALL WAVES REPELLED"); emitHud(true); return; }
+      buildTimer = 0;
+      if (testerMode) {
+        wave = clamp(Math.round(config?.wave ?? Math.max(1, wave)), 1, FINAL_MAP_WAVES);
+        spawnLeft = clamp(Math.round(config?.enemyCount ?? 100), 1, 5000);
+      } else {
+        wave++;
+        spawnLeft = Math.round((14 + Math.floor(wave * 2.35)) * ENEMY_SWARM_MULTIPLIER * (map.waveMultiplier ?? 1));
+      }
+      active = true; spawnTimer = 0.45; assaultFront = Math.floor(Math.random() * spawnCells.length);
+      message(testerMode ? `UNIT TEST WAVE ${String(wave).padStart(2, "0")} · ${spawnLeft} LIFE SIGNS · UNLIMITED CONSTRUCTION ONLINE` : `WAVE ${String(wave).padStart(2, "0")} INBOUND · ${spawnLeft} LIFE SIGNS · ${spawnCells.length} FRONTS · CONSTRUCTION LOCKED`); emitHud(true);
     }
     function burst(at: THREE.Vector3, color: number, count = 10, spread = 1) {
       for (let i = 0; i < count; i++) {
@@ -1594,8 +1605,8 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     }
     function restart() {
       [...structures, ...enemies, ...marines].forEach(o => { removeHealthBar(o.group); world.remove(o.group); }); bullets.forEach(b => world.remove(b.mesh)); hostileProjectiles.forEach(p => world.remove(p.group)); particles.forEach(p => world.remove(p.mesh));
-      structures = []; enemies = []; marines = []; bullets = []; hostileProjectiles = []; particles = []; enemyRouteCache.clear(); routeRevision++; selectedMarines.clear(); selectedEmplacements.clear(); selectedBarracksId = null; callbacks.current.onUnitSelected(null); callbacks.current.onBarracksSelected(null); credits = 750; integrity = 100; wave = 0; kills = 0; active = false; buildTimer = 0; gameOver = false; victory = false; spawnLeft = 0; spawnTimer = 0; assaultFront = 0;
-      deployStartingForces(); message("COMMAND SYSTEMS RESET · AWAITING DEPLOYMENT"); emitHud(true);
+      structures = []; enemies = []; marines = []; bullets = []; hostileProjectiles = []; particles = []; enemyRouteCache.clear(); routeRevision++; selectedMarines.clear(); selectedEmplacements.clear(); selectedBarracksId = null; callbacks.current.onUnitSelected(null); callbacks.current.onBarracksSelected(null); credits = testerMode ? Infinity : 750; integrity = 100; wave = 0; kills = 0; active = false; buildTimer = 0; gameOver = false; victory = false; spawnLeft = 0; spawnTimer = 0; assaultFront = 0;
+      deployStartingForces(); message(testerMode ? "UNIT TEST RANGE RESET · UNLIMITED ASSETS ONLINE" : "COMMAND SYSTEMS RESET · AWAITING DEPLOYMENT"); emitHud(true);
     }
     function rotate() {
       const offset = camera.position.clone().sub(controls.target); const a = Math.PI / 2;
@@ -1628,7 +1639,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       if (selectBarracksAt(x, y)) return; if (selectUnitAt(x, y, e.shiftKey)) { selectedBarracksId = null; publishBarracksSelection(); return; } if (!selectedMarines.size && !selectedEmplacements.size) { selectedBarracksId = null; publishBarracksSelection(); tryPlace(x, y); }
     }
     function onContext(e: MouseEvent) { e.preventDefault(); if (Math.hypot(e.clientX - rightDownX, e.clientY - rightDownY) > 6) return; const tile = pick(e as PointerEvent); if (!tile) return; if (e.shiftKey) removeStructureAt(tile.userData.x, tile.userData.y); else if (!commandFormation(tile.userData.x, tile.userData.y)) message("SELECT RIFLEMEN OR CREWED WEAPONS WITH A CLICK OR DRAG BOX FIRST"); }
-    function onKey(e: KeyboardEvent) { heldKeys.add(e.key.toLowerCase()); if (e.key.toLowerCase() === "r") rotate(); if (e.key === "Escape") { selectedMarines.clear(); selectedEmplacements.clear(); selectedBarracksId = null; refreshSelection(); publishStructureSelection(); publishBarracksSelection(); } if (e.code === "Space") { e.preventDefault(); startWave(); } }
+    function onKey(e: KeyboardEvent) { heldKeys.add(e.key.toLowerCase()); if (e.key.toLowerCase() === "r") rotate(); if (e.key === "Escape") { selectedMarines.clear(); selectedEmplacements.clear(); selectedBarracksId = null; refreshSelection(); publishStructureSelection(); publishBarracksSelection(); } if (e.code === "Space") { e.preventDefault(); if (testerMode) message("USE THE UNIT TEST CONSOLE TO LAUNCH AN EXACT WAVE"); else startWave(); } }
     function onKeyUp(e: KeyboardEvent) { heldKeys.delete(e.key.toLowerCase()); }
     renderer.domElement.addEventListener("pointermove", onMove, true); renderer.domElement.addEventListener("pointerdown", onDown, true); renderer.domElement.addEventListener("pointerup", onUp, true); renderer.domElement.addEventListener("contextmenu", onContext); window.addEventListener("keydown", onKey); window.addEventListener("keyup", onKeyUp);
 
@@ -1678,7 +1689,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       incomingDamageCache.clear();
       marineStackTimer -= dt;
       if (marineStackTimer <= 0) { compactMarineStacks(); marineStackTimer = 0.2; }
-      if (!active && !gameOver && wave > 0 && wave < map.waveCount && buildTimer > 0) {
+      if (!testerMode && !active && !gameOver && wave > 0 && wave < map.waveCount && buildTimer > 0) {
         buildTimer = Math.max(0, buildTimer - dt);
         if (buildTimer === 0) { message("BUILD WINDOW CLOSED · NEXT WAVE DEPLOYING"); startWave(); }
       }
@@ -1884,13 +1895,17 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         if (e.hp <= 0) {
           const deathColor = e.kind === "flyer" ? 0x79e8ff : e.kind === "broodmother" ? 0xff73aa : e.kind === "spitter" ? 0x58ff96 : e.kind === "razortail" ? 0xe66bff : e.kind === "stalker" ? 0x58ddff : e.kind === "strider" ? 0xffe56d : e.kind === "prowler" ? 0xffb36a : 0xff573e;
           const deathCount = e.kind === "brute" ? 24 : e.kind === "broodmother" ? 22 : e.kind === "razortail" ? 20 : e.kind === "flyer" ? 15 : e.kind === "strider" ? 14 : e.kind === "prowler" ? 13 : e.kind === "stalker" ? 9 : 12;
-          credits += e.reward; kills++; burst(e.group.position.clone().add(new THREE.Vector3(0, 0.4, 0)), deathColor, deathCount); removeHealthBar(e.group); world.remove(e.group); enemies.splice(enemies.indexOf(e), 1); continue;
+          if (!testerMode) credits += e.reward; kills++; burst(e.group.position.clone().add(new THREE.Vector3(0, 0.4, 0)), deathColor, deathCount); removeHealthBar(e.group); world.remove(e.group); enemies.splice(enemies.indexOf(e), 1); continue;
         }
         if (e.targetType === "base" && Math.hypot(e.x - baseCell.x, e.y - baseCell.y) < 0.22) { integrity = Math.max(0, integrity - e.damage); burst(base.position.clone().add(new THREE.Vector3(0, 1, 0)), 0xff4a31, 14); removeHealthBar(e.group); world.remove(e.group); enemies.splice(enemies.indexOf(e), 1); if (integrity <= 0) { gameOver = true; active = false; message("COMMAND POST OVERRUN · SECTOR LOST"); } }
       }
       for (const m of [...marines]) if (!m.memberHp.length) { selectedMarines.delete(m.id); burst(m.group.position.clone().add(new THREE.Vector3(0, 0.5, 0)), 0xff5f47, 9); removeHealthBar(m.group); world.remove(m.group); marines.splice(marines.indexOf(m), 1); message(`${MARINE_STATS[m.kind].name.toUpperCase()} KILLED IN ACTION`); }
       for (const p of [...particles]) { p.life -= dt; p.velocity.y -= dt * 2.6; p.mesh.position.addScaledVector(p.velocity, dt); (p.mesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, p.life / p.maxLife); if (p.life <= 0) { world.remove(p.mesh); particles.splice(particles.indexOf(p), 1); } }
-      if (active && spawnLeft === 0 && enemies.length === 0) { active = false; credits += 125 + wave * 25; if (wave >= map.waveCount) { victory = true; gameOver = true; message(`SECTOR SECURED · ${map.name.toUpperCase()} HOLDS`); } else { buildTimer = BETWEEN_WAVE_BUILD_SECONDS; message(`WAVE ${String(wave).padStart(2, "0")} DESTROYED · 30-SECOND BUILD WINDOW OPEN`); } }
+      if (active && spawnLeft === 0 && enemies.length === 0) {
+        active = false;
+        if (testerMode) { buildTimer = 0; message(`UNIT TEST WAVE ${String(wave).padStart(2, "0")} COMPLETE · RANGE READY TO RERUN`); }
+        else { credits += 125 + wave * 25; if (wave >= map.waveCount) { victory = true; gameOver = true; message(`SECTOR SECURED · ${map.name.toUpperCase()} HOLDS`); } else { buildTimer = BETWEEN_WAVE_BUILD_SECONDS; message(`WAVE ${String(wave).padStart(2, "0")} DESTROYED · 30-SECOND BUILD WINDOW OPEN`); } }
+      }
       emitHud();
     }
 
@@ -1904,62 +1919,76 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     const resize = () => { camera.aspect = host.clientWidth / host.clientHeight; camera.updateProjectionMatrix(); renderer.setSize(host.clientWidth, host.clientHeight); };
     window.addEventListener("resize", resize);
     return () => { cancelAnimationFrame(raf); window.removeEventListener("resize", resize); window.removeEventListener("keydown", onKey); window.removeEventListener("keyup", onKeyUp); renderer.domElement.removeEventListener("pointermove", onMove, true); renderer.domElement.removeEventListener("pointerdown", onDown, true); renderer.domElement.removeEventListener("pointerup", onUp, true); renderer.domElement.removeEventListener("contextmenu", onContext); controls.dispose(); renderer.dispose(); host.removeChild(renderer.domElement); host.removeChild(selectionBox); apiRef.current = null; };
-  }, [apiRef, mapKey]);
+  }, [apiRef, mapKey, testerMode]);
   return <div ref={hostRef} className="three-host" aria-label="Interactive 3D battlefield" />;
 }
 
 export default function Home() {
   const [selected, setSelected] = useState<AssetKey>("rifle");
   const [mapKey, setMapKey] = useState<MapKey>("ridge");
+  const [gameMode, setGameMode] = useState<GameMode>("campaign");
+  const [testWave, setTestWave] = useState(1);
+  const [testEnemyCount, setTestEnemyCount] = useState(100);
   const [hud, setHud] = useState<Hud>({ credits: 750, integrity: 100, wave: 0, enemies: 0, kills: 0, active: false, buildSeconds: null, gameOver: false, victory: false });
   const [selectedUnit, setSelectedUnit] = useState<SelectedUnit | null>(null);
   const [selectedBarracks, setSelectedBarracks] = useState<BarracksInfo | null>(null);
-  const [message, setMessage] = useState("OPERATION LAST BASTION · HQ COMMAND ONLINE");
+  const [message, setMessage] = useState("OPERATION FIRST WATCH · HQ COMMAND ONLINE");
   const [briefing, setBriefing] = useState(true);
   const apiRef = useRef<BattlefieldApi | null>(null);
   const messageTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const showMessage = (text: string) => { setMessage(text); if (messageTimer.current) clearTimeout(messageTimer.current); messageTimer.current = setTimeout(() => setMessage("COMMAND LINK STABLE · RIGHT-CLICK TO SALVAGE"), 4200); };
+  const testerMode = gameMode === "tester";
+  const showMessage = (text: string) => { setMessage(text); if (messageTimer.current) clearTimeout(messageTimer.current); messageTimer.current = setTimeout(() => setMessage(testerMode ? "UNIT TEST RANGE READY · ASSET SUPPLY UNLIMITED" : "COMMAND LINK STABLE · RIGHT-CLICK TO SALVAGE"), 4200); };
   const map = MAPS[mapKey];
   const formatBuildTime = (seconds: number) => `00:${String(seconds).padStart(2, "0")}`;
   const selectMap = (nextMap: MapKey) => {
     setMapKey(nextMap); setSelectedUnit(null); setSelectedBarracks(null);
     setMessage(`OPERATION ${MAPS[nextMap].operation} · ${MAPS[nextMap].sector} SELECTED`);
   };
+  const selectMode = (nextMode: GameMode) => {
+    if (messageTimer.current) clearTimeout(messageTimer.current);
+    setGameMode(nextMode); setSelectedUnit(null); setSelectedBarracks(null);
+    setMessage(nextMode === "tester" ? "UNIT TESTER SELECTED · UNLIMITED ASSETS AUTHORIZED" : `OPERATION ${map.operation} · CAMPAIGN RULES RESTORED`);
+  };
+  const launchTest = () => apiRef.current?.start({ wave: clamp(Math.round(testWave), 1, FINAL_MAP_WAVES), enemyCount: clamp(Math.round(testEnemyCount), 1, 5000) });
   return (
     <main className="game-shell">
       <header className="topbar">
         <div className="brand"><span className="brand-mark">V</span><div><b>VANGUARD</b><small>EXOPLANETARY DEFENSE COMMAND</small></div></div>
-        <div className="stat credits"><small>COMMAND CREDITS</small><strong>{hud.credits.toLocaleString()}</strong></div>
+        <div className="stat credits"><small>{testerMode ? "SANDBOX SUPPLY" : "COMMAND CREDITS"}</small><strong>{testerMode ? "∞" : hud.credits.toLocaleString()}</strong></div>
         <div className="stat"><small>DEFENSE INTEGRITY</small><strong className={hud.integrity < 35 ? "danger" : ""}>{hud.integrity}%</strong></div>
         <div className="stat"><small>HOSTILES</small><strong>{String(hud.enemies).padStart(2, "0")}</strong></div>
-        <div className="stat build-timer"><small>{hud.active ? "CONSTRUCTION" : hud.buildSeconds === null ? "STAGING" : "BUILD WINDOW"}</small><strong className={hud.active ? "danger" : ""}>{hud.active ? "LOCKED" : hud.buildSeconds === null ? "READY" : formatBuildTime(hud.buildSeconds)}</strong></div>
-        <button className="wave-button" disabled={hud.active || hud.gameOver} onClick={() => apiRef.current?.start()}>{hud.active ? `WAVE ${String(hud.wave).padStart(2, "0")} ACTIVE` : hud.gameOver ? "OPERATION ENDED" : hud.buildSeconds === null ? `DEPLOY WAVE ${String(hud.wave + 1).padStart(2, "0")}` : `START WAVE ${String(hud.wave + 1).padStart(2, "0")} NOW`}</button>
+        <div className="stat build-timer"><small>{testerMode ? "CONSTRUCTION" : hud.active ? "CONSTRUCTION" : hud.buildSeconds === null ? "STAGING" : "BUILD WINDOW"}</small><strong className={!testerMode && hud.active ? "danger" : ""}>{testerMode ? "UNLIMITED" : hud.active ? "LOCKED" : hud.buildSeconds === null ? "READY" : formatBuildTime(hud.buildSeconds)}</strong></div>
+        {testerMode ? <div className="test-console" aria-label="Unit tester controls">
+          <label><span>WAVE</span><input aria-label="Test wave" type="number" min={1} max={FINAL_MAP_WAVES} value={testWave} disabled={hud.active} onChange={event => setTestWave(clamp(Number(event.target.value) || 1, 1, FINAL_MAP_WAVES))} /></label>
+          <label><span>ALIENS</span><input aria-label="Alien count" type="number" min={1} max={5000} value={testEnemyCount} disabled={hud.active} onChange={event => setTestEnemyCount(clamp(Number(event.target.value) || 1, 1, 5000))} /></label>
+          <button className="wave-button" disabled={hud.active || hud.gameOver} onClick={launchTest}>{hud.active ? `TEST ${String(hud.wave).padStart(2, "0")} ACTIVE` : hud.gameOver ? "RESET REQUIRED" : "RUN TEST"}</button>
+        </div> : <button className="wave-button" disabled={hud.active || hud.gameOver} onClick={() => apiRef.current?.start()}>{hud.active ? `WAVE ${String(hud.wave).padStart(2, "0")} ACTIVE` : hud.gameOver ? "OPERATION ENDED" : hud.buildSeconds === null ? `DEPLOY WAVE ${String(hud.wave + 1).padStart(2, "0")}` : `START WAVE ${String(hud.wave + 1).padStart(2, "0")} NOW`}</button>}
       </header>
       <section className="battlefield">
-        <Battlefield selected={selected} mapKey={mapKey} onHud={setHud} onMessage={showMessage} onUnitSelected={setSelectedUnit} onBarracksSelected={setSelectedBarracks} apiRef={apiRef} />
-        <div className="mission-card"><span>OPERATION {map.operation} · SECTOR {map.sector}</span><b>{map.objective}</b><small>Wave {Math.min(hud.wave + (hud.active ? 0 : 1), map.waveCount)} of {map.waveCount} · {hud.kills} confirmed eliminations · {hud.active ? "CONSTRUCTION LOCKED" : hud.buildSeconds === null ? "STAGING AREA OPEN" : `BUILD ${formatBuildTime(hud.buildSeconds)}`}</small><button className="map-change" disabled={hud.active} onClick={() => setBriefing(true)}>CHANGE MAP</button></div>
+        <Battlefield selected={selected} mapKey={mapKey} testerMode={testerMode} onHud={setHud} onMessage={showMessage} onUnitSelected={setSelectedUnit} onBarracksSelected={setSelectedBarracks} apiRef={apiRef} />
+        <div className={`mission-card ${testerMode ? "tester" : ""}`}><span>{testerMode ? "UNIT TESTER · SANDBOX RANGE" : `OPERATION ${map.operation} · SECTOR ${map.sector}`}</span><b>{testerMode ? `${map.name} Combat Laboratory` : map.objective}</b><small>{testerMode ? `Wave ${testWave} profile · ${testEnemyCount.toLocaleString()} aliens requested · unlimited construction` : `Wave ${Math.min(hud.wave + (hud.active ? 0 : 1), map.waveCount)} of ${map.waveCount} · ${hud.kills} confirmed eliminations · ${hud.active ? "CONSTRUCTION LOCKED" : hud.buildSeconds === null ? "STAGING AREA OPEN" : `BUILD ${formatBuildTime(hud.buildSeconds)}`}`}</small><button className="map-change" disabled={hud.active} onClick={() => setBriefing(true)}>CHANGE MAP / MODE</button></div>
         <div className="status-feed"><i />{message}</div>
         {selectedUnit && <div className="upgrade-card" style={{ "--upgrade-color": ASSETS[selectedUnit.kind].accent } as React.CSSProperties}>
           <small>SELECTED DEFENSE</small><div className="upgrade-heading"><b>{selectedUnit.name}</b><em>TIER {selectedUnit.level}/{selectedUnit.maxLevel}</em></div>
           <div className="upgrade-stats"><span><small>{selectedUnit.support ? "LIGHT POWER" : "DAMAGE"}</small><b>{selectedUnit.support ? `${selectedUnit.damage}%` : selectedUnit.damage}</b></span><span><small>{selectedUnit.support ? "VISION" : "RANGE"}</small><b>{selectedUnit.range}</b></span><span><small>ARMOR</small><b>{selectedUnit.maxHp}</b></span></div>
-          <button disabled={selectedUnit.upgradeCost === null || hud.credits < selectedUnit.upgradeCost} onClick={() => apiRef.current?.upgradeSelected()}>{selectedUnit.upgradeCost === null ? "MAXIMUM TIER" : `UPGRADE TO TIER ${selectedUnit.level + 1} · ¤ ${selectedUnit.upgradeCost}`}</button>
+          <button disabled={selectedUnit.upgradeCost === null || (!testerMode && hud.credits < selectedUnit.upgradeCost)} onClick={() => apiRef.current?.upgradeSelected()}>{selectedUnit.upgradeCost === null ? "MAXIMUM TIER" : testerMode ? `UPGRADE TO TIER ${selectedUnit.level + 1} · FREE` : `UPGRADE TO TIER ${selectedUnit.level + 1} · ¤ ${selectedUnit.upgradeCost}`}</button>
           <p>{selectedUnit.support ? "Upgrade increases vision radius, searchlight power, and armor." : "Upgrade increases damage, range, fire rate, and armor."}</p>
         </div>}
         {selectedBarracks && <div className="barracks-card">
           <small>SELECTED BUILDING</small><div className="barracks-heading"><div><b>FIELD BARRACKS</b><span>INFANTRY DEPLOYMENT BAY</span></div><em>INSTANT</em></div>
-          <div className="recruit-list">{(Object.keys(MARINE_STATS) as MarineKind[]).map(kind => { const unit = MARINE_STATS[kind]; return <button key={kind} disabled={hud.credits < unit.cost} onClick={() => apiRef.current?.recruit(kind)} style={{ "--unit-color": unit.color } as React.CSSProperties}><span>{kind === "rifleman" ? "⌖" : kind === "gunner" ? "▣" : kind === "medic" ? "+" : "➶"}</span><div><b>{unit.name}</b><small>{unit.role} · Instant</small></div><em>¤ {unit.cost}</em></button>; })}</div>
-          <p>Recruit as many specialists as command credits allow. Every infantry unit deploys beside the barracks immediately.</p>
+          <div className="recruit-list">{(Object.keys(MARINE_STATS) as MarineKind[]).map(kind => { const unit = MARINE_STATS[kind]; return <button key={kind} disabled={!testerMode && hud.credits < unit.cost} onClick={() => apiRef.current?.recruit(kind)} style={{ "--unit-color": unit.color } as React.CSSProperties}><span>{kind === "rifleman" ? "⌖" : kind === "gunner" ? "▣" : kind === "medic" ? "+" : "➶"}</span><div><b>{unit.name}</b><small>{unit.role} · Instant</small></div><em>{testerMode ? "FREE" : `¤ ${unit.cost}`}</em></button>; })}</div>
+          <p>{testerMode ? "Sandbox supply is unlimited. Recruit any number of specialists instantly." : "Recruit as many specialists as command credits allow. Every infantry unit deploys beside the barracks immediately."}</p>
         </div>}
         <div className="camera-tools"><button onClick={() => apiRef.current?.rotate()} aria-label="Rotate camera">↻</button><span>ORBIT</span></div>
-        {briefing && <div className="briefing map-briefing"><div className="briefing-id">THEATER SELECTION // FIVE ACTIVE SECTORS</div><h1>Choose the ground you hold.</h1><p>Five huge square battlefields offer different elevation profiles, command-post locations, invasion portals, and opening deployments. Every new sector asks you to survive more waves. Fog still conceals everything outside friendly vision.</p><div className="map-selector" aria-label="Available battlefields">{MAP_ORDER.map(key => { const option = MAPS[key]; const pipPosition = (cell: Cell) => ({ left: `${(cell.x / (GRID_W - 1)) * 100}%`, top: `${(cell.y / (GRID_H - 1)) * 100}%` }); return <button key={key} className={`map-option ${mapKey === key ? "active" : ""}`} aria-pressed={mapKey === key} onClick={() => selectMap(key)}><span className={`map-preview ${key}`} aria-hidden="true"><i className="base-pip" style={pipPosition(option.baseCell)} />{option.spawnCells.map((cell, index) => <i key={`${cell.x}-${cell.y}-${index}`} className="portal-pip" style={pipPosition(cell)} />)}</span><small>{option.terrain}</small><b>{option.name}</b><em>{option.objective} · {option.waveCount} waves</em></button>; })}</div><p className="map-description"><b>OPERATION {map.operation} · SECTOR {map.sector}</b>{map.description}</p><div className="brief-grid"><span><kbd>LIGHT TOWER</kbd><b>Reveal a wide area</b></span><span><kbd>RIGHT CLICK</kbd><b>Move scouts forward</b></span><span><kbd>STACK WALLS</kbd><b>Shape every approach</b></span><span><kbd>MIDDLE DRAG</kbd><b>Orbit camera</b></span></div><button onClick={() => setBriefing(false)}>DEPLOY TO {map.name.toUpperCase()}</button></div>}
-        {hud.gameOver && <div className={`end-card ${hud.victory ? "won" : "lost"}`}><small>{hud.victory ? "OPERATION COMPLETE" : "SIGNAL LOST"}</small><h2>{hud.victory ? `${map.name.toUpperCase()} HOLDS` : "COMMAND OVERRUN"}</h2><p>{hud.kills} hostiles eliminated across {hud.wave} waves.</p><button onClick={() => apiRef.current?.restart()}>RESTART OPERATION</button></div>}
+        {briefing && <div className="briefing map-briefing"><div className="briefing-id">DEPLOYMENT MODE // FIVE ACTIVE SECTORS</div><h1>Choose how you want to play.</h1><p>Run each battlefield's progressive campaign or open a combat laboratory with exact wave controls and unlimited friendly assets.</p><div className="mode-selector" aria-label="Game mode"><button className={gameMode === "campaign" ? "active" : ""} aria-pressed={gameMode === "campaign"} onClick={() => selectMode("campaign")}><small>STANDARD OPERATION</small><b>CAMPAIGN</b><span>Credits, build windows, and progressively longer operations.</span></button><button className={gameMode === "tester" ? "active" : ""} aria-pressed={gameMode === "tester"} onClick={() => selectMode("tester")}><small>COMBAT LABORATORY</small><b>UNIT TESTER</b><span>Pick a wave and alien count. All defenses, upgrades, and infantry are free.</span></button></div><div className="map-selector" aria-label="Available battlefields">{MAP_ORDER.map(key => { const option = MAPS[key]; const pipPosition = (cell: Cell) => ({ left: `${(cell.x / (GRID_W - 1)) * 100}%`, top: `${(cell.y / (GRID_H - 1)) * 100}%` }); return <button key={key} className={`map-option ${mapKey === key ? "active" : ""}`} aria-pressed={mapKey === key} onClick={() => selectMap(key)}><span className={`map-preview ${key}`} aria-hidden="true"><i className="base-pip" style={pipPosition(option.baseCell)} />{option.spawnCells.map((cell, index) => <i key={`${cell.x}-${cell.y}-${index}`} className="portal-pip" style={pipPosition(cell)} />)}</span><small>{option.terrain}</small><b>{option.name}</b><em>{option.objective} · {option.waveCount} campaign waves</em></button>; })}</div><p className="map-description"><b>{testerMode ? "UNIT TEST RANGE" : `OPERATION ${map.operation} · SECTOR ${map.sector}`}</b>{testerMode ? `Use ${map.name} to test any wave from 1 to ${FINAL_MAP_WAVES} against a custom force of up to 5,000 aliens.` : map.description}</p><div className="brief-grid"><span><kbd>{testerMode ? "WAVE 1–25" : "LIGHT TOWER"}</kbd><b>{testerMode ? "Choose enemy strength and unit mix" : "Reveal a wide area"}</b></span><span><kbd>{testerMode ? "1–5,000" : "RIGHT CLICK"}</kbd><b>{testerMode ? "Set the exact alien population" : "Move scouts forward"}</b></span><span><kbd>{testerMode ? "UNLIMITED" : "STACK WALLS"}</kbd><b>{testerMode ? "Place, upgrade, and recruit for free" : "Shape every approach"}</b></span><span><kbd>MIDDLE DRAG</kbd><b>Orbit camera</b></span></div><button onClick={() => setBriefing(false)}>{testerMode ? `OPEN UNIT TESTER ON ${map.name.toUpperCase()}` : `DEPLOY TO ${map.name.toUpperCase()}`}</button></div>}
+        {hud.gameOver && <div className={`end-card ${hud.victory ? "won" : "lost"}`}><small>{testerMode ? "TEST RANGE OVERRUN" : hud.victory ? "OPERATION COMPLETE" : "SIGNAL LOST"}</small><h2>{testerMode ? "TEST COMPLETE" : hud.victory ? `${map.name.toUpperCase()} HOLDS` : "COMMAND OVERRUN"}</h2><p>{testerMode ? `${hud.kills} hostiles eliminated before the command post failed.` : `${hud.kills} hostiles eliminated across ${hud.wave} waves.`}</p><button onClick={() => apiRef.current?.restart()}>{testerMode ? "RESET TEST RANGE" : "RESTART OPERATION"}</button></div>}
       </section>
-      <aside className={`build-panel ${hud.active || hud.gameOver ? "locked" : ""}`}>
-        <div className="panel-title"><small>{hud.active ? "CONSTRUCTION LOCKED · WAVE ACTIVE" : hud.gameOver ? "OPERATION ENDED" : hud.buildSeconds === null ? "FORWARD ENGINEERING · STAGING" : `FORWARD ENGINEERING · ${formatBuildTime(hud.buildSeconds)} LEFT`}</small><b>DEPLOYABLE ASSETS</b></div>
-        {(Object.keys(ASSETS) as AssetKey[]).map(key => { const a = ASSETS[key]; return <button key={key} disabled={hud.active || hud.gameOver} className={`asset ${selected === key ? "active" : ""}`} onClick={() => setSelected(key)} style={{ "--asset-color": a.accent } as React.CSSProperties}><span>{a.icon}</span><div><b>{a.name}</b><small>{a.role}</small></div><em>{a.cost}</em></button>; })}
-        <div className="intel"><span>FIELD INTEL</span><p>Water blocks infantry, crewed weapons, and construction; ground aliens wade through it slowly. Friendly troops climb natural terrain far faster than aliens. Buildings deploy only before a wave or during the 30-second build window; barracks recruitment remains available at any time. Winged Skyrazors ignore terrain, so counter them with Aegis flak. Shift + right-click salvages.</p></div>
+      <aside className={`build-panel ${testerMode ? "tester" : ""} ${(!testerMode && hud.active) || hud.gameOver ? "locked" : ""}`}>
+        <div className="panel-title"><small>{testerMode ? "UNIT TEST SUPPLY · UNLIMITED" : hud.active ? "CONSTRUCTION LOCKED · WAVE ACTIVE" : hud.gameOver ? "OPERATION ENDED" : hud.buildSeconds === null ? "FORWARD ENGINEERING · STAGING" : `FORWARD ENGINEERING · ${formatBuildTime(hud.buildSeconds)} LEFT`}</small><b>DEPLOYABLE ASSETS</b></div>
+        {(Object.keys(ASSETS) as AssetKey[]).map(key => { const a = ASSETS[key]; return <button key={key} disabled={hud.gameOver || (!testerMode && hud.active)} className={`asset ${selected === key ? "active" : ""}`} onClick={() => setSelected(key)} style={{ "--asset-color": a.accent } as React.CSSProperties}><span>{a.icon}</span><div><b>{a.name}</b><small>{a.role}</small></div><em>{testerMode ? "∞" : a.cost}</em></button>; })}
+        <div className="intel"><span>{testerMode ? "TESTER INTEL" : "FIELD INTEL"}</span><p>{testerMode ? "Asset supply, upgrades, and infantry recruitment are unlimited—even during an active test. Water still blocks friendly ground units and construction. Select a wave and exact alien population in the top console, then rerun as many configurations as you want." : "Water blocks infantry, crewed weapons, and construction; ground aliens wade through it slowly. Friendly troops climb natural terrain far faster than aliens. Buildings deploy only before a wave or during the 30-second build window; barracks recruitment remains available at any time. Winged Skyrazors ignore terrain, so counter them with Aegis flak. Shift + right-click salvages."}</p></div>
       </aside>
-      <footer className="controls"><span><kbd>DRAG BOX</kbd> SELECT UNITS</span><span><kbd>RIGHT CLICK</kbd> FORMATION MOVE</span><span><kbd>MIDDLE DRAG</kbd> ORBIT</span><span><kbd>WASD</kbd> GLIDE CAMERA</span><span><kbd>SPACE</kbd> START WAVE</span><span className="online">● GITHUB PAGES</span></footer>
+      <footer className="controls"><span><kbd>DRAG BOX</kbd> SELECT UNITS</span><span><kbd>RIGHT CLICK</kbd> FORMATION MOVE</span><span><kbd>MIDDLE DRAG</kbd> ORBIT</span><span><kbd>WASD</kbd> GLIDE CAMERA</span><span><kbd>{testerMode ? "TEST CONSOLE" : "SPACE"}</kbd> {testerMode ? "RUN EXACT WAVE" : "START WAVE"}</span><span className="online">● GITHUB PAGES</span></footer>
     </main>
   );
 }

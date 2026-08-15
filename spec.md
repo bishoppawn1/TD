@@ -178,6 +178,15 @@ Enemy health and movement speed scale upward as the operation advances. Wave siz
 - A wave ends after all scheduled enemies have spawned and no living enemies remain.
 - The player receives a resupply award after each cleared wave.
 
+## Unit Tester Mode
+
+- The deployment briefing offers a Unit Tester sandbox alongside the standard campaign on every battlefield.
+- The player chooses any wave profile from 1 through 25, preserving that wave's enemy classes, health, damage, and speed scaling.
+- An exact custom population from 1 through 5,000 aliens replaces the campaign's normal wave size. The active-enemy cap still meters very large tests into performant assault groups until the requested total has spawned.
+- Defensive structures may be placed during or between tests with unlimited supply. Upgrades and barracks recruitment are also free and unlimited.
+- Completing a test leaves the selected wave unchanged so the player can adjust the defense and immediately rerun the same scenario. Unit Tester waves do not advance campaign progression or trigger campaign victory.
+- Resetting the test range restores its starting forces, command-post integrity, and empty-wave state without leaving Unit Tester mode.
+
 ## Controls
 
 - **Left click:** Select a rifleman or combat structure; otherwise place the selected asset on a tile.
@@ -188,6 +197,7 @@ Enemy health and movement speed scale upward as the operation advances. Wave siz
 - **Shift + right click:** Salvage an asset.
 - **R:** Rotate the camera 90 degrees.
 - **Space:** Start the next wave.
+- **Unit Test console:** Choose a wave and exact alien count, then launch the configured test.
 
 ## Interface
 
@@ -201,7 +211,7 @@ The primary HUD displays:
 - selected deployable and its cost; and
 - short command messages explaining combat events or invalid actions.
 
-A first-launch theater briefing lets the player compare and select a map while explaining the mission, major terrain mechanics, and camera controls. The active operation and sector appear on the mission card, which also provides access to the map selector between waves. Victory and defeat overlays summarize the selected operation and provide a restart action.
+A first-launch theater briefing lets the player choose Campaign or Unit Tester mode, compare and select a map, and review the major terrain and camera controls. In Unit Tester mode the top console exposes wave and alien-count fields, while supply and construction status clearly read as unlimited. The active operation and sector appear on the mission card, which also provides access to the map and mode selector between waves. Victory and defeat overlays summarize the selected operation and provide a restart action.
 
 ## Visual and Audio Direction
 
