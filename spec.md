@@ -33,6 +33,7 @@ Protect the command post through all 25 enemy waves.
 - The battlefield is a 24-by-18 tile 3D grid with varied elevation.
 - The player selects a battlefield during the opening briefing and can return to the selector between waves.
 - Each map changes terrain elevation, ground palette, command-post position, invasion-portal positions, and the opening friendly deployment.
+- Every map begins with five infantry and eight free structures: Ridge favors a balanced sentry screen, Basin starts with long-range fire support, and Divide receives close-range chokepoint defenses.
 - Razorback Ridge is the balanced high-ground map, Cinder Basin exposes a low central defense to encirclement, and Blackglass Divide creates steep chokepoints between volcanic mesas.
 - Every battlefield has three alien portals that pressure distinct approaches to the command post.
 - The battlefield is covered by dynamic fog of war. Friendly infantry, combat defenses, the barracks, and the command post reveal limited areas around themselves.

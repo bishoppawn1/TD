@@ -33,20 +33,20 @@ const GRID_W = 24;
 const GRID_H = 18;
 const TILE = 1.36;
 const ASSETS: Record<AssetKey, { name: string; role: string; cost: number; range: number; icon: string; accent: string }> = {
-  rifle: { name: "M240 Gun Team", role: "Sustained fire · Anti-swarm", cost: 225, range: 4.7, icon: "⌖", accent: "#9fe870" },
-  sentry: { name: "GAU-19 Sentry", role: "Fast tracking · Heavy burst", cost: 375, range: 5.6, icon: "◉", accent: "#62e8ff" },
-  flame: { name: "Inferno Turret", role: "Short range · Burning splash", cost: 315, range: 3.25, icon: "♨", accent: "#ff875c" },
-  laser: { name: "Helios Laser Tower", role: "Instant beam · Precision damage", cost: 540, range: 7.2, icon: "◇", accent: "#ff4ff5" },
-  railgun: { name: "M-90 Rail Turret", role: "Long range · Armor piercing", cost: 615, range: 9.6, icon: "↯", accent: "#b889ff" },
-  howitzer: { name: "M777 Howitzer", role: "Heavy shell · Area damage", cost: 525, range: 7.4, icon: "◎", accent: "#ffb45d" },
-  missile: { name: "Javelin Battery", role: "Long range · Wide blast", cost: 720, range: 8.8, icon: "✦", accent: "#ff7f91" },
-  light: { name: "Sentinel Light Tower", role: "Wide vision · Sweeping searchlights", cost: 205, range: 0, icon: "☼", accent: "#fff1a3" },
-  wall: { name: "Hesco Wall", role: "600 armor · Supports units", cost: 105, range: 0, icon: "▦", accent: "#d1b98e" },
-  bastion: { name: "Bastion Wall", role: "1,050 armor · Reinforced cover", cost: 190, range: 0, icon: "▰", accent: "#aab8bd" },
-  trench: { name: "Infantry Trench", role: "4 infantry · 40% damage reduction", cost: 130, range: 0, icon: "⌓", accent: "#b89568" },
-  wire: { name: "Razor Wire", role: "Slows and wounds hostiles", cost: 60, range: 0, icon: "〰", accent: "#e4cc9e" },
-  mine: { name: "Shock Mine", role: "Proximity · One use", cost: 150, range: 1.35, icon: "⌁", accent: "#ff655f" },
-  barracks: { name: "Field Barracks", role: "Trains specialized infantry", cost: 640, range: 0, icon: "⌂", accent: "#67c8ff" },
+  rifle: { name: "M240 Gun Team", role: "Sustained fire · Anti-swarm", cost: 150, range: 4.7, icon: "⌖", accent: "#9fe870" },
+  sentry: { name: "GAU-19 Sentry", role: "Fast tracking · Heavy burst", cost: 250, range: 5.6, icon: "◉", accent: "#62e8ff" },
+  flame: { name: "Inferno Turret", role: "Short range · Burning splash", cost: 210, range: 3.25, icon: "♨", accent: "#ff875c" },
+  laser: { name: "Helios Laser Tower", role: "Instant beam · Precision damage", cost: 360, range: 7.2, icon: "◇", accent: "#ff4ff5" },
+  railgun: { name: "M-90 Rail Turret", role: "Long range · Armor piercing", cost: 410, range: 9.6, icon: "↯", accent: "#b889ff" },
+  howitzer: { name: "M777 Howitzer", role: "Heavy shell · Area damage", cost: 350, range: 7.4, icon: "◎", accent: "#ffb45d" },
+  missile: { name: "Javelin Battery", role: "Long range · Wide blast", cost: 480, range: 8.8, icon: "✦", accent: "#ff7f91" },
+  light: { name: "Sentinel Light Tower", role: "Wide vision · Sweeping searchlights", cost: 135, range: 0, icon: "☼", accent: "#fff1a3" },
+  wall: { name: "Hesco Wall", role: "600 armor · Supports units", cost: 70, range: 0, icon: "▦", accent: "#d1b98e" },
+  bastion: { name: "Bastion Wall", role: "1,050 armor · Reinforced cover", cost: 125, range: 0, icon: "▰", accent: "#aab8bd" },
+  trench: { name: "Infantry Trench", role: "4 infantry · 40% damage reduction", cost: 85, range: 0, icon: "⌓", accent: "#b89568" },
+  wire: { name: "Razor Wire", role: "Slows and wounds hostiles", cost: 40, range: 0, icon: "〰", accent: "#e4cc9e" },
+  mine: { name: "Shock Mine", role: "Proximity · One use", cost: 100, range: 1.35, icon: "⌁", accent: "#ff655f" },
+  barracks: { name: "Field Barracks", role: "Trains specialized infantry", cost: 425, range: 0, icon: "⌂", accent: "#67c8ff" },
 };
 
 const TURRET_STATS: Record<CombatKey, { damage: number; cooldown: number; splash: number; arcHeight: number; color: number; heavy: boolean; turnSpeed: number; beam?: boolean }> = {
@@ -60,10 +60,10 @@ const TURRET_STATS: Record<CombatKey, { damage: number; cooldown: number; splash
 };
 
 const MARINE_STATS: Record<MarineKind, { name: string; role: string; cost: number; train: number; hp: number; speed: number; damage: number; cooldown: number; range: number; color: string; projectileColor: number; splash?: number; arcHeight?: number; heavy?: boolean }> = {
-  rifleman: { name: "Rifleman", role: "Mobile all-round infantry", cost: 90, train: 3.5, hp: 100, speed: 1.65, damage: 9, cooldown: 0.55, range: 3.25, color: "#a8f76b", projectileColor: 0xbaff77 },
-  gunner: { name: "Heavy Gunner", role: "Armored sustained fire", cost: 175, train: 5.5, hp: 165, speed: 1.2, damage: 18, cooldown: 0.34, range: 3.7, color: "#ffbe62", projectileColor: 0xffbe62 },
-  medic: { name: "Combat Medic", role: "Heals nearby infantry", cost: 135, train: 4.5, hp: 85, speed: 1.75, damage: 5, cooldown: 0.72, range: 2.9, color: "#63e9ff", projectileColor: 0x63e9ff },
-  rocketeer: { name: "Rocketeer", role: "Long-range anti-swarm rockets", cost: 235, train: 6.5, hp: 95, speed: 1.08, damage: 62, cooldown: 2.15, range: 5.2, color: "#ff8a5b", projectileColor: 0xff7048, splash: 1.05, arcHeight: 0.65, heavy: true },
+  rifleman: { name: "Rifleman", role: "Mobile all-round infantry", cost: 60, train: 3.5, hp: 100, speed: 1.65, damage: 9, cooldown: 0.55, range: 3.25, color: "#a8f76b", projectileColor: 0xbaff77 },
+  gunner: { name: "Heavy Gunner", role: "Armored sustained fire", cost: 115, train: 5.5, hp: 165, speed: 1.2, damage: 18, cooldown: 0.34, range: 3.7, color: "#ffbe62", projectileColor: 0xffbe62 },
+  medic: { name: "Combat Medic", role: "Heals nearby infantry", cost: 90, train: 4.5, hp: 85, speed: 1.75, damage: 5, cooldown: 0.72, range: 2.9, color: "#63e9ff", projectileColor: 0x63e9ff },
+  rocketeer: { name: "Rocketeer", role: "Long-range anti-swarm rockets", cost: 155, train: 6.5, hp: 95, speed: 1.08, damage: 62, cooldown: 2.15, range: 5.2, color: "#ff8a5b", projectileColor: 0xff7048, splash: 1.05, arcHeight: 0.65, heavy: true },
 };
 
 type Hud = { credits: number; integrity: number; wave: number; enemies: number; kills: number; active: boolean; gameOver: boolean; victory: boolean };
@@ -109,8 +109,8 @@ const MAPS: Record<MapKey, MapConfig> = {
     description: "A familiar ridgeline with defensible elevations, open southern lanes, and pressure from three separated portals.",
     background: 0x07120f, ground: 0x0b1713, fog: 0x010705, hue: 0.29, saturation: 0.24,
     baseCell: { x: 1, y: 16 }, spawnCells: [{ x: 23, y: 1 }, { x: 23, y: 16 }, { x: 11, y: 0 }],
-    startingStructures: [{ kind: "barracks", x: 3, y: 14 }, { kind: "rifle", x: 6, y: 14 }, { kind: "wall", x: 4, y: 15 }, { kind: "howitzer", x: 8, y: 15 }, { kind: "wire", x: 6, y: 16 }],
-    startingMarines: [{ kind: "rifleman", x: 3, y: 13 }, { kind: "medic", x: 4, y: 14 }],
+    startingStructures: [{ kind: "barracks", x: 3, y: 14 }, { kind: "rifle", x: 6, y: 14 }, { kind: "wall", x: 4, y: 15 }, { kind: "howitzer", x: 8, y: 15 }, { kind: "wire", x: 6, y: 16 }, { kind: "sentry", x: 7, y: 13 }, { kind: "light", x: 5, y: 12 }, { kind: "trench", x: 4, y: 12 }],
+    startingMarines: [{ kind: "rifleman", x: 3, y: 13 }, { kind: "medic", x: 4, y: 14 }, { kind: "rifleman", x: 4, y: 13 }, { kind: "gunner", x: 5, y: 13 }, { kind: "rocketeer", x: 7, y: 14 }],
     heightAt: (x, y) => {
       const rolling = Math.max(0, Math.sin(x * 0.43) + Math.cos(y * 0.55) - 0.5) * 0.25;
       const ridge = Math.max(0, 1 - Math.hypot(x - 14, y - 10) / 5.2) * 0.88;
@@ -123,8 +123,8 @@ const MAPS: Record<MapKey, MapConfig> = {
     description: "Your command post sits low in a broad ash basin. Long sightlines help artillery, but portals wrap around both flanks.",
     background: 0x160b08, ground: 0x1d100c, fog: 0x090301, hue: 0.065, saturation: 0.34,
     baseCell: { x: 11, y: 16 }, spawnCells: [{ x: 0, y: 1 }, { x: 23, y: 2 }, { x: 23, y: 13 }],
-    startingStructures: [{ kind: "barracks", x: 11, y: 14 }, { kind: "rifle", x: 9, y: 14 }, { kind: "wall", x: 10, y: 15 }, { kind: "howitzer", x: 13, y: 14 }, { kind: "wire", x: 12, y: 13 }],
-    startingMarines: [{ kind: "rifleman", x: 10, y: 13 }, { kind: "medic", x: 12, y: 14 }],
+    startingStructures: [{ kind: "barracks", x: 11, y: 14 }, { kind: "rifle", x: 9, y: 14 }, { kind: "wall", x: 10, y: 15 }, { kind: "howitzer", x: 13, y: 14 }, { kind: "wire", x: 12, y: 13 }, { kind: "railgun", x: 14, y: 12 }, { kind: "light", x: 11, y: 12 }, { kind: "bastion", x: 9, y: 13 }],
+    startingMarines: [{ kind: "rifleman", x: 10, y: 13 }, { kind: "medic", x: 12, y: 14 }, { kind: "rifleman", x: 12, y: 12 }, { kind: "gunner", x: 10, y: 12 }, { kind: "rocketeer", x: 13, y: 12 }],
     heightAt: (x, y) => {
       const distance = Math.hypot(x - 11.5, y - 8.5);
       const rim = Math.max(0, (distance - 4.2) / 7.2) * 0.96;
@@ -137,8 +137,8 @@ const MAPS: Record<MapKey, MapConfig> = {
     description: "Twin volcanic mesas split the approach into tight channels. The western command post starts close to the front line.",
     background: 0x090811, ground: 0x100f18, fog: 0x030207, hue: 0.69, saturation: 0.18,
     baseCell: { x: 2, y: 8 }, spawnCells: [{ x: 23, y: 1 }, { x: 23, y: 16 }, { x: 12, y: 0 }],
-    startingStructures: [{ kind: "barracks", x: 4, y: 8 }, { kind: "rifle", x: 5, y: 6 }, { kind: "wall", x: 5, y: 9 }, { kind: "howitzer", x: 6, y: 11 }, { kind: "wire", x: 6, y: 7 }],
-    startingMarines: [{ kind: "rifleman", x: 4, y: 7 }, { kind: "medic", x: 4, y: 10 }],
+    startingStructures: [{ kind: "barracks", x: 4, y: 8 }, { kind: "rifle", x: 5, y: 6 }, { kind: "wall", x: 5, y: 9 }, { kind: "howitzer", x: 6, y: 11 }, { kind: "wire", x: 6, y: 7 }, { kind: "flame", x: 6, y: 8 }, { kind: "bastion", x: 5, y: 10 }, { kind: "light", x: 7, y: 9 }],
+    startingMarines: [{ kind: "rifleman", x: 4, y: 7 }, { kind: "medic", x: 4, y: 10 }, { kind: "rifleman", x: 4, y: 9 }, { kind: "gunner", x: 5, y: 7 }, { kind: "rocketeer", x: 6, y: 10 }],
     heightAt: (x, y) => {
       const northMesa = Math.max(0, 1 - Math.hypot(x - 8, y - 4) / 4.6) * 1.05;
       const southMesa = Math.max(0, 1 - Math.hypot(x - 15, y - 13) / 4.8) * 1.12;
