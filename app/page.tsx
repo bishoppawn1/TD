@@ -11,6 +11,7 @@ type MarineKind = "rifleman" | "gunner" | "medic" | "rocketeer";
 type AlienKind = "drone" | "spitter" | "brute" | "razortail" | "stalker" | "strider" | "broodmother" | "prowler";
 
 const MAX_WAVES = 25;
+const BETWEEN_WAVE_BUILD_SECONDS = 30;
 const ALIEN_SPEED_MULTIPLIER = 1.8;
 const ENEMY_SWARM_MULTIPLIER = 5;
 const MAX_ACTIVE_ENEMIES = 90;
@@ -82,7 +83,7 @@ const MARINE_STATS: Record<MarineKind, { name: string; role: string; cost: numbe
   rocketeer: { name: "Rocketeer", role: "Long-range anti-swarm rockets", cost: 155, hp: 95, speed: 1.08, damage: 62, cooldown: 2.15, range: 5.2, color: "#ff8a5b", projectileColor: 0xff7048, splash: 1.05, arcHeight: 0.65, heavy: true },
 };
 
-type Hud = { credits: number; integrity: number; wave: number; enemies: number; kills: number; active: boolean; gameOver: boolean; victory: boolean };
+type Hud = { credits: number; integrity: number; wave: number; enemies: number; kills: number; active: boolean; buildSeconds: number | null; gameOver: boolean; victory: boolean };
 type Cell = { x: number; y: number };
 type MoveWaypoint = Cell & { lift: number };
 type Structure = { id: number; kind: AssetKey; level: number; x: number; y: number; targetX: number; targetY: number; hp: number; maxHp: number; mountedOn?: number; mountTarget?: number; movePath: MoveWaypoint[]; pathIndex: number; lift: number; stackLevel: number; group: THREE.Group; cooldown: number };
@@ -756,7 +757,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     function removeHealthBar(group: THREE.Group) {
       const bar = group.userData.healthBar as THREE.Group | undefined; if (bar) world.remove(bar); (group.userData.tierTexture as THREE.CanvasTexture | undefined)?.dispose(); group.userData.healthBar = undefined; group.userData.healthFill = undefined; group.userData.tierBadge = undefined; group.userData.tierTexture = undefined; group.userData.tierCanvas = undefined;
     }
-    let credits = 750, integrity = 100, wave = 0, kills = 0, active = false, gameOver = false, victory = false;
+    let credits = 750, integrity = 100, wave = 0, kills = 0, active = false, buildTimer = 0, gameOver = false, victory = false;
     let spawnLeft = 0, spawnTimer = 0, assaultFront = 0, nextId = 1, elapsed = 0, lastHud = -1;
     let structures: Structure[] = [], enemies: Enemy[] = [], marines: Marine[] = [], bullets: Bullet[] = [], hostileProjectiles: HostileProjectile[] = [], particles: Particle[] = [];
     const selectedMarines = new Set<number>();
@@ -873,7 +874,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     }
     function emitHud(force = false) {
       if (!force && elapsed - lastHud < 0.12) return; lastHud = elapsed;
-      callbacks.current.onHud({ credits, integrity, wave, enemies: enemies.length + spawnLeft, kills, active, gameOver, victory });
+      callbacks.current.onHud({ credits, integrity, wave, enemies: enemies.length + spawnLeft, kills, active, buildSeconds: buildTimer > 0 ? Math.ceil(buildTimer) : null, gameOver, victory });
     }
     function message(text: string) { callbacks.current.onMessage(text); }
     function getUpgradeCost(s: Structure) {
@@ -970,6 +971,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     function tryPlace(x: number, y: number) {
       const kind = selectedRef.current, asset = ASSETS[kind];
       if (gameOver) return;
+      if (active) return message("CONSTRUCTION LOCKED · BUILDINGS DEPLOY BETWEEN WAVES ONLY");
       if (credits < asset.cost) return message("INSUFFICIENT COMMAND CREDITS");
       const wall = topWallAt(x, y), stackingWall = !!wall && (kind === "wall" || kind === "bastion");
       const canMount = !!wall && (kind in TURRET_STATS || kind === "light");
@@ -1120,7 +1122,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     function startWave() {
       if (active || gameOver) return;
       if (wave >= MAX_WAVES) { victory = true; gameOver = true; message("SECTOR SECURED · ALL WAVES REPELLED"); emitHud(true); return; }
-      wave++; active = true; spawnLeft = (14 + Math.floor(wave * 2.35)) * ENEMY_SWARM_MULTIPLIER; spawnTimer = 0.45; assaultFront = Math.floor(Math.random() * spawnCells.length); message(`WAVE ${String(wave).padStart(2, "0")} INBOUND · ${spawnLeft} LIFE SIGNS · THREE FRONTS`); emitHud(true);
+      buildTimer = 0; wave++; active = true; spawnLeft = (14 + Math.floor(wave * 2.35)) * ENEMY_SWARM_MULTIPLIER; spawnTimer = 0.45; assaultFront = Math.floor(Math.random() * spawnCells.length); message(`WAVE ${String(wave).padStart(2, "0")} INBOUND · ${spawnLeft} LIFE SIGNS · THREE FRONTS · CONSTRUCTION LOCKED`); emitHud(true);
     }
     function burst(at: THREE.Vector3, color: number, count = 10) {
       for (let i = 0; i < count; i++) {
@@ -1220,7 +1222,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     }
     function restart() {
       [...structures, ...enemies, ...marines].forEach(o => { removeHealthBar(o.group); world.remove(o.group); }); bullets.forEach(b => world.remove(b.mesh)); hostileProjectiles.forEach(p => world.remove(p.group)); particles.forEach(p => world.remove(p.mesh));
-      structures = []; enemies = []; marines = []; bullets = []; hostileProjectiles = []; particles = []; selectedMarines.clear(); selectedEmplacements.clear(); selectedBarracksId = null; callbacks.current.onUnitSelected(null); callbacks.current.onBarracksSelected(null); credits = 750; integrity = 100; wave = 0; kills = 0; active = false; gameOver = false; victory = false; spawnLeft = 0; spawnTimer = 0; assaultFront = 0;
+      structures = []; enemies = []; marines = []; bullets = []; hostileProjectiles = []; particles = []; selectedMarines.clear(); selectedEmplacements.clear(); selectedBarracksId = null; callbacks.current.onUnitSelected(null); callbacks.current.onBarracksSelected(null); credits = 750; integrity = 100; wave = 0; kills = 0; active = false; buildTimer = 0; gameOver = false; victory = false; spawnLeft = 0; spawnTimer = 0; assaultFront = 0;
       deployStartingForces(); message("COMMAND SYSTEMS RESET · AWAITING DEPLOYMENT"); emitHud(true);
     }
     function rotate() {
@@ -1265,6 +1267,10 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
 
     function update(dt: number) {
       elapsed += dt; spawnBeacons.forEach(beacon => { beacon.portal.rotation.z += dt * 0.7; beacon.inner.rotation.z -= dt * 0.42; beacon.light.intensity = 2.6 + Math.sin(elapsed * 3.2 + beacon.phase) * 0.7; });
+      if (!active && !gameOver && wave > 0 && wave < MAX_WAVES && buildTimer > 0) {
+        buildTimer = Math.max(0, buildTimer - dt);
+        if (buildTimer === 0) { message("BUILD WINDOW CLOSED · NEXT WAVE DEPLOYING"); startWave(); }
+      }
       const forward = controls.target.clone().sub(camera.position); forward.y = 0; forward.normalize(); const right = new THREE.Vector3(-forward.z, 0, forward.x); const intent = new THREE.Vector3();
       if (heldKeys.has("w")) intent.add(forward); if (heldKeys.has("s")) intent.sub(forward); if (heldKeys.has("d")) intent.add(right); if (heldKeys.has("a")) intent.sub(right);
       if (intent.lengthSq()) cameraVelocity.addScaledVector(intent.normalize(), dt * 25); cameraVelocity.multiplyScalar(Math.exp(-dt * 5.2));
@@ -1482,7 +1488,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       }
       for (const m of [...marines]) if (m.hp <= 0) { selectedMarines.delete(m.id); burst(m.group.position.clone().add(new THREE.Vector3(0, 0.5, 0)), 0xff5f47, 9); removeHealthBar(m.group); world.remove(m.group); marines.splice(marines.indexOf(m), 1); message(`${MARINE_STATS[m.kind].name.toUpperCase()} KILLED IN ACTION`); }
       for (const p of [...particles]) { p.life -= dt; p.velocity.y -= dt * 2.6; p.mesh.position.addScaledVector(p.velocity, dt); (p.mesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, p.life / p.maxLife); if (p.life <= 0) { world.remove(p.mesh); particles.splice(particles.indexOf(p), 1); } }
-      if (active && spawnLeft === 0 && enemies.length === 0) { active = false; credits += 125 + wave * 25; if (wave >= MAX_WAVES) { victory = true; gameOver = true; message("SECTOR SECURED · HUMANITY HOLDS THE RIDGE"); } else message(`WAVE ${String(wave).padStart(2, "0")} DESTROYED · RESUPPLY DELIVERED`); }
+      if (active && spawnLeft === 0 && enemies.length === 0) { active = false; credits += 125 + wave * 25; if (wave >= MAX_WAVES) { victory = true; gameOver = true; message("SECTOR SECURED · HUMANITY HOLDS THE RIDGE"); } else { buildTimer = BETWEEN_WAVE_BUILD_SECONDS; message(`WAVE ${String(wave).padStart(2, "0")} DESTROYED · 30-SECOND BUILD WINDOW OPEN`); } }
       emitHud();
     }
 
@@ -1504,7 +1510,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
 export default function Home() {
   const [selected, setSelected] = useState<AssetKey>("rifle");
   const [mapKey, setMapKey] = useState<MapKey>("ridge");
-  const [hud, setHud] = useState<Hud>({ credits: 750, integrity: 100, wave: 0, enemies: 0, kills: 0, active: false, gameOver: false, victory: false });
+  const [hud, setHud] = useState<Hud>({ credits: 750, integrity: 100, wave: 0, enemies: 0, kills: 0, active: false, buildSeconds: null, gameOver: false, victory: false });
   const [selectedUnit, setSelectedUnit] = useState<SelectedUnit | null>(null);
   const [selectedBarracks, setSelectedBarracks] = useState<BarracksInfo | null>(null);
   const [message, setMessage] = useState("OPERATION NIGHTFALL · BUILD YOUR PERIMETER");
@@ -1513,6 +1519,7 @@ export default function Home() {
   const messageTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showMessage = (text: string) => { setMessage(text); if (messageTimer.current) clearTimeout(messageTimer.current); messageTimer.current = setTimeout(() => setMessage("COMMAND LINK STABLE · RIGHT-CLICK TO SALVAGE"), 4200); };
   const map = MAPS[mapKey];
+  const formatBuildTime = (seconds: number) => `00:${String(seconds).padStart(2, "0")}`;
   const selectMap = (nextMap: MapKey) => {
     setMapKey(nextMap); setSelectedUnit(null); setSelectedBarracks(null);
     setMessage(`OPERATION ${MAPS[nextMap].operation} · ${MAPS[nextMap].sector} SELECTED`);
@@ -1524,11 +1531,12 @@ export default function Home() {
         <div className="stat credits"><small>COMMAND CREDITS</small><strong>{hud.credits.toLocaleString()}</strong></div>
         <div className="stat"><small>DEFENSE INTEGRITY</small><strong className={hud.integrity < 35 ? "danger" : ""}>{hud.integrity}%</strong></div>
         <div className="stat"><small>HOSTILES</small><strong>{String(hud.enemies).padStart(2, "0")}</strong></div>
-        <button className="wave-button" disabled={hud.active || hud.gameOver} onClick={() => apiRef.current?.start()}>{hud.active ? `WAVE ${String(hud.wave).padStart(2, "0")} ACTIVE` : hud.gameOver ? "OPERATION ENDED" : `DEPLOY WAVE ${String(hud.wave + 1).padStart(2, "0")}`}</button>
+        <div className="stat build-timer"><small>{hud.active ? "CONSTRUCTION" : hud.buildSeconds === null ? "STAGING" : "BUILD WINDOW"}</small><strong className={hud.active ? "danger" : ""}>{hud.active ? "LOCKED" : hud.buildSeconds === null ? "READY" : formatBuildTime(hud.buildSeconds)}</strong></div>
+        <button className="wave-button" disabled={hud.active || hud.gameOver} onClick={() => apiRef.current?.start()}>{hud.active ? `WAVE ${String(hud.wave).padStart(2, "0")} ACTIVE` : hud.gameOver ? "OPERATION ENDED" : hud.buildSeconds === null ? `DEPLOY WAVE ${String(hud.wave + 1).padStart(2, "0")}` : `START WAVE ${String(hud.wave + 1).padStart(2, "0")} NOW`}</button>
       </header>
       <section className="battlefield">
         <Battlefield selected={selected} mapKey={mapKey} onHud={setHud} onMessage={showMessage} onUnitSelected={setSelectedUnit} onBarracksSelected={setSelectedBarracks} apiRef={apiRef} />
-        <div className="mission-card"><span>OPERATION {map.operation} · SECTOR {map.sector}</span><b>{map.objective}</b><small>Wave {Math.min(hud.wave + (hud.active ? 0 : 1), MAX_WAVES)} of {MAX_WAVES} · {hud.kills} confirmed eliminations</small><button className="map-change" disabled={hud.active} onClick={() => setBriefing(true)}>CHANGE MAP</button></div>
+        <div className="mission-card"><span>OPERATION {map.operation} · SECTOR {map.sector}</span><b>{map.objective}</b><small>Wave {Math.min(hud.wave + (hud.active ? 0 : 1), MAX_WAVES)} of {MAX_WAVES} · {hud.kills} confirmed eliminations · {hud.active ? "CONSTRUCTION LOCKED" : hud.buildSeconds === null ? "STAGING AREA OPEN" : `BUILD ${formatBuildTime(hud.buildSeconds)}`}</small><button className="map-change" disabled={hud.active} onClick={() => setBriefing(true)}>CHANGE MAP</button></div>
         <div className="status-feed"><i />{message}</div>
         {selectedUnit && <div className="upgrade-card" style={{ "--upgrade-color": ASSETS[selectedUnit.kind].accent } as React.CSSProperties}>
           <small>SELECTED DEFENSE</small><div className="upgrade-heading"><b>{selectedUnit.name}</b><em>TIER {selectedUnit.level}/{selectedUnit.maxLevel}</em></div>
@@ -1545,10 +1553,10 @@ export default function Home() {
         {briefing && <div className="briefing map-briefing"><div className="briefing-id">THEATER SELECTION // THREE ACTIVE SECTORS</div><h1>Choose the ground you hold.</h1><p>Each battlefield has a different elevation profile, command-post location, invasion portals, and opening deployment. Fog still conceals everything outside friendly vision.</p><div className="map-selector" aria-label="Available battlefields">{MAP_ORDER.map(key => { const option = MAPS[key]; return <button key={key} className={`map-option ${mapKey === key ? "active" : ""}`} aria-pressed={mapKey === key} onClick={() => selectMap(key)}><span className={`map-preview ${key}`} aria-hidden="true"><i className="base-pip" /><i className="portal-pip one" /><i className="portal-pip two" /><i className="portal-pip three" /></span><small>{option.terrain}</small><b>{option.name}</b><em>{option.objective}</em></button>; })}</div><p className="map-description"><b>OPERATION {map.operation} · SECTOR {map.sector}</b>{map.description}</p><div className="brief-grid"><span><kbd>LIGHT TOWER</kbd><b>Reveal a wide area</b></span><span><kbd>RIGHT CLICK</kbd><b>Move scouts forward</b></span><span><kbd>STACK WALLS</kbd><b>Shape every approach</b></span><span><kbd>MIDDLE DRAG</kbd><b>Orbit camera</b></span></div><button onClick={() => setBriefing(false)}>DEPLOY TO {map.name.toUpperCase()}</button></div>}
         {hud.gameOver && <div className={`end-card ${hud.victory ? "won" : "lost"}`}><small>{hud.victory ? "OPERATION COMPLETE" : "SIGNAL LOST"}</small><h2>{hud.victory ? `${map.name.toUpperCase()} HOLDS` : "COMMAND OVERRUN"}</h2><p>{hud.kills} hostiles eliminated across {hud.wave} waves.</p><button onClick={() => apiRef.current?.restart()}>RESTART OPERATION</button></div>}
       </section>
-      <aside className="build-panel">
-        <div className="panel-title"><small>FORWARD ENGINEERING</small><b>DEPLOYABLE ASSETS</b></div>
-        {(Object.keys(ASSETS) as AssetKey[]).map(key => { const a = ASSETS[key]; return <button key={key} className={`asset ${selected === key ? "active" : ""}`} onClick={() => setSelected(key)} style={{ "--asset-color": a.accent } as React.CSSProperties}><span>{a.icon}</span><div><b>{a.name}</b><small>{a.role}</small></div><em>{a.cost}</em></button>; })}
-        <div className="intel"><span>FIELD INTEL</span><p>Sentinel lights and weapons may mount on walls. Climbers cross walls slowly and may choose a faster target instead. Right-click a trench with infantry selected to take cover; crewed weapons cannot enter. Rocketeers deliver mobile splash fire; late waves include egg-launching Broodmothers. Shift + right-click salvages.</p></div>
+      <aside className={`build-panel ${hud.active || hud.gameOver ? "locked" : ""}`}>
+        <div className="panel-title"><small>{hud.active ? "CONSTRUCTION LOCKED · WAVE ACTIVE" : hud.gameOver ? "OPERATION ENDED" : hud.buildSeconds === null ? "FORWARD ENGINEERING · STAGING" : `FORWARD ENGINEERING · ${formatBuildTime(hud.buildSeconds)} LEFT`}</small><b>DEPLOYABLE ASSETS</b></div>
+        {(Object.keys(ASSETS) as AssetKey[]).map(key => { const a = ASSETS[key]; return <button key={key} disabled={hud.active || hud.gameOver} className={`asset ${selected === key ? "active" : ""}`} onClick={() => setSelected(key)} style={{ "--asset-color": a.accent } as React.CSSProperties}><span>{a.icon}</span><div><b>{a.name}</b><small>{a.role}</small></div><em>{a.cost}</em></button>; })}
+        <div className="intel"><span>FIELD INTEL</span><p>Buildings may be placed only before a wave or during the 30-second build window after it. Field Barracks can still recruit infantry at any time. Sentinel lights and weapons may mount on walls. Shift + right-click salvages.</p></div>
       </aside>
       <footer className="controls"><span><kbd>DRAG BOX</kbd> SELECT UNITS</span><span><kbd>RIGHT CLICK</kbd> FORMATION MOVE</span><span><kbd>MIDDLE DRAG</kbd> ORBIT</span><span><kbd>WASD</kbd> GLIDE CAMERA</span><span><kbd>SPACE</kbd> START WAVE</span><span className="online">● GITHUB PAGES</span></footer>
     </main>
