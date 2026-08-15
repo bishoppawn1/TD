@@ -68,7 +68,7 @@ type MoveWaypoint = Cell & { lift: number };
 type Structure = { id: number; kind: AssetKey; level: number; x: number; y: number; targetX: number; targetY: number; hp: number; maxHp: number; mountedOn?: number; mountTarget?: number; movePath: MoveWaypoint[]; pathIndex: number; lift: number; stackLevel: number; group: THREE.Group; cooldown: number; spawnTimer: number };
 type Enemy = { id: number; kind: AlienKind; x: number; y: number; hp: number; maxHp: number; speed: number; damage: number; reward: number; path: Cell[]; index: number; group: THREE.Group; hitFlash: number; attackCooldown: number; pathTimer: number; targetId: number | null; targetType: "marine" | "structure" | "base" };
 type Marine = { id: number; kind: MarineKind; x: number; y: number; targetX: number; targetY: number; vx: number; vy: number; hp: number; maxHp: number; cooldown: number; supportCooldown: number; mountedOn?: number; mountTarget?: number; trenchId?: number; movePath: MoveWaypoint[]; pathIndex: number; lift: number; group: THREE.Group };
-type Bullet = { mesh: THREE.Mesh; from: THREE.Vector3; to: THREE.Vector3; t: number; speed: number; target: number; damage: number; splash: number; arcHeight: number; color: number };
+type Bullet = { mesh: THREE.Object3D; from: THREE.Vector3; to: THREE.Vector3; t: number; speed: number; target: number; damage: number; splash: number; arcHeight: number; color: number };
 type HostileProjectile = { group: THREE.Group; kind: AlienKind; from: THREE.Vector3; to: THREE.Vector3; t: number; speed: number; arcHeight: number; targetId: number; targetType: "marine" | "structure"; damage: number; color: number; impactCount: number };
 type Particle = { mesh: THREE.Mesh; velocity: THREE.Vector3; life: number; maxLife: number };
 type SelectedUnit = { id: number; kind: CombatKey; name: string; level: number; maxLevel: number; upgradeCost: number | null; damage: number; range: number; maxHp: number };
@@ -1034,9 +1034,17 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       }
       group.position.copy(start); world.add(group); hostileProjectiles.push({ group, kind, from: start, to: end, t: 0, speed, arcHeight, targetId, targetType, damage, color, impactCount });
     }
-    function fire(from: THREE.Vector3, target: Enemy, damage: number, splash: number, color: number, heavy = false, arcHeight = 0) {
-      const mesh = new THREE.Mesh(new THREE.SphereGeometry(heavy ? 0.11 : 0.045, 7, 5), new THREE.MeshBasicMaterial({ color })); mesh.position.copy(from); world.add(mesh);
-      bullets.push({ mesh, from: from.clone(), to: target.group.position.clone().add(new THREE.Vector3(0, 0.42, 0)), t: 0, speed: heavy ? 1.35 : 4.8, target: target.id, damage, splash, arcHeight, color });
+    function fire(from: THREE.Vector3, target: Enemy, damage: number, splash: number, color: number, heavy = false, arcHeight = 0, rocket = false) {
+      const to = target.group.position.clone().add(new THREE.Vector3(0, 0.42, 0)); let mesh: THREE.Object3D;
+      if (rocket) {
+        const projectile = new THREE.Group();
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.072, 0.32, 8), new THREE.MeshStandardMaterial({ color: 0x5c665e, metalness: 0.42, roughness: 0.34 })); projectile.add(body);
+        const nose = new THREE.Mesh(new THREE.ConeGeometry(0.058, 0.16, 8), new THREE.MeshStandardMaterial({ color, emissive: 0x7f2314, emissiveIntensity: 0.8, roughness: 0.3 })); nose.position.y = 0.24; projectile.add(nose);
+        const exhaust = new THREE.Mesh(new THREE.SphereGeometry(0.055, 7, 5), new THREE.MeshBasicMaterial({ color: 0xffc45d })); exhaust.position.y = -0.2; projectile.add(exhaust);
+        projectile.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), to.clone().sub(from).normalize()); mesh = projectile;
+      } else mesh = new THREE.Mesh(new THREE.SphereGeometry(heavy ? 0.11 : 0.045, 7, 5), new THREE.MeshBasicMaterial({ color }));
+      mesh.position.copy(from); world.add(mesh);
+      bullets.push({ mesh, from: from.clone(), to, t: 0, speed: heavy ? 1.35 : 4.8, target: target.id, damage, splash, arcHeight, color });
     }
     function laserStrike(from: THREE.Vector3, target: Enemy, damage: number, color: number) {
       const to = target.group.position.clone().add(new THREE.Vector3(0, 0.48, 0)), direction = to.clone().sub(from), length = direction.length(), midpoint = from.clone().add(to).multiplyScalar(0.5);
@@ -1196,7 +1204,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         const target = enemies.find(e => e.hp > 0 && isRevealed(e.x, e.y) && Math.hypot(e.x - m.x, e.y - m.y) < (settledOnWall ? stats.range + 0.95 : stats.range));
         if (target && !isMoving) {
           turnToward(m.group, Math.atan2(-(target.x - m.x), -(target.y - m.y)), 10, dt);
-          if (m.cooldown <= 0) { const muzzle = m.group.userData.muzzle as THREE.Object3D | undefined; fire(muzzle ? muzzle.getWorldPosition(new THREE.Vector3()) : m.group.position.clone().add(new THREE.Vector3(0, 0.72, 0)), target, stats.damage * (settledOnWall ? 1.32 : 1), stats.splash ?? 0, stats.projectileColor, stats.heavy, stats.arcHeight); m.cooldown = stats.cooldown; }
+          if (m.cooldown <= 0) { const muzzle = m.group.userData.muzzle as THREE.Object3D | undefined; fire(muzzle ? muzzle.getWorldPosition(new THREE.Vector3()) : m.group.position.clone().add(new THREE.Vector3(0, 0.72, 0)), target, stats.damage * (settledOnWall ? 1.32 : 1), stats.splash ?? 0, stats.projectileColor, stats.heavy, stats.arcHeight, m.kind === "rocketeer"); m.cooldown = stats.cooldown; }
         }
       }
       for (const s of [...structures]) if (s.kind === "mine") {
