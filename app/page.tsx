@@ -4,19 +4,22 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
-type AssetKey = "rifle" | "sentry" | "flame" | "railgun" | "howitzer" | "missile" | "wall" | "bastion" | "wire" | "mine" | "barracks";
-type CombatKey = "rifle" | "sentry" | "flame" | "railgun" | "howitzer" | "missile";
+type AssetKey = "rifle" | "sentry" | "flame" | "laser" | "railgun" | "howitzer" | "missile" | "light" | "wall" | "bastion" | "wire" | "mine" | "barracks";
+type CombatKey = "rifle" | "sentry" | "flame" | "laser" | "railgun" | "howitzer" | "missile";
 type MarineKind = "rifleman" | "gunner" | "medic";
-type AlienKind = "drone" | "spitter" | "brute" | "razortail" | "stalker";
+type AlienKind = "drone" | "spitter" | "brute" | "razortail" | "stalker" | "strider";
 
 const MAX_WAVES = 25;
 const ALIEN_SPEED_MULTIPLIER = 1.45;
+const WALL_STACK_HEIGHT = 0.62;
+const WALL_CLIMBERS = new Set<AlienKind>(["stalker", "razortail"]);
 const ENEMY_STATS: Record<AlienKind, { hp: number; speed: number; damage: number; reward: number; attackRange: number; attackCooldown: number; gait: number; barHeight: number }> = {
   drone: { hp: 82, speed: 0.9, damage: 6, reward: 24, attackRange: 1.45, attackCooldown: 0.82, gait: 11.5, barHeight: 1.05 },
   spitter: { hp: 125, speed: 0.72, damage: 9, reward: 36, attackRange: 3.1, attackCooldown: 1.15, gait: 7.2, barHeight: 1.45 },
   brute: { hp: 340, speed: 0.48, damage: 18, reward: 65, attackRange: 1.7, attackCooldown: 1.35, gait: 4.2, barHeight: 2.05 },
   razortail: { hp: 245, speed: 0.68, damage: 14, reward: 56, attackRange: 2.05, attackCooldown: 1.05, gait: 6.2, barHeight: 1.75 },
   stalker: { hp: 64, speed: 1.85, damage: 5, reward: 30, attackRange: 1.25, attackCooldown: 0.48, gait: 18, barHeight: 0.95 },
+  strider: { hp: 118, speed: 0.7, damage: 13, reward: 48, attackRange: 6.4, attackCooldown: 1.65, gait: 5.4, barHeight: 1.8 },
 };
 
 const GRID_W = 24;
@@ -26,9 +29,11 @@ const ASSETS: Record<AssetKey, { name: string; role: string; cost: number; range
   rifle: { name: "M240 Gun Team", role: "Sustained fire · Anti-swarm", cost: 150, range: 4.7, icon: "⌖", accent: "#9fe870" },
   sentry: { name: "GAU-19 Sentry", role: "Fast tracking · Heavy burst", cost: 250, range: 5.6, icon: "◉", accent: "#62e8ff" },
   flame: { name: "Inferno Turret", role: "Short range · Burning splash", cost: 210, range: 3.25, icon: "♨", accent: "#ff875c" },
+  laser: { name: "Helios Laser Tower", role: "Instant beam · Precision damage", cost: 360, range: 7.2, icon: "◇", accent: "#ff4ff5" },
   railgun: { name: "M-90 Rail Turret", role: "Long range · Armor piercing", cost: 410, range: 9.6, icon: "↯", accent: "#b889ff" },
   howitzer: { name: "M777 Howitzer", role: "Heavy shell · Area damage", cost: 350, range: 7.4, icon: "◎", accent: "#ffb45d" },
   missile: { name: "Javelin Battery", role: "Long range · Wide blast", cost: 480, range: 8.8, icon: "✦", accent: "#ff7f91" },
+  light: { name: "Sentinel Light Tower", role: "Wide vision · Sweeping searchlights", cost: 135, range: 0, icon: "☼", accent: "#fff1a3" },
   wall: { name: "Hesco Wall", role: "600 armor · Supports units", cost: 70, range: 0, icon: "▦", accent: "#d1b98e" },
   bastion: { name: "Bastion Wall", role: "1,050 armor · Reinforced cover", cost: 125, range: 0, icon: "▰", accent: "#aab8bd" },
   wire: { name: "Razor Wire", role: "Slows and wounds hostiles", cost: 40, range: 0, icon: "〰", accent: "#e4cc9e" },
@@ -36,10 +41,11 @@ const ASSETS: Record<AssetKey, { name: string; role: string; cost: number; range
   barracks: { name: "Field Barracks", role: "Trains specialized infantry", cost: 425, range: 0, icon: "⌂", accent: "#67c8ff" },
 };
 
-const TURRET_STATS: Record<CombatKey, { damage: number; cooldown: number; splash: number; arcHeight: number; color: number; heavy: boolean; turnSpeed: number }> = {
+const TURRET_STATS: Record<CombatKey, { damage: number; cooldown: number; splash: number; arcHeight: number; color: number; heavy: boolean; turnSpeed: number; beam?: boolean }> = {
   rifle: { damage: 5.8, cooldown: 0.15, splash: 0, arcHeight: 0, color: 0xd6ff81, heavy: false, turnSpeed: 8 },
   sentry: { damage: 18, cooldown: 0.31, splash: 0.25, arcHeight: 0, color: 0x61e8ff, heavy: false, turnSpeed: 11 },
   flame: { damage: 13, cooldown: 0.2, splash: 0.82, arcHeight: 0.18, color: 0xff713d, heavy: false, turnSpeed: 7 },
+  laser: { damage: 68, cooldown: 0.72, splash: 0, arcHeight: 0, color: 0xff4ff5, heavy: false, turnSpeed: 6.5, beam: true },
   railgun: { damage: 185, cooldown: 2.8, splash: 0, arcHeight: 0, color: 0xc090ff, heavy: true, turnSpeed: 4.4 },
   howitzer: { damage: 105, cooldown: 2.35, splash: 1.25, arcHeight: 2.2, color: 0xffa64d, heavy: true, turnSpeed: 3.5 },
   missile: { damage: 165, cooldown: 3.2, splash: 1.75, arcHeight: 2.8, color: 0xff667d, heavy: true, turnSpeed: 2.8 },
@@ -54,7 +60,7 @@ const MARINE_STATS: Record<MarineKind, { name: string; role: string; cost: numbe
 type Hud = { credits: number; integrity: number; wave: number; enemies: number; kills: number; active: boolean; gameOver: boolean; victory: boolean };
 type Cell = { x: number; y: number };
 type MoveWaypoint = Cell & { lift: number };
-type Structure = { id: number; kind: AssetKey; level: number; x: number; y: number; targetX: number; targetY: number; hp: number; maxHp: number; mountedOn?: number; mountTarget?: number; movePath: MoveWaypoint[]; pathIndex: number; lift: number; group: THREE.Group; cooldown: number; spawnTimer: number };
+type Structure = { id: number; kind: AssetKey; level: number; x: number; y: number; targetX: number; targetY: number; hp: number; maxHp: number; mountedOn?: number; mountTarget?: number; movePath: MoveWaypoint[]; pathIndex: number; lift: number; stackLevel: number; group: THREE.Group; cooldown: number; spawnTimer: number };
 type Enemy = { id: number; kind: AlienKind; x: number; y: number; hp: number; maxHp: number; speed: number; damage: number; reward: number; path: Cell[]; index: number; group: THREE.Group; hitFlash: number; attackCooldown: number; pathTimer: number; targetId: number | null; targetType: "marine" | "structure" | "base" };
 type Marine = { id: number; kind: MarineKind; x: number; y: number; targetX: number; targetY: number; vx: number; vy: number; hp: number; maxHp: number; cooldown: number; supportCooldown: number; mountedOn?: number; mountTarget?: number; movePath: MoveWaypoint[]; pathIndex: number; lift: number; group: THREE.Group };
 type Bullet = { mesh: THREE.Mesh; from: THREE.Vector3; to: THREE.Vector3; t: number; speed: number; target: number; damage: number; splash: number; arcHeight: number; color: number };
@@ -141,6 +147,7 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, onBarracksSel
     };
 
     const tileMeshes: THREE.Mesh[] = [];
+    const fogTiles: Array<{ x: number; y: number; mesh: THREE.Mesh; material: THREE.MeshBasicMaterial }> = [];
     for (let y = 0; y < GRID_H; y++) for (let x = 0; x < GRID_W; x++) {
       const h = heights[y][x];
       const color = new THREE.Color().setHSL(0.29 + ((x * 7 + y * 3) % 5) * 0.006, 0.24, 0.20 + h * 0.035);
@@ -148,6 +155,9 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, onBarracksSel
       const tile = new THREE.Mesh(new THREE.BoxGeometry(TILE - 0.045, 0.55 + h, TILE - 0.045), material);
       const p = worldPos(x, y); tile.position.set(p.x, (h - 0.55) / 2, p.z); tile.receiveShadow = true; tile.userData = { x, y, base: color.clone() };
       world.add(tile); tileMeshes.push(tile);
+      const fogMaterial = new THREE.MeshBasicMaterial({ color: 0x010705, transparent: true, opacity: 0.88, depthWrite: false, side: THREE.DoubleSide });
+      const fogTile = new THREE.Mesh(new THREE.PlaneGeometry(TILE - 0.025, TILE - 0.025), fogMaterial);
+      fogTile.rotation.x = -Math.PI / 2; fogTile.position.copy(p).add(new THREE.Vector3(0, 0.045, 0)); fogTile.renderOrder = 8; world.add(fogTile); fogTiles.push({ x, y, mesh: fogTile, material: fogMaterial });
       if ((x * 13 + y * 19) % 17 === 0) {
         const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.12 + ((x + y) % 3) * 0.05, 0), new THREE.MeshStandardMaterial({ color: 0x526159, roughness: 1 }));
         rock.scale.setScalar(0.72); rock.position.copy(p).add(new THREE.Vector3(0.3, 0.09, -0.24)); rock.rotation.set(x, y, x + y); rock.castShadow = true; world.add(rock);
@@ -248,6 +258,19 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, onBarracksSel
       const muzzle = new THREE.Object3D(); muzzle.position.set(0, 0.72, -1.12); g.add(muzzle); g.userData.muzzle = muzzle;
       return g;
     }
+    function makeLaserTower() {
+      const g = new THREE.Group();
+      cyl(g, [0.72, 0.82, 0.2, 18], [0, 0.12, 0], 0x31343f);
+      cyl(g, [0.42, 0.52, 0.55, 14], [0, 0.46, 0], 0x4b5061);
+      for (const x of [-0.31, 0.31]) beam(g, new THREE.Vector3(x, 0.28, 0.2), new THREE.Vector3(x * 0.68, 1.15, -0.08), 0.055, 0x6c7080);
+      box(g, [0.78, 0.32, 0.62], [0, 1.08, -0.08], 0x494153, 0.3);
+      const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(0.2, 0), new THREE.MeshStandardMaterial({ color: 0xff74f7, emissive: 0xb51fab, emissiveIntensity: 2.8, roughness: 0.12, metalness: 0.2 })); crystal.position.set(0, 1.18, -0.38); crystal.scale.z = 1.65; g.add(crystal);
+      for (const x of [-0.13, 0.13]) beam(g, new THREE.Vector3(x, 1.12, -0.35), new THREE.Vector3(x * 0.45, 1.16, -1.32), 0.042, 0x252532);
+      const emitter = new THREE.Mesh(new THREE.TorusGeometry(0.18, 0.045, 8, 20), new THREE.MeshStandardMaterial({ color: 0xffa2fb, emissive: 0xcb2dc3, emissiveIntensity: 2.4, roughness: 0.18 })); emitter.position.set(0, 1.16, -1.35); emitter.rotation.x = Math.PI / 2; g.add(emitter);
+      const glow = new THREE.PointLight(0xff4ff5, 2.4, 4.5); glow.position.set(0, 1.18, -0.65); g.add(glow);
+      const muzzle = new THREE.Object3D(); muzzle.position.set(0, 1.16, -1.42); g.add(muzzle); g.userData.muzzle = muzzle;
+      return g;
+    }
     function makeRailgun() {
       const g = new THREE.Group();
       cyl(g, [0.7, 0.78, 0.2, 16], [0, 0.12, 0], 0x343c43);
@@ -297,6 +320,26 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, onBarracksSel
       const sight = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 7), new THREE.MeshStandardMaterial({ color: 0xff7f91, emissive: 0x6a1825, emissiveIntensity: 1.4, roughness: 0.3 })); sight.position.set(0.56, 0.73, -0.16); g.add(sight);
       const muzzle = new THREE.Object3D(); muzzle.position.set(0, 1.18, -0.96); g.add(muzzle); g.userData.muzzle = muzzle;
       return g;
+    }
+    function makeLightTower() {
+      const g = new THREE.Group();
+      cyl(g, [0.66, 0.78, 0.2, 16], [0, 0.12, 0], 0x3b423e);
+      for (const side of [-1, 1]) {
+        beam(g, new THREE.Vector3(side * 0.38, 0.18, 0.26), new THREE.Vector3(side * 0.16, 2.05, 0), 0.055, 0x6e786f);
+        beam(g, new THREE.Vector3(side * 0.38, 0.18, -0.26), new THREE.Vector3(side * 0.16, 2.05, 0), 0.055, 0x6e786f);
+      }
+      for (const y of [0.7, 1.25, 1.8]) beam(g, new THREE.Vector3(-0.28, y, 0), new THREE.Vector3(0.28, y, 0), 0.035, 0x59645d);
+      const head = new THREE.Group(); head.position.y = 2.12; g.add(head); g.userData.scanRig = head;
+      cyl(head, [0.32, 0.38, 0.16, 14], [0, 0, 0], 0x525b56);
+      for (const side of [-1, 1]) {
+        const housing = box(head, [0.42, 0.28, 0.5], [side * 0.34, 0.02, -0.23], 0x444c48, 0.36); housing.rotation.x = -0.32;
+        const lens = new THREE.Mesh(new THREE.CircleGeometry(0.14, 16), new THREE.MeshBasicMaterial({ color: 0xfff3b0 })); lens.position.set(side * 0.34, -0.055, -0.49); lens.rotation.x = -0.32; head.add(lens);
+        const searchlight = new THREE.SpotLight(0xffed9a, 7.5, 11, Math.PI / 5.5, 0.62, 1.1); searchlight.position.set(side * 0.34, 0, -0.35);
+        const target = new THREE.Object3D(); target.position.set(side * 2.8, -2.4, -4.2); head.add(target); searchlight.target = target; head.add(searchlight);
+      }
+      const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 7), new THREE.MeshStandardMaterial({ color: 0xfff5bb, emissive: 0xffd85a, emissiveIntensity: 2.8, roughness: 0.2 })); beacon.position.y = 0.34; head.add(beacon);
+      const halo = new THREE.PointLight(0xffe795, 2.8, 8.5); halo.position.y = 0.2; head.add(halo);
+      shadowify(g); return g;
     }
     function addWallStairs(g: THREE.Group, top = 0.72) {
       const stepCount = 4;
@@ -359,10 +402,10 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, onBarracksSel
       const g = new THREE.Group();
       const bodyRig = new THREE.Group(); g.add(bodyRig);
       const legs: THREE.Group[] = [], legPhases: number[] = [], tails: THREE.Group[] = [];
-      const brute = kind === "brute", spitter = kind === "spitter", razortail = kind === "razortail", stalker = kind === "stalker";
-      const shellColor = brute ? 0x673832 : spitter ? 0x28654b : razortail ? 0x57305f : stalker ? 0x27536b : 0x334d42;
-      const skinColor = brute ? 0x2c1c1b : spitter ? 0x172e25 : razortail ? 0x29162f : stalker ? 0x102832 : 0x192a24;
-      const glowColor = spitter ? 0x63ff9f : razortail ? 0xe86bff : stalker ? 0x51dfff : 0xff503f;
+      const brute = kind === "brute", spitter = kind === "spitter", razortail = kind === "razortail", stalker = kind === "stalker", strider = kind === "strider";
+      const shellColor = brute ? 0x673832 : spitter ? 0x28654b : razortail ? 0x57305f : stalker ? 0x27536b : strider ? 0x62572d : 0x334d42;
+      const skinColor = brute ? 0x2c1c1b : spitter ? 0x172e25 : razortail ? 0x29162f : stalker ? 0x102832 : strider ? 0x292614 : 0x192a24;
+      const glowColor = spitter ? 0x63ff9f : razortail ? 0xe86bff : stalker ? 0x51dfff : strider ? 0xffe56d : 0xff503f;
       const shell = new THREE.MeshStandardMaterial({ color: shellColor, roughness: 0.48, metalness: 0.18 });
       const skin = new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.82 });
       const glow = new THREE.MeshBasicMaterial({ color: glowColor });
@@ -415,6 +458,20 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, onBarracksSel
         [-0.3, 0.18, 0.48].forEach((z, i) => { addLeg(-1, z, i * Math.PI * 0.8, 0.5, 0.45, 0.05, 0.56); addLeg(1, z, Math.PI + i * Math.PI * 0.8, 0.5, 0.45, 0.05, 0.56); });
         for (const z of [-0.32, -0.05, 0.22]) addSpine(0, 1.12, z, 0.3, 0x3f9e70);
         const mouthGlow = new THREE.PointLight(0x55ff99, 1.6, 2.6); mouthGlow.position.set(0, 0.61, -0.96); bodyRig.add(mouthGlow); sac.userData.pulse = true;
+      } else if (kind === "strider") {
+        addOrb(bodyRig, 0.32, [0, 1.18, 0.12], [0.72, 0.44, 1.35], shell);
+        addOrb(bodyRig, 0.22, [0, 1.15, -0.42], [0.92, 0.55, 1.08], skin);
+        addPlate([0, 1.38, 0.08], [0.68, 0.2, 1.08], 0x80723a);
+        for (const side of [-1, 1]) {
+          addEye(side * 0.085, 1.18, -0.65, 0.04);
+          addLeg(side, -0.24, side < 0 ? 0 : Math.PI, 0.78, 0.68, 0.026, 1.08);
+          addLeg(side, 0.12, side < 0 ? Math.PI * 0.66 : Math.PI * 1.66, 0.84, 0.72, 0.024, 1.12);
+          addLeg(side, 0.42, side < 0 ? Math.PI * 1.32 : Math.PI * 0.32, 0.75, 0.65, 0.022, 1.04);
+        }
+        beam(bodyRig, new THREE.Vector3(0, 1.16, -0.48), new THREE.Vector3(0, 1.17, -1.12), 0.045, 0x282719);
+        const emitter = new THREE.Mesh(new THREE.SphereGeometry(0.085, 10, 7), glow); emitter.position.set(0, 1.17, -1.16); bodyRig.add(emitter);
+        const emitterLight = new THREE.PointLight(0xffe56d, 1.5, 2.8); emitterLight.position.copy(emitter.position); bodyRig.add(emitterLight);
+        [-0.05, 0.18, 0.38].forEach((z, i) => addSpine(0, 1.58 - i * 0.025, z, 0.18 - i * 0.018, 0xa08d43));
       } else if (kind === "stalker") {
         addOrb(bodyRig, 0.31, [0, 0.34, 0.14], [0.66, 0.42, 1.55], shell);
         addOrb(bodyRig, 0.2, [0, 0.31, -0.45], [0.82, 0.48, 1.12], skin);
@@ -457,7 +514,7 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, onBarracksSel
         for (const side of [-1, 1]) addOrb(bodyRig, 0.25, [side * 0.6, 1.12, -0.2], [1.2, 0.7, 1], shell);
       }
 
-      const classScale = brute ? 1.42 : spitter ? 1.08 : razortail ? 1.18 : stalker ? 0.62 : 0.82;
+      const classScale = brute ? 0.9 : spitter ? 0.68 : razortail ? 0.74 : strider ? 0.72 : stalker ? 0.4 : 0.52;
       g.scale.setScalar(classScale * (0.94 + Math.random() * 0.12));
       g.userData.legs = legs; g.userData.legPhases = legPhases; g.userData.tails = tails; g.userData.bodyRig = bodyRig; g.userData.kind = kind;
       shadowify(g); return g;
@@ -473,13 +530,17 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, onBarracksSel
       shadowify(g); return g;
     }
 
-    const baseCell = { x: 1, y: 16 }, spawnCell = { x: 23, y: 1 };
+    const baseCell = { x: 1, y: 16 }, spawnCells: Cell[] = [{ x: 23, y: 1 }, { x: 23, y: 16 }, { x: 11, y: 0 }];
     const base = makeBase(); base.position.copy(worldPos(baseCell.x, baseCell.y)); base.rotation.y = 0.55; world.add(base);
-    const spawnBeacon = new THREE.Group();
-    const portal = new THREE.Mesh(new THREE.TorusGeometry(0.72, 0.08, 10, 30), new THREE.MeshStandardMaterial({ color: 0x6f1827, emissive: 0x7f0d26, emissiveIntensity: 2 })); portal.rotation.x = Math.PI / 2; portal.position.y = 0.18; spawnBeacon.add(portal);
-    const portalLight = new THREE.PointLight(0xff234c, 3, 7); portalLight.position.y = 0.35; spawnBeacon.add(portalLight); spawnBeacon.position.copy(worldPos(spawnCell.x, spawnCell.y)); world.add(spawnBeacon);
+    const spawnBeacons = spawnCells.map((cell, index) => {
+      const group = new THREE.Group();
+      const portal = new THREE.Mesh(new THREE.TorusGeometry(0.72, 0.08, 10, 30), new THREE.MeshStandardMaterial({ color: 0x6f1827, emissive: 0x7f0d26, emissiveIntensity: 2 })); portal.rotation.x = Math.PI / 2; portal.position.y = 0.18; group.add(portal);
+      const inner = new THREE.Mesh(new THREE.RingGeometry(0.32, 0.52, 26), new THREE.MeshBasicMaterial({ color: 0xff3157, transparent: true, opacity: 0.24, side: THREE.DoubleSide })); inner.rotation.x = -Math.PI / 2; inner.position.y = 0.12; group.add(inner);
+      const light = new THREE.PointLight(0xff234c, 3, 7); light.position.y = 0.35; group.add(light); group.position.copy(worldPos(cell.x, cell.y)); world.add(group);
+      return { group, portal, inner, light, phase: index * Math.PI * 0.67 };
+    });
 
-    const STRUCTURE_HP: Record<AssetKey, number> = { rifle: 190, sentry: 280, flame: 245, railgun: 310, howitzer: 300, missile: 340, wall: 600, bastion: 1050, wire: 180, mine: 45, barracks: 500 };
+    const STRUCTURE_HP: Record<AssetKey, number> = { rifle: 190, sentry: 280, flame: 245, laser: 275, railgun: 310, howitzer: 300, missile: 340, light: 230, wall: 600, bastion: 1050, wire: 180, mine: 45, barracks: 500 };
     function attachHealthBar(group: THREE.Group, y = 1.75) {
       // Health remains part of the combat simulation, but floating bars are
       // intentionally disabled because they obscure the battlefield.
@@ -509,7 +570,7 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, onBarracksSel
       const bar = group.userData.healthBar as THREE.Group | undefined; if (bar) world.remove(bar); (group.userData.tierTexture as THREE.CanvasTexture | undefined)?.dispose(); group.userData.healthBar = undefined; group.userData.healthFill = undefined; group.userData.tierBadge = undefined; group.userData.tierTexture = undefined; group.userData.tierCanvas = undefined;
     }
     let credits = 750, integrity = 100, wave = 0, kills = 0, active = false, gameOver = false, victory = false;
-    let spawnLeft = 0, spawnTimer = 0, nextId = 1, elapsed = 0, lastHud = -1;
+    let spawnLeft = 0, spawnTimer = 0, assaultFront = 0, nextId = 1, elapsed = 0, lastHud = -1;
     let structures: Structure[] = [], enemies: Enemy[] = [], marines: Marine[] = [], bullets: Bullet[] = [], hostileProjectiles: HostileProjectile[] = [], particles: Particle[] = [];
     const selectedMarines = new Set<number>();
     const selectedEmplacements = new Set<number>();
@@ -519,7 +580,35 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, onBarracksSel
     const isWall = (s: Structure) => s.kind === "wall" || s.kind === "bastion";
     const isPathBlocking = (s: Structure) => s.kind !== "mine" && s.kind !== "wire" && !s.mountedOn;
     const blocked = () => new Set(structures.filter(isPathBlocking).map(s => keyOf(Math.round(s.x), Math.round(s.y))));
+    const topWallAt = (x: number, y: number) => structures.filter(s => isWall(s) && s.x === x && s.y === y).sort((a, b) => b.stackLevel - a.stackLevel)[0];
+    const wallTopLift = (wall: Structure) => (wall.stackLevel + 1) * WALL_STACK_HEIGHT;
+    const blockedForEnemy = (kind: AlienKind) => new Set(structures.filter(s => isPathBlocking(s) && (!WALL_CLIMBERS.has(kind) || !isWall(s))).map(s => keyOf(Math.round(s.x), Math.round(s.y))));
     const terrainSpeedMultiplier = (from: Cell, to: Cell) => clamp(1 - (heights[to.y][to.x] - heights[from.y][from.x]) * 1.45, 0.55, 1.45);
+    let visionSources: Array<{ x: number; y: number; radius: number }> = [], fogTimer = 0;
+    function rebuildVision() {
+      visionSources = [{ x: baseCell.x, y: baseCell.y, radius: 4.2 }];
+      marines.forEach(m => visionSources.push({ x: m.x, y: m.y, radius: 3.15 }));
+      structures.forEach(s => {
+        if (s.kind === "light") visionSources.push({ x: s.x, y: s.y, radius: 7.2 });
+        else if (isCombatStructure(s)) visionSources.push({ x: s.x, y: s.y, radius: 3.7 + (s.level - 1) * 0.35 });
+        else if (s.kind === "barracks") visionSources.push({ x: s.x, y: s.y, radius: 3.2 });
+      });
+    }
+    function visibilityStrength(x: number, y: number) {
+      let strength = 0;
+      for (const source of visionSources) {
+        const distance = Math.hypot(source.x - x, source.y - y);
+        strength = Math.max(strength, clamp((source.radius - distance) / 1.35, 0, 1));
+      }
+      return strength;
+    }
+    const isRevealed = (x: number, y: number) => visionSources.some(source => Math.hypot(source.x - x, source.y - y) <= source.radius);
+    function updateFogOfWar(dt: number) {
+      fogTimer -= dt; if (fogTimer > 0) return; fogTimer = 0.1; rebuildVision();
+      fogTiles.forEach(tile => { const strength = visibilityStrength(tile.x, tile.y); tile.material.opacity = 0.9 * (1 - strength); tile.mesh.visible = tile.material.opacity > 0.025; });
+      enemies.forEach(enemy => { enemy.group.visible = isRevealed(enemy.x, enemy.y); });
+      hostileProjectiles.forEach(shot => { shot.group.visible = isRevealed((shot.to.x / TILE) + (GRID_W - 1) / 2, (shot.to.z / TILE) + (GRID_H - 1) / 2); });
+    }
     function findPathTo(sx: number, sy: number, target: Cell, extra?: Cell, blockedCells?: Set<string>): Cell[] {
       const ban = blockedCells ? new Set(blockedCells) : blocked(); if (extra) ban.add(keyOf(extra.x, extra.y));
       const start = { x: clamp(Math.round(sx), 0, GRID_W - 1), y: clamp(Math.round(sy), 0, GRID_H - 1) };
@@ -547,7 +636,6 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, onBarracksSel
       while (k) { const [x, y] = k.split(",").map(Number); out.push({ x, y }); k = prev.get(k) || ""; }
       return out.reverse();
     }
-    const findPath = (sx: number, sy: number, extra?: Cell) => findPathTo(sx, sy, baseCell, extra);
     const friendlyBlocked = () => new Set(structures.filter(s => isPathBlocking(s) && !isMobileEmplacement(s)).map(s => keyOf(Math.round(s.x), Math.round(s.y))));
     const wallStairs = (wall: Structure) => [{ x: wall.x + 1, y: wall.y }, { x: wall.x - 1, y: wall.y }]
       .filter(cell => cell.x >= 0 && cell.y >= 0 && cell.x < GRID_W && cell.y < GRID_H);
@@ -566,7 +654,7 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, onBarracksSel
         const route: MoveWaypoint[] = [{ x: unit.x, y: unit.y, lift: unit.lift }];
         if (currentWall) route.push({ ...departure, lift: 0 });
         route.push(...middle.slice(currentWall ? 1 : 0).map(cell => ({ ...cell, lift: 0 })));
-        if (wall) route.push({ x: wall.x, y: wall.y + wallOffset, lift: 0.62 });
+        if (wall) route.push({ x: wall.x, y: wall.y + wallOffset, lift: wallTopLift(wall) });
         else if (Math.hypot(route[route.length - 1].x - destination.x, route[route.length - 1].y - destination.y) > 0.01) route.push({ ...destination, lift: 0 });
         if (!best.length || route.length < best.length) best = route;
       }
@@ -626,39 +714,62 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, onBarracksSel
       setHealthVisual(s.group, s.hp, s.maxHp); updateTierBadge(s.group, s.level); addUpgradeVisual(s); publishStructureSelection(); emitHud(true);
       burst(s.group.position.clone().add(new THREE.Vector3(0, 0.8, 0)), s.level === 3 ? 0xffd36a : 0x62e8ff, 14); message(`${ASSETS[s.kind].name.toUpperCase()} UPGRADED TO TIER ${s.level}`);
     }
-    function addStructure(kind: AssetKey, x: number, y: number, free = false, mountedOn?: number) {
-      const group = kind === "rifle" ? makeRifleTeam() : kind === "sentry" ? makeSentry() : kind === "flame" ? makeFlameTurret() : kind === "railgun" ? makeRailgun() : kind === "howitzer" ? makeHowitzer() : kind === "missile" ? makeMissileBattery() : kind === "wall" ? makeWall() : kind === "bastion" ? makeBastion() : kind === "wire" ? makeWire() : kind === "mine" ? makeMine() : makeBarracks();
-      const mountCount = mountedOn ? structures.filter(s => s.mountedOn === mountedOn).length : 0; group.position.copy(worldPos(x + (mountedOn ? (mountCount - 1) * 0.26 : 0), y, mountedOn ? 0.62 : 0)); group.rotation.y = kind === "wall" || kind === "bastion" || kind === "wire" ? Math.PI / 2 : -0.35; group.scale.multiplyScalar(mountedOn ? 0.58 : 0.72); attachHealthBar(group, kind === "wall" || kind === "bastion" ? 1.25 : kind === "barracks" ? 2 : 1.65); world.add(group);
+    function addStructure(kind: AssetKey, x: number, y: number, free = false, mountedOn?: number, stackLevel = 0) {
+      const group = kind === "rifle" ? makeRifleTeam() : kind === "sentry" ? makeSentry() : kind === "flame" ? makeFlameTurret() : kind === "laser" ? makeLaserTower() : kind === "railgun" ? makeRailgun() : kind === "howitzer" ? makeHowitzer() : kind === "missile" ? makeMissileBattery() : kind === "light" ? makeLightTower() : kind === "wall" ? makeWall() : kind === "bastion" ? makeBastion() : kind === "wire" ? makeWire() : kind === "mine" ? makeMine() : makeBarracks();
+      const mountedWall = mountedOn ? structures.find(s => s.id === mountedOn && isWall(s)) : undefined;
+      const mountCount = mountedOn ? structures.filter(s => s.mountedOn === mountedOn).length : 0;
+      const lift = mountedWall ? wallTopLift(mountedWall) : kind === "wall" || kind === "bastion" ? stackLevel * WALL_STACK_HEIGHT : 0;
+      group.position.copy(worldPos(x + (mountedOn ? (mountCount - 1) * 0.26 : 0), y, lift)); group.rotation.y = kind === "wall" || kind === "bastion" || kind === "wire" ? Math.PI / 2 : -0.35; group.scale.multiplyScalar(mountedOn ? 0.58 : 0.72); attachHealthBar(group, kind === "wall" || kind === "bastion" ? 1.25 : kind === "barracks" ? 2 : 1.65); world.add(group);
       if (kind in TURRET_STATS) {
         const radius = kind === "howitzer" || kind === "missile" || kind === "railgun" ? 1.04 : 0.9;
         const ring = new THREE.Mesh(new THREE.RingGeometry(radius * 0.82, radius, 28), new THREE.MeshBasicMaterial({ color: 0x7dff92, transparent: true, opacity: 0.95, side: THREE.DoubleSide })); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.035; ring.visible = false; group.add(ring); group.userData.selectionRing = ring;
         updateTierBadge(group, 1);
       }
-      const lift = mountedOn ? 0.62 : 0, maxHp = STRUCTURE_HP[kind]; structures.push({ id: nextId++, kind, level: 1, x, y, targetX: x, targetY: y, hp: maxHp, maxHp, mountedOn, movePath: [], pathIndex: 0, lift, group, cooldown: Math.random(), spawnTimer: 0 });
+      const maxHp = STRUCTURE_HP[kind], structure = { id: nextId++, kind, level: 1, x, y, targetX: x, targetY: y, hp: maxHp, maxHp, mountedOn, movePath: [], pathIndex: 0, lift, stackLevel, group, cooldown: Math.random(), spawnTimer: 0 } satisfies Structure; structures.push(structure);
       if (!free) credits -= ASSETS[kind].cost;
+      return structure;
     }
     addStructure("barracks", 3, 14, true); addStructure("rifle", 6, 14, true); addStructure("wall", 4, 15, true); addStructure("howitzer", 8, 15, true); addStructure("wire", 6, 16, true); spawnMarine("rifleman", 3, 13); spawnMarine("medic", 4, 14);
+
+    function transferWallTop(from: Structure, to: Structure) {
+      const lift = wallTopLift(to);
+      const retarget = (unit: Marine | Structure) => {
+        unit.mountTarget = to.id;
+        const destination = unit.movePath[unit.movePath.length - 1];
+        if (destination) destination.lift = lift;
+      };
+      structures.filter(s => s.mountedOn === from.id).forEach(s => { s.mountedOn = to.id; s.lift = lift; });
+      structures.filter(s => s.mountTarget === from.id).forEach(retarget);
+      marines.filter(m => m.mountedOn === from.id).forEach(m => { m.mountedOn = to.id; m.lift = lift; });
+      marines.filter(m => m.mountTarget === from.id).forEach(retarget);
+    }
 
     function tryPlace(x: number, y: number) {
       const kind = selectedRef.current, asset = ASSETS[kind];
       if (gameOver) return;
       if (credits < asset.cost) return message("INSUFFICIENT COMMAND CREDITS");
-      const wall = structures.find(s => isWall(s) && s.x === x && s.y === y);
+      const wall = topWallAt(x, y), stackingWall = !!wall && (kind === "wall" || kind === "bastion");
       const canMount = !!wall && kind in TURRET_STATS;
-      if ((x === baseCell.x && y === baseCell.y) || (x === spawnCell.x && y === spawnCell.y) || (structures.some(s => Math.hypot(s.x - x, s.y - y) < 0.72) && !canMount)) return message(wall ? "WALL POSITION ALREADY OCCUPIED" : "DEPLOYMENT ZONE OCCUPIED");
-      if (wall && !canMount) return message("ONLY TURRETS CAN MOUNT WALLS");
-      if (kind !== "mine" && kind !== "wire" && !canMount && !findPath(spawnCell.x, spawnCell.y, { x, y }).length) return message("FORTIFICATION WOULD SEAL THE EVACUATION CORRIDOR");
-      addStructure(kind, x, y, false, canMount ? wall?.id : undefined);
+      const occupied = structures.some(s => Math.hypot(s.x - x, s.y - y) < 0.72 && !s.mountedOn && !(stackingWall && isWall(s)));
+      if ((x === baseCell.x && y === baseCell.y) || spawnCells.some(cell => x === cell.x && y === cell.y)) return message("DEPLOYMENT ZONE OCCUPIED");
+      if (occupied && !canMount && !stackingWall) return message(wall ? "ONLY TURRETS OR MORE WALLS CAN USE THIS POSITION" : "DEPLOYMENT ZONE OCCUPIED");
+      const stackLevel = stackingWall ? wall.stackLevel + 1 : 0;
+      const placed = addStructure(kind, x, y, false, canMount ? wall.id : undefined, stackLevel);
+      if (stackingWall) transferWallTop(wall, placed);
       if (kind !== "mine" && kind !== "wire" && !canMount) enemies.forEach(e => { e.pathTimer = 0; e.index = 0; });
-      message(`${asset.name.toUpperCase()} ${canMount ? "MOUNTED ON WALL" : "DEPLOYED"} · ELEVATION ${Math.round((heights[y][x] + (canMount ? 0.62 : 0)) * 100)}M`); emitHud(true);
+      const action = stackingWall ? `STACKED · WALL LEVEL ${stackLevel + 1}` : canMount ? "MOUNTED ON WALL" : "DEPLOYED";
+      message(`${asset.name.toUpperCase()} ${action} · ELEVATION ${Math.round((heights[y][x] + placed.lift) * 100)}M`); emitHud(true);
     }
     function destroyStructure(s: Structure, salvaged = false) {
       if (!structures.includes(s)) return;
+      const collapsingWalls = isWall(s) ? structures.filter(other => isWall(other) && other.x === s.x && other.y === s.y && other.stackLevel >= s.stackLevel) : [];
+      const collapsingWallIds = new Set(collapsingWalls.map(wall => wall.id));
       if (isWall(s)) {
-        structures.filter(other => other.mountedOn === s.id).forEach(other => { selectedEmplacements.delete(other.id); burst(other.group.position, 0xff794f, 10); removeHealthBar(other.group); world.remove(other.group); structures.splice(structures.indexOf(other), 1); });
-        structures.filter(other => other.mountTarget === s.id).forEach(other => { other.mountTarget = undefined; other.movePath = []; other.pathIndex = 0; other.targetX = other.x; other.targetY = other.y; });
-        marines.filter(m => m.mountedOn === s.id).forEach(m => { m.mountedOn = undefined; m.lift = 0; m.hp = Math.max(0, m.hp - 35); setHealthVisual(m.group, m.hp, m.maxHp); m.targetX = clamp(m.x + 1, 0, GRID_W - 1); m.targetY = m.y; m.movePath = []; m.pathIndex = 0; });
-        marines.filter(m => m.mountTarget === s.id).forEach(m => { m.mountTarget = undefined; m.movePath = []; m.pathIndex = 0; m.targetX = m.x; m.targetY = m.y; });
+        structures.filter(other => other.mountedOn !== undefined && collapsingWallIds.has(other.mountedOn)).forEach(other => { selectedEmplacements.delete(other.id); burst(other.group.position, 0xff794f, 10); removeHealthBar(other.group); world.remove(other.group); structures.splice(structures.indexOf(other), 1); });
+        structures.filter(other => other.mountTarget !== undefined && collapsingWallIds.has(other.mountTarget)).forEach(other => { other.mountTarget = undefined; other.movePath = []; other.pathIndex = 0; other.targetX = other.x; other.targetY = other.y; });
+        marines.filter(m => m.mountedOn !== undefined && collapsingWallIds.has(m.mountedOn)).forEach(m => { m.mountedOn = undefined; m.lift = 0; m.hp = Math.max(0, m.hp - 35); setHealthVisual(m.group, m.hp, m.maxHp); m.targetX = clamp(m.x + 1, 0, GRID_W - 1); m.targetY = m.y; m.movePath = []; m.pathIndex = 0; });
+        marines.filter(m => m.mountTarget !== undefined && collapsingWallIds.has(m.mountTarget)).forEach(m => { m.mountTarget = undefined; m.movePath = []; m.pathIndex = 0; m.targetX = m.x; m.targetY = m.y; });
+        collapsingWalls.filter(wall => wall !== s).forEach(wall => { burst(wall.group.position, 0xff794f, 7); removeHealthBar(wall.group); world.remove(wall.group); structures.splice(structures.indexOf(wall), 1); });
       }
       selectedEmplacements.delete(s.id);
       if (selectedBarracksId === s.id) { selectedBarracksId = null; publishBarracksSelection(); }
@@ -669,15 +780,15 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, onBarracksSel
       enemies.forEach(e => { e.pathTimer = 0; e.index = 0; });
     }
     function removeStructureAt(x: number, y: number) {
-      const s = structures.filter(item => Math.hypot(item.x - x, item.y - y) < 0.72).sort((a, b) => Number(!!b.mountedOn) - Number(!!a.mountedOn))[0]; if (!s) return;
+      const s = structures.filter(item => Math.hypot(item.x - x, item.y - y) < 0.72).sort((a, b) => Number(!!b.mountedOn) - Number(!!a.mountedOn) || b.stackLevel - a.stackLevel)[0]; if (!s) return;
       destroyStructure(s, true);
       message(`${ASSETS[s.kind].name.toUpperCase()} SALVAGED · +${Math.floor(ASSETS[s.kind].cost * 0.6)} CREDITS`); emitHud(true);
     }
     function spawnMarine(kind: MarineKind, x: number, y: number, mountedOn?: number) {
-      const stats = MARINE_STATS[kind], m = makeSoldier(1.12, kind); m.position.copy(worldPos(x, y, mountedOn ? 0.62 : 0));
+      const stats = MARINE_STATS[kind], mountedWall = mountedOn ? structures.find(s => s.id === mountedOn && isWall(s)) : undefined, lift = mountedWall ? wallTopLift(mountedWall) : 0;
+      const m = makeSoldier(1.12, kind); m.position.copy(worldPos(x, y, lift));
       const ring = new THREE.Mesh(new THREE.RingGeometry(0.28, 0.34, 24), new THREE.MeshBasicMaterial({ color: new THREE.Color(stats.color), transparent: true, opacity: 0.95, side: THREE.DoubleSide })); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.025; ring.visible = false; m.add(ring); m.userData.selectionRing = ring;
       attachHealthBar(m, 1.22); world.add(m); const id = nextId++;
-      const lift = mountedOn ? 0.62 : 0;
       marines.push({ id, kind, x, y, targetX: x, targetY: y, vx: 0, vy: 0, hp: stats.hp, maxHp: stats.hp, cooldown: 0, supportCooldown: 0, mountedOn, movePath: [], pathIndex: 0, lift, group: m }); return id;
     }
     function refreshSelection() {
@@ -704,7 +815,7 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, onBarracksSel
       ]; if (!squad.length) return false;
       const cx = squad.reduce((sum, member) => sum + member.unit.x, 0) / squad.length, cy = squad.reduce((sum, member) => sum + member.unit.y, 0) / squad.length;
       const dx = x - cx, dy = y - cy, len = Math.hypot(dx, dy) || 1, px = -dy / len, py = dx / len; const spacing = 0.72;
-      const wall = structures.find(s => isWall(s) && s.x === x && s.y === y);
+      const wall = topWallAt(x, y);
       let routed = 0;
       squad.forEach((member, i) => {
         const offset = (i - (squad.length - 1) / 2) * spacing;
@@ -726,24 +837,36 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, onBarracksSel
       if (barracks.spawnTimer > 0) return message(`BARRACKS TRAINING · READY IN ${Math.ceil(barracks.spawnTimer)}S`);
       credits -= stats.cost; const n = marines.length; spawnMarine(kind, clamp(barracks.x + 0.6 + (n % 3) * 0.28, 0, GRID_W - 1), clamp(barracks.y - 0.7 + (n % 2) * 0.45, 0, GRID_H - 1)); barracks.spawnTimer = stats.train; lastBarracksSecond = Math.ceil(barracks.spawnTimer); publishBarracksSelection(); message(`${stats.name.toUpperCase()} TRAINED · DRAG A BOX TO ADD THEM TO A SQUAD`); emitHud(true);
     }
-    function spawnEnemy() {
+    const assaultOffsets: Cell[] = [{ x: 0, y: 0 }, { x: 0.24, y: 0.18 }, { x: -0.24, y: 0.18 }, { x: 0.18, y: -0.24 }];
+    function spawnEnemy(spawnCell: Cell, formationIndex = 0) {
       const weights: Array<[AlienKind, number]> = [
         ["drone", Math.max(30, 82 - wave * 2)],
         ["spitter", wave >= 3 ? 18 + wave * 0.8 : 0],
         ["stalker", wave >= 5 ? 8 + wave * 0.45 : 0],
         ["brute", wave >= 7 ? 7 + wave * 0.55 : 0],
+        ["strider", wave >= 8 ? 7 + wave * 0.42 : 0],
         ["razortail", wave >= 10 ? 6 + wave * 0.5 : 0],
       ];
       let roll = Math.random() * weights.reduce((sum, [, weight]) => sum + weight, 0), kind: AlienKind = "drone";
       for (const [candidate, weight] of weights) { roll -= weight; if (roll <= 0) { kind = candidate; break; } }
-      const stats = ENEMY_STATS[kind], scale = 1 + wave * 0.055, hp = stats.hp * scale;
-      const group = makeAlien(kind), p = worldPos(spawnCell.x, spawnCell.y); group.position.copy(p); attachHealthBar(group, stats.barHeight); world.add(group);
-      enemies.push({ id: nextId++, kind, x: spawnCell.x, y: spawnCell.y, hp, maxHp: hp, speed: stats.speed * ALIEN_SPEED_MULTIPLIER * (1 + wave * 0.008), damage: stats.damage * (1 + wave * 0.022), reward: stats.reward, path: [], index: 0, group, hitFlash: 0, attackCooldown: 0, pathTimer: 0, targetId: null, targetType: "base" });
+      const stats = ENEMY_STATS[kind], scale = 1 + wave * 0.055, hp = stats.hp * scale, offset = assaultOffsets[formationIndex % assaultOffsets.length];
+      const spawnX = clamp(spawnCell.x + offset.x, 0, GRID_W - 1), spawnY = clamp(spawnCell.y + offset.y, 0, GRID_H - 1);
+      const group = makeAlien(kind), p = worldPos(spawnX, spawnY); group.position.copy(p); group.rotation.y = (Math.random() - 0.5) * 0.7; attachHealthBar(group, stats.barHeight); world.add(group);
+      enemies.push({ id: nextId++, kind, x: spawnX, y: spawnY, hp, maxHp: hp, speed: stats.speed * ALIEN_SPEED_MULTIPLIER * (1 + wave * 0.008), damage: stats.damage * (1 + wave * 0.022), reward: stats.reward, path: [], index: 0, group, hitFlash: 0, attackCooldown: Math.random() * 0.35, pathTimer: 0, targetId: null, targetType: "base" });
+    }
+    function spawnAssaultGroup() {
+      const groupSize = Math.min(spawnLeft, Math.min(8, 4 + Math.floor(wave / 4)));
+      for (let i = 0; i < groupSize; i++) {
+        const frontIndex = (assaultFront + i) % spawnCells.length, formationIndex = Math.floor(i / spawnCells.length);
+        spawnEnemy(spawnCells[frontIndex], formationIndex);
+      }
+      spawnLeft -= groupSize; assaultFront = (assaultFront + 1 + Math.floor(Math.random() * 2)) % spawnCells.length;
+      const activeFronts = Math.min(spawnCells.length, groupSize); message(`CONTACT · ${groupSize}-ALIEN ASSAULT GROUP ACROSS ${activeFronts} FRONTS`);
     }
     function startWave() {
       if (active || gameOver) return;
       if (wave >= MAX_WAVES) { victory = true; gameOver = true; message("SECTOR SECURED · ALL WAVES REPELLED"); emitHud(true); return; }
-      wave++; active = true; spawnLeft = 14 + Math.floor(wave * 2.35); spawnTimer = 0; message(`WAVE ${String(wave).padStart(2, "0")} INBOUND · ${spawnLeft} LIFE SIGNS`); emitHud(true);
+      wave++; active = true; spawnLeft = 14 + Math.floor(wave * 2.35); spawnTimer = 0.45; assaultFront = Math.floor(Math.random() * spawnCells.length); message(`WAVE ${String(wave).padStart(2, "0")} INBOUND · ${spawnLeft} LIFE SIGNS · THREE FRONTS`); emitHud(true);
     }
     function burst(at: THREE.Vector3, color: number, count = 10) {
       for (let i = 0; i < count; i++) {
@@ -752,7 +875,7 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, onBarracksSel
       }
     }
     function hostileStrike(kind: AlienKind, from: THREE.Vector3, to: THREE.Vector3, targetType: "marine" | "structure", targetId: number, damage: number) {
-      const group = new THREE.Group(), startHeight = kind === "brute" ? 1.28 : kind === "razortail" ? 1.05 : kind === "spitter" ? 1.05 : kind === "stalker" ? 0.38 : 0.62;
+      const group = new THREE.Group(), startHeight = kind === "brute" ? 0.85 : kind === "razortail" ? 0.68 : kind === "spitter" ? 0.66 : kind === "strider" ? 0.92 : kind === "stalker" ? 0.25 : 0.38;
       const start = from.clone().add(new THREE.Vector3(0, startHeight, 0)), end = to.clone().add(new THREE.Vector3(0, 0.58, 0));
       let speed = 7.5, arcHeight = 0.08, color = 0xff9857, impactCount = 5;
       if (kind === "drone") {
@@ -771,6 +894,11 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, onBarracksSel
         speed = 4.1; arcHeight = 0.22; color = 0xe66bff; impactCount = 13;
         const barb = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.72, 7), new THREE.MeshStandardMaterial({ color: 0xd58ce0, emissive: 0x4f145d, emissiveIntensity: 1.25, roughness: 0.36, metalness: 0.28 }));
         barb.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), end.clone().sub(start).normalize()); barb.castShadow = true; group.add(barb);
+      } else if (kind === "strider") {
+        speed = 5.8; arcHeight = 0.12; color = 0xffe56d; impactCount = 9;
+        const lance = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.72, 6), new THREE.MeshStandardMaterial({ color: 0xffed8a, emissive: 0x8e741b, emissiveIntensity: 2.4, roughness: 0.18 }));
+        lance.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), end.clone().sub(start).normalize()); group.add(lance);
+        const light = new THREE.PointLight(color, 1.8, 3.2); group.add(light);
       } else {
         speed = 10.5; arcHeight = 0.02; color = 0x58ddff; impactCount = 4;
         const slash = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.38, 5), new THREE.MeshBasicMaterial({ color })); slash.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), end.clone().sub(start).normalize()); group.add(slash);
@@ -781,10 +909,18 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, onBarracksSel
       const mesh = new THREE.Mesh(new THREE.SphereGeometry(heavy ? 0.11 : 0.045, 7, 5), new THREE.MeshBasicMaterial({ color })); mesh.position.copy(from); world.add(mesh);
       bullets.push({ mesh, from: from.clone(), to: target.group.position.clone().add(new THREE.Vector3(0, 0.42, 0)), t: 0, speed: heavy ? 1.35 : 4.8, target: target.id, damage, splash, arcHeight, color });
     }
+    function laserStrike(from: THREE.Vector3, target: Enemy, damage: number, color: number) {
+      const to = target.group.position.clone().add(new THREE.Vector3(0, 0.48, 0)), direction = to.clone().sub(from), length = direction.length(), midpoint = from.clone().add(to).multiplyScalar(0.5);
+      for (const [radius, opacity] of [[0.035, 1], [0.11, 0.24]] as const) {
+        const trace = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, length, 8), new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending }));
+        trace.position.copy(midpoint); trace.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize()); trace.renderOrder = 18; world.add(trace); particles.push({ mesh: trace, velocity: new THREE.Vector3(), life: 0.14, maxLife: 0.14 });
+      }
+      damageEnemy(target, damage); burst(to, color, 7);
+    }
     function damageEnemy(e: Enemy, amount: number) { e.hp = clamp(e.hp - Math.max(0, amount), 0, e.maxHp); e.hitFlash = 0.09; setHealthVisual(e.group, e.hp, e.maxHp); }
     function restart() {
       [...structures, ...enemies, ...marines].forEach(o => { removeHealthBar(o.group); world.remove(o.group); }); bullets.forEach(b => world.remove(b.mesh)); hostileProjectiles.forEach(p => world.remove(p.group)); particles.forEach(p => world.remove(p.mesh));
-      structures = []; enemies = []; marines = []; bullets = []; hostileProjectiles = []; particles = []; selectedMarines.clear(); selectedEmplacements.clear(); selectedBarracksId = null; callbacks.current.onUnitSelected(null); callbacks.current.onBarracksSelected(null); credits = 750; integrity = 100; wave = 0; kills = 0; active = false; gameOver = false; victory = false; spawnLeft = 0;
+      structures = []; enemies = []; marines = []; bullets = []; hostileProjectiles = []; particles = []; selectedMarines.clear(); selectedEmplacements.clear(); selectedBarracksId = null; callbacks.current.onUnitSelected(null); callbacks.current.onBarracksSelected(null); credits = 750; integrity = 100; wave = 0; kills = 0; active = false; gameOver = false; victory = false; spawnLeft = 0; spawnTimer = 0; assaultFront = 0;
       addStructure("barracks", 3, 14, true); addStructure("rifle", 6, 14, true); addStructure("wall", 4, 15, true); addStructure("howitzer", 8, 15, true); addStructure("wire", 6, 16, true); spawnMarine("rifleman", 3, 13); spawnMarine("medic", 4, 14); message("COMMAND SYSTEMS RESET · AWAITING DEPLOYMENT"); emitHud(true);
     }
     function rotate() {
@@ -812,7 +948,10 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, onBarracksSel
         marines.forEach(m => { const p = m.group.getWorldPosition(new THREE.Vector3()).project(camera), sx = r.left + (p.x + 1) * r.width / 2, sy = r.top + (-p.y + 1) * r.height / 2; if (sx >= minX && sx <= maxX && sy >= minY && sy <= maxY) selectedMarines.add(m.id); });
         structures.filter(isCombatStructure).forEach(s => { const p = s.group.getWorldPosition(new THREE.Vector3()).project(camera), sx = r.left + (p.x + 1) * r.width / 2, sy = r.top + (-p.y + 1) * r.height / 2; if (sx >= minX && sx <= maxX && sy >= minY && sy <= maxY) selectedEmplacements.add(s.id); }); selectedBarracksId = null; refreshSelection(); publishStructureSelection(); publishBarracksSelection(); const count = selectedMarines.size + selectedEmplacements.size; message(`${count} UNIT${count === 1 ? "" : "S"} BOX-SELECTED · RIGHT-CLICK TO FORM A LINE`); return;
       }
-      const tile = pick(e); if (!tile) return; const x = tile.userData.x, y = tile.userData.y; if (selectBarracksAt(x, y)) return; if (selectUnitAt(x, y, e.shiftKey)) { selectedBarracksId = null; publishBarracksSelection(); return; } if (!selectedMarines.size && !selectedEmplacements.size) { selectedBarracksId = null; publishBarracksSelection(); tryPlace(x, y); }
+      const tile = pick(e); if (!tile) return; const x = tile.userData.x, y = tile.userData.y;
+      const stackOrder = (selectedRef.current === "wall" || selectedRef.current === "bastion") && !!topWallAt(x, y);
+      if (stackOrder) { tryPlace(x, y); return; }
+      if (selectBarracksAt(x, y)) return; if (selectUnitAt(x, y, e.shiftKey)) { selectedBarracksId = null; publishBarracksSelection(); return; } if (!selectedMarines.size && !selectedEmplacements.size) { selectedBarracksId = null; publishBarracksSelection(); tryPlace(x, y); }
     }
     function onContext(e: MouseEvent) { e.preventDefault(); if (Math.hypot(e.clientX - rightDownX, e.clientY - rightDownY) > 6) return; const tile = pick(e as PointerEvent); if (!tile) return; if (e.shiftKey) removeStructureAt(tile.userData.x, tile.userData.y); else if (!commandFormation(tile.userData.x, tile.userData.y)) message("SELECT RIFLEMEN OR CREWED WEAPONS WITH A CLICK OR DRAG BOX FIRST"); }
     function onKey(e: KeyboardEvent) { heldKeys.add(e.key.toLowerCase()); if (e.key.toLowerCase() === "r") rotate(); if (e.key === "Escape") { selectedMarines.clear(); selectedEmplacements.clear(); selectedBarracksId = null; refreshSelection(); publishStructureSelection(); publishBarracksSelection(); } if (e.code === "Space") { e.preventDefault(); startWave(); } }
@@ -825,21 +964,36 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, onBarracksSel
     }
 
     function update(dt: number) {
-      elapsed += dt; portal.rotation.z += dt * 0.7;
+      elapsed += dt; spawnBeacons.forEach(beacon => { beacon.portal.rotation.z += dt * 0.7; beacon.inner.rotation.z -= dt * 0.42; beacon.light.intensity = 2.6 + Math.sin(elapsed * 3.2 + beacon.phase) * 0.7; });
       const forward = controls.target.clone().sub(camera.position); forward.y = 0; forward.normalize(); const right = new THREE.Vector3(-forward.z, 0, forward.x); const intent = new THREE.Vector3();
       if (heldKeys.has("w")) intent.add(forward); if (heldKeys.has("s")) intent.sub(forward); if (heldKeys.has("d")) intent.add(right); if (heldKeys.has("a")) intent.sub(right);
       if (intent.lengthSq()) cameraVelocity.addScaledVector(intent.normalize(), dt * 25); cameraVelocity.multiplyScalar(Math.exp(-dt * 5.2));
       const cameraStep = cameraVelocity.clone().multiplyScalar(dt); camera.position.add(cameraStep); controls.target.add(cameraStep); controls.target.x = clamp(controls.target.x, -15, 15); controls.target.z = clamp(controls.target.z, -11, 11);
-      if (active && spawnLeft > 0) { spawnTimer -= dt; if (spawnTimer <= 0) { spawnEnemy(); spawnLeft--; spawnTimer = Math.max(0.18, 0.82 - wave * 0.022); } }
+      if (active && spawnLeft > 0) {
+        spawnTimer -= dt;
+        if (spawnTimer <= 0) { spawnAssaultGroup(); spawnTimer = Math.max(1.15, 2.45 - wave * 0.045) + Math.random() * 0.55; }
+      }
+      updateFogOfWar(dt);
       for (const e of enemies) {
         e.hitFlash = Math.max(0, e.hitFlash - dt); e.attackCooldown -= dt; e.pathTimer -= dt;
-        const enemyStats = ENEMY_STATS[e.kind];
+        let separationX = 0, separationY = 0;
+        for (const other of enemies) {
+          if (other.id === e.id) continue;
+          const apartX = e.x - other.x, apartY = e.y - other.y, apart = Math.hypot(apartX, apartY), spacing = 0.48;
+          if (apart >= spacing) continue;
+          const force = (spacing - apart) / spacing;
+          if (apart < 0.001) { const angle = (e.id * 2.399 + other.id * 0.73) % (Math.PI * 2); separationX += Math.cos(angle) * force; separationY += Math.sin(angle) * force; }
+          else { separationX += apartX / apart * force; separationY += apartY / apart * force; }
+        }
+        const separationLength = Math.hypot(separationX, separationY);
+        if (separationLength > 0.001) { const separationStep = Math.min(0.42 * dt, separationLength * 0.08); e.x = clamp(e.x + separationX / separationLength * separationStep, 0, GRID_W - 1); e.y = clamp(e.y + separationY / separationLength * separationStep, 0, GRID_H - 1); }
+        const enemyStats = ENEMY_STATS[e.kind], climbsWalls = WALL_CLIMBERS.has(e.kind);
         const closestMarine = marines.map(m => ({ type: "marine" as const, id: m.id, x: m.x, y: m.y, group: m.group, marine: m, d: Math.hypot(m.x - e.x, m.y - e.y) })).sort((a, b) => a.d - b.d)[0];
-        const closestDefense = structures.filter(s => isWall(s) || isCombatStructure(s)).map(s => ({ type: "structure" as const, id: s.id, x: s.x, y: s.y, group: s.group, structure: s, d: Math.hypot(s.x - e.x, s.y - e.y) })).sort((a, b) => a.d - b.d)[0];
+        const closestDefense = structures.filter(s => (isPathBlocking(s) && (!climbsWalls || !isWall(s))) || isCombatStructure(s)).map(s => ({ type: "structure" as const, id: s.id, x: s.x, y: s.y, group: s.group, structure: s, d: Math.hypot(s.x - e.x, s.y - e.y) })).sort((a, b) => a.d - b.d)[0];
         const combatTarget = closestMarine && closestDefense ? (closestMarine.d <= closestDefense.d ? closestMarine : closestDefense) : closestMarine || closestDefense;
         const targetType = combatTarget?.type ?? "base", targetId = combatTarget?.id ?? null, tx = combatTarget?.x ?? baseCell.x, ty = combatTarget?.y ?? baseCell.y;
         const targetChanged = e.targetType !== targetType || e.targetId !== targetId; e.targetType = targetType; e.targetId = targetId;
-        if (targetChanged || e.pathTimer <= 0 || !e.path.length) { e.path = findPathTo(e.x, e.y, { x: tx, y: ty }); e.index = 0; e.pathTimer = targetType === "marine" ? 0.28 : 0.75; }
+        if (targetChanged || e.pathTimer <= 0 || !e.path.length) { e.path = findPathTo(e.x, e.y, { x: tx, y: ty }, undefined, blockedForEnemy(e.kind)); e.index = 0; e.pathTimer = targetType === "marine" ? 0.28 : 0.75; }
         const targetDistance = Math.hypot(tx - e.x, ty - e.y), attackRange = enemyStats.attackRange;
         const wire = structures.find(s => s.kind === "wire" && Math.hypot(s.x - e.x, s.y - e.y) < 0.95);
         let isMoving = false, isAttacking = false, movementRate = e.speed * (wire ? 0.38 : 1);
@@ -871,10 +1025,14 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, onBarracksSel
         }
         const tails = e.group.userData.tails as THREE.Group[] | undefined;
         if (tails) tails.forEach((tail, i) => { tail.rotation.y = Math.sin(gait * 0.42 + i * 0.72) * (isMoving ? 0.24 : 0.1); tail.rotation.x = Math.sin(gait * 0.34 + i * 0.85) * (isMoving ? 0.11 : 0.045); });
-        const p = worldPos(e.x, e.y); e.group.position.lerp(p, Math.min(1, dt * 12)); e.group.position.y += Math.sin(elapsed * 9 + e.id) * (e.kind === "brute" ? 0.005 : 0.01); syncHealthBar(e.group);
+        const climbingWall = climbsWalls ? structures.filter(isWall).filter(wall => Math.hypot(wall.x - e.x, wall.y - e.y) < 1.05).sort((a, b) => Math.hypot(a.x - e.x, a.y - e.y) - Math.hypot(b.x - e.x, b.y - e.y) || b.stackLevel - a.stackLevel)[0] : undefined;
+        const climbDistance = climbingWall ? Math.hypot(climbingWall.x - e.x, climbingWall.y - e.y) : Infinity;
+        const climbLift = climbingWall ? wallTopLift(climbingWall) * clamp(1 - climbDistance / 1.05, 0, 1) : 0;
+        const p = worldPos(e.x, e.y, climbLift); e.group.position.lerp(p, Math.min(1, dt * 12)); e.group.position.y += Math.sin(elapsed * 9 + e.id) * (e.kind === "brute" ? 0.005 : 0.01); syncHealthBar(e.group);
       }
       for (const s of structures) {
         s.cooldown -= dt;
+        const scanRig = s.group.userData.scanRig as THREE.Group | undefined; if (scanRig) scanRig.rotation.y += dt * 0.42;
         let isMoving = false;
         if (s.kind === "barracks") {
           s.spawnTimer = Math.max(0, s.spawnTimer - dt);
@@ -889,10 +1047,10 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, onBarracksSel
         if (isMoving) continue;
         const terrainX = clamp(Math.round(s.x), 0, GRID_W - 1), terrainY = clamp(Math.round(s.y), 0, GRID_H - 1);
         const stats = TURRET_STATS[s.kind], levelDamage = 1 + (s.level - 1) * 0.42, levelSpeed = 1 + (s.level - 1) * 0.18;
-        const range = ASSETS[s.kind].range + (s.level - 1) * 0.65 + heights[terrainY][terrainX] * 0.9; const target = enemies.filter(e => e.hp > 0 && Math.hypot(e.x - s.x, e.y - s.y) <= range).sort((a, b) => b.index - a.index)[0];
+        const range = ASSETS[s.kind].range + (s.level - 1) * 0.65 + heights[terrainY][terrainX] * 0.9; const target = enemies.filter(e => e.hp > 0 && isRevealed(e.x, e.y) && Math.hypot(e.x - s.x, e.y - s.y) <= range).sort((a, b) => b.index - a.index)[0];
         if (target) {
           turnToward(s.group, Math.atan2(-(target.x - s.x), -(target.y - s.y)), stats.turnSpeed, dt);
-          if (s.cooldown <= 0) { const muzzle = s.group.userData.muzzle as THREE.Object3D | undefined; const from = muzzle ? muzzle.getWorldPosition(new THREE.Vector3()) : s.group.position.clone().add(new THREE.Vector3(0, 1.05, 0)); fire(from, target, stats.damage * levelDamage, stats.splash, stats.color, stats.heavy, stats.arcHeight); s.cooldown = stats.cooldown / levelSpeed; }
+          if (s.cooldown <= 0) { const muzzle = s.group.userData.muzzle as THREE.Object3D | undefined; const from = muzzle ? muzzle.getWorldPosition(new THREE.Vector3()) : s.group.position.clone().add(new THREE.Vector3(0, 1.05, 0)); if (stats.beam) laserStrike(from, target, stats.damage * levelDamage, stats.color); else fire(from, target, stats.damage * levelDamage, stats.splash, stats.color, stats.heavy, stats.arcHeight); s.cooldown = stats.cooldown / levelSpeed; }
         }
       }
       for (const m of marines) {
@@ -906,7 +1064,7 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, onBarracksSel
           const patient = marines.filter(other => other.id !== m.id && other.hp < other.maxHp && Math.hypot(other.x - m.x, other.y - m.y) < 2.4).sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0];
           if (patient) { patient.hp = Math.min(patient.maxHp, patient.hp + 18); setHealthVisual(patient.group, patient.hp, patient.maxHp); burst(patient.group.position.clone().add(new THREE.Vector3(0, 0.65, 0)), 0x63e9ff, 5); m.supportCooldown = 1.6; }
         }
-        const target = enemies.find(e => e.hp > 0 && Math.hypot(e.x - m.x, e.y - m.y) < (settledOnWall ? stats.range + 0.95 : stats.range));
+        const target = enemies.find(e => e.hp > 0 && isRevealed(e.x, e.y) && Math.hypot(e.x - m.x, e.y - m.y) < (settledOnWall ? stats.range + 0.95 : stats.range));
         if (target && !isMoving) {
           turnToward(m.group, Math.atan2(-(target.x - m.x), -(target.y - m.y)), 10, dt);
           if (m.cooldown <= 0) { const muzzle = m.group.userData.muzzle as THREE.Object3D | undefined; fire(muzzle ? muzzle.getWorldPosition(new THREE.Vector3()) : m.group.position.clone().add(new THREE.Vector3(0, 0.72, 0)), target, stats.damage * (settledOnWall ? 1.32 : 1), 0, m.kind === "gunner" ? 0xffbe62 : m.kind === "medic" ? 0x63e9ff : 0xbaff77); m.cooldown = stats.cooldown; }
@@ -934,8 +1092,8 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, onBarracksSel
       }
       for (const e of [...enemies]) {
         if (e.hp <= 0) {
-          const deathColor = e.kind === "spitter" ? 0x58ff96 : e.kind === "razortail" ? 0xe66bff : e.kind === "stalker" ? 0x58ddff : 0xff573e;
-          const deathCount = e.kind === "brute" ? 24 : e.kind === "razortail" ? 20 : e.kind === "stalker" ? 9 : 12;
+          const deathColor = e.kind === "spitter" ? 0x58ff96 : e.kind === "razortail" ? 0xe66bff : e.kind === "stalker" ? 0x58ddff : e.kind === "strider" ? 0xffe56d : 0xff573e;
+          const deathCount = e.kind === "brute" ? 24 : e.kind === "razortail" ? 20 : e.kind === "strider" ? 14 : e.kind === "stalker" ? 9 : 12;
           credits += e.reward; kills++; burst(e.group.position.clone().add(new THREE.Vector3(0, 0.4, 0)), deathColor, deathCount); removeHealthBar(e.group); world.remove(e.group); enemies.splice(enemies.indexOf(e), 1); continue;
         }
         if (e.targetType === "base" && Math.hypot(e.x - baseCell.x, e.y - baseCell.y) < 0.22) { integrity = Math.max(0, integrity - e.damage); burst(base.position.clone().add(new THREE.Vector3(0, 1, 0)), 0xff4a31, 14); removeHealthBar(e.group); world.remove(e.group); enemies.splice(enemies.indexOf(e), 1); if (integrity <= 0) { gameOver = true; active = false; message("COMMAND POST OVERRUN · SECTOR LOST"); } }
@@ -991,13 +1149,13 @@ export default function Home() {
           <p>{selectedBarracks.busy ? "Training is underway. This barracks can queue another unit when the bay is ready." : "Choose a specialist. New infantry deploy beside the barracks and can be box-selected immediately."}</p>
         </div>}
         <div className="camera-tools"><button onClick={() => apiRef.current?.rotate()} aria-label="Rotate camera">↻</button><span>ORBIT</span></div>
-        {briefing && <div className="briefing"><div className="briefing-id">FIELD BRIEFING // 04:38 LOCAL</div><h1>They found the ridge.</h1><p>Build layered defenses with walls, razor wire, and specialized turrets. Click a barracks to train riflemen, heavy gunners, or medics. Drag a selection box around mobile forces, then right-click to move them in formation.</p><div className="brief-grid"><span><kbd>CLICK BARRACKS</kbd><b>Train specialized units</b></span><span><kbd>RIGHT CLICK</kbd><b>Move in line formation</b></span><span><kbd>CLICK DEFENSE</kbd><b>Open upgrade panel</b></span><span><kbd>MIDDLE DRAG</kbd><b>Orbit camera</b></span></div><button onClick={() => setBriefing(false)}>ASSUME COMMAND</button></div>}
+        {briefing && <div className="briefing"><div className="briefing-id">FIELD BRIEFING // 04:38 LOCAL</div><h1>They found the ridge.</h1><p>The night conceals everything outside friendly vision. Infantry and defenses reveal nearby ground; deploy Sentinel light towers to expose wide sectors, then cover them with specialized weapons such as the Helios laser tower.</p><div className="brief-grid"><span><kbd>LIGHT TOWER</kbd><b>Reveal a wide area</b></span><span><kbd>RIGHT CLICK</kbd><b>Move scouts forward</b></span><span><kbd>LASER TOWER</kbd><b>Instant precision beam</b></span><span><kbd>MIDDLE DRAG</kbd><b>Orbit camera</b></span></div><button onClick={() => setBriefing(false)}>ASSUME COMMAND</button></div>}
         {hud.gameOver && <div className={`end-card ${hud.victory ? "won" : "lost"}`}><small>{hud.victory ? "OPERATION COMPLETE" : "SIGNAL LOST"}</small><h2>{hud.victory ? "THE RIDGE HOLDS" : "COMMAND OVERRUN"}</h2><p>{hud.kills} hostiles eliminated across {hud.wave} waves.</p><button onClick={() => apiRef.current?.restart()}>RESTART OPERATION</button></div>}
       </section>
       <aside className="build-panel">
         <div className="panel-title"><small>FORWARD ENGINEERING</small><b>DEPLOYABLE ASSETS</b></div>
         {(Object.keys(ASSETS) as AssetKey[]).map(key => { const a = ASSETS[key]; return <button key={key} className={`asset ${selected === key ? "active" : ""}`} onClick={() => setSelected(key)} style={{ "--asset-color": a.accent } as React.CSSProperties}><span>{a.icon}</span><div><b>{a.name}</b><small>{a.role}</small></div><em>{a.cost}</em></button>; })}
-        <div className="intel"><span>FIELD INTEL</span><p>Razor wire slows and damages anything crossing it. Both wall types support every turret. Click a barracks to train specialists. Shift + right-click salvages.</p></div>
+        <div className="intel"><span>FIELD INTEL</span><p>Weapons only engage revealed hostiles. Friendly units expose nearby ground; Sentinel light towers reveal much larger areas. Helios towers strike visible targets with an instant laser beam. Shift + right-click salvages.</p></div>
       </aside>
       <footer className="controls"><span><kbd>DRAG BOX</kbd> SELECT UNITS</span><span><kbd>RIGHT CLICK</kbd> FORMATION MOVE</span><span><kbd>MIDDLE DRAG</kbd> ORBIT</span><span><kbd>WASD</kbd> GLIDE CAMERA</span><span><kbd>SPACE</kbd> START WAVE</span><span className="online">● GITHUB PAGES</span></footer>
     </main>

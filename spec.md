@@ -32,11 +32,15 @@ Protect the command post through all eight enemy waves.
 
 - The battlefield is a 24-by-18 tile 3D grid with varied elevation.
 - The alien portal is located in the northeast; the command post is in the southwest.
+- The battlefield is covered by dynamic fog of war. Friendly infantry, combat defenses, the barracks, and the command post reveal limited areas around themselves.
+- Hostiles outside all friendly vision radii are hidden and cannot be targeted by weapons until they enter a revealed area.
+- Sentinel light towers project sweeping searchlights and reveal a substantially wider area than ordinary units.
 - Enemies travel between adjacent grid cells and dynamically recalculate their route around structures.
 - Enemies choose the closest soldier, combat emplacement, or wall with equal targeting priority and will reroute to attack it.
 - Friendly infantry and mobile crewed weapons use grid routes around walls and other solid fortifications instead of moving through them.
 - Every wall has visible access stairs. A move order onto a wall routes units to a stair approach, animates the climb, and leaves them stationed on top.
-- Construction may redirect enemies but may never completely seal the route to the command post.
+- Construction may redirect or completely seal the route to the command post. Blocked ground enemies attack fortifications to reopen a path.
+- Stalkers and razortails can climb directly over walls, including stacked wall sections.
 - Elevated weapon positions gain additional range, rewarding control of ridges and high ground.
 - The camera supports orbiting, panning, zooming, and 90-degree rotation.
 
@@ -59,6 +63,10 @@ A rapid-fire, short-to-medium-range emplacement designed to eliminate groups of 
 
 A static, fast-tracking autocannon turret with twin barrels. It fires direct-line projectiles with no artillery arc, delivers powerful bursts with modest impact splash, and cannot redeploy after placement.
 
+### Helios Laser Tower — 360 credits
+
+A static precision tower that tracks visible targets and deals damage immediately with a bright direct-fire laser beam. It has strong range and damage but depends on friendly vision coverage.
+
 ### M777 Howitzer — 350 credits
 
 A slow-firing long-range artillery piece. Its shells deal heavy damage in an area, making it effective against dense groups and durable targets. High-ground placement is especially valuable. Its crew can reposition it at a very slow towing pace.
@@ -67,9 +75,13 @@ A slow-firing long-range artillery piece. Its shells deal heavy damage in an are
 
 A static four-tube missile launcher with the longest base range and widest blast radius of any defense. Its high damage is balanced by a slow reload and substantial purchase cost.
 
+### Sentinel Light Tower — 135 credits
+
+A non-attacking reconnaissance structure with rotating searchlights. It reveals a broad circle of fogged terrain so distant defenses can acquire enemies approaching through the darkness.
+
 ### Hesco Wall — 70 credits
 
-A non-attacking fortification used to alter enemy paths and create kill zones. It includes access stairs for friendly units ordered onto the wall. The game rejects any wall placement that would make the command post unreachable.
+A non-attacking fortification used to alter enemy paths and create kill zones. Walls can be stacked vertically without a height limit and include access stairs for friendly units ordered onto the top section.
 
 ### Shock Mine — 100 credits
 
