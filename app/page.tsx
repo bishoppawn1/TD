@@ -17,7 +17,10 @@ const ENEMY_SWARM_MULTIPLIER = 6;
 const MAX_ACTIVE_ENEMIES = 120;
 const MIN_ALIENS_PER_GATE_BURST = 20;
 const MAX_ALIENS_PER_GATE_BURST = 30;
-const TARGET_FRAME_RATE = 45;
+const MAX_FRAME_DELTA = 0.1;
+const ROUTE_CANDIDATE_LIMIT = 5;
+const ROUTE_CACHE_LIMIT = 900;
+const PROJECTILE_POOL_LIMIT = 80;
 const ENEMY_COLLISION_BUCKET_SIZE = 1.12;
 const WALL_STACK_HEIGHT = 0.62;
 const WALL_CLIMB_SPEED = 0.46;
@@ -93,7 +96,8 @@ type MoveWaypoint = Cell & { lift: number };
 type Structure = { id: number; kind: AssetKey; level: number; x: number; y: number; targetX: number; targetY: number; hp: number; maxHp: number; mountedOn?: number; mountTarget?: number; movePath: MoveWaypoint[]; pathIndex: number; lift: number; stackLevel: number; group: THREE.Group; cooldown: number };
 type Enemy = { id: number; kind: AlienKind; x: number; y: number; hp: number; maxHp: number; speed: number; damage: number; reward: number; path: Cell[]; index: number; group: THREE.Group; hitFlash: number; attackCooldown: number; pathTimer: number; targetBiasSeed: number; targetId: number | null; targetType: "marine" | "structure" | "base"; retaliateAgainstId?: number; wireContactId?: number };
 type Marine = { id: number; kind: MarineKind; x: number; y: number; targetX: number; targetY: number; vx: number; vy: number; hp: number; maxHp: number; cooldown: number; supportCooldown: number; mountedOn?: number; mountTarget?: number; trenchId?: number; movePath: MoveWaypoint[]; pathIndex: number; lift: number; group: THREE.Group };
-type Bullet = { mesh: THREE.Object3D; from: THREE.Vector3; to: THREE.Vector3; impactX: number; impactY: number; t: number; speed: number; target: number; damage: number; splash: number; arcHeight: number; color: number; sourceStructureId?: number; airOnly?: boolean };
+type ProjectilePool = "light" | "heavy" | "rocket";
+type Bullet = { mesh: THREE.Object3D; pool: ProjectilePool; from: THREE.Vector3; to: THREE.Vector3; impactX: number; impactY: number; t: number; speed: number; target: number; damage: number; splash: number; arcHeight: number; color: number; sourceStructureId?: number; airOnly?: boolean };
 type HostileProjectile = { group: THREE.Group; kind: AlienKind; from: THREE.Vector3; to: THREE.Vector3; t: number; speed: number; arcHeight: number; targetId: number; targetType: "marine" | "structure"; damage: number; color: number; impactCount: number };
 type Particle = { mesh: THREE.Mesh; velocity: THREE.Vector3; life: number; maxLife: number };
 type SelectedUnit = { id: number; kind: UpgradableKey; name: string; level: number; maxLevel: number; upgradeCost: number | null; damage: number; range: number; maxHp: number; support: boolean };
@@ -852,9 +856,40 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     let credits = 750, integrity = 100, wave = 0, kills = 0, active = false, buildTimer = 0, gameOver = false, victory = false;
     let spawnLeft = 0, spawnTimer = 0, assaultFront = 0, nextId = 1, elapsed = 0, lastHud = -1;
     let structures: Structure[] = [], enemies: Enemy[] = [], marines: Marine[] = [], bullets: Bullet[] = [], hostileProjectiles: HostileProjectile[] = [], particles: Particle[] = [];
+    type EnemyRoute = { path: Cell[]; travelTime: number };
+    const enemyRouteCache = new Map<string, EnemyRoute>();
+    const lightProjectilePool: THREE.Mesh[] = [], heavyProjectilePool: THREE.Mesh[] = [], rocketProjectilePool: THREE.Group[] = [];
+    const lightProjectileGeometry = new THREE.SphereGeometry(0.045, 7, 5), heavyProjectileGeometry = new THREE.SphereGeometry(0.11, 7, 5);
+    const rocketBodyGeometry = new THREE.CylinderGeometry(0.055, 0.072, 0.32, 8), rocketNoseGeometry = new THREE.ConeGeometry(0.058, 0.16, 8), rocketExhaustGeometry = new THREE.SphereGeometry(0.055, 7, 5);
+    let routeRevision = 0;
     const selectedMarines = new Set<number>();
     const selectedEmplacements = new Set<number>();
     let selectedBarracksId: number | null = null;
+    function invalidateEnemyRoutes() {
+      routeRevision++; enemyRouteCache.clear();
+      enemies.forEach(enemy => { enemy.pathTimer = 0; enemy.index = 0; });
+    }
+    function acquireProjectile(pool: ProjectilePool, color: number) {
+      if (pool === "rocket") {
+        const projectile = rocketProjectilePool.pop() ?? (() => {
+          const group = new THREE.Group();
+          const body = new THREE.Mesh(rocketBodyGeometry, new THREE.MeshStandardMaterial({ color: 0x5c665e, metalness: 0.42, roughness: 0.34 }));
+          const noseMaterial = new THREE.MeshStandardMaterial({ color, emissive: 0x7f2314, emissiveIntensity: 0.8, roughness: 0.3 });
+          const nose = new THREE.Mesh(rocketNoseGeometry, noseMaterial); nose.position.y = 0.24;
+          const exhaust = new THREE.Mesh(rocketExhaustGeometry, new THREE.MeshBasicMaterial({ color: 0xffc45d })); exhaust.position.y = -0.2;
+          group.add(body, nose, exhaust); group.userData.noseMaterial = noseMaterial; return group;
+        })();
+        (projectile.userData.noseMaterial as THREE.MeshStandardMaterial).color.setHex(color); projectile.visible = true; return projectile;
+      }
+      const poolItems = pool === "heavy" ? heavyProjectilePool : lightProjectilePool;
+      const projectile = poolItems.pop() ?? new THREE.Mesh(pool === "heavy" ? heavyProjectileGeometry : lightProjectileGeometry, new THREE.MeshBasicMaterial({ color }));
+      (projectile.material as THREE.MeshBasicMaterial).color.setHex(color); projectile.visible = true; return projectile;
+    }
+    function releaseProjectile(projectile: THREE.Object3D, pool: ProjectilePool) {
+      world.remove(projectile); projectile.visible = false;
+      const poolItems = pool === "rocket" ? rocketProjectilePool : pool === "heavy" ? heavyProjectilePool : lightProjectilePool;
+      if (poolItems.length < PROJECTILE_POOL_LIMIT) poolItems.push(projectile as never);
+    }
     const isMobileEmplacement = (s: Structure) => s.kind === "rifle" || s.kind === "howitzer";
     const isCombatStructure = (s: Structure): s is Structure & { kind: CombatKey } => s.kind in TURRET_STATS;
     const isUpgradableStructure = (s: Structure): s is Structure & { kind: UpgradableKey } => isCombatStructure(s) || s.kind === "light";
@@ -1078,7 +1113,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       const stackLevel = stackingWall ? wall.stackLevel + 1 : 0;
       const placed = addStructure(kind, x, y, false, canMount ? wall.id : undefined, stackLevel);
       if (stackingWall) transferWallTop(wall, placed);
-      if (kind !== "mine" && kind !== "wire" && !canMount) enemies.forEach(e => { e.pathTimer = 0; e.index = 0; });
+      if (kind !== "mine" && kind !== "wire" && !canMount) invalidateEnemyRoutes();
       const action = stackingWall ? `STACKED · WALL LEVEL ${stackLevel + 1}` : canMount ? "MOUNTED ON WALL" : "DEPLOYED";
       message(`${asset.name.toUpperCase()} ${action} · ELEVATION ${Math.round((heights[y][x] + placed.lift) * 100)}M`); emitHud(true);
     }
@@ -1101,7 +1136,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       burst(s.group.position.clone().add(new THREE.Vector3(0, 0.5, 0)), salvaged ? 0x9dff8b : 0xff553f, salvaged ? 5 : 15);
       removeHealthBar(s.group); world.remove(s.group); structures.splice(structures.indexOf(s), 1);
       if (s.kind === "trench") refreshTrenchConnections();
-      enemies.forEach(e => { e.pathTimer = 0; e.index = 0; });
+      invalidateEnemyRoutes();
     }
     function removeStructureAt(x: number, y: number) {
       const s = structures.filter(item => Math.hypot(item.x - x, item.y - y) < 0.72).sort((a, b) => Number(!!b.mountedOn) - Number(!!a.mountedOn) || b.stackLevel - a.stackLevel)[0]; if (!s) return;
@@ -1275,17 +1310,12 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       }
       group.position.copy(start); world.add(group); hostileProjectiles.push({ group, kind, from: start, to: end, t: 0, speed, arcHeight, targetId, targetType, damage, color, impactCount });
     }
-    function fire(from: THREE.Vector3, target: Enemy, damage: number, splash: number, color: number, heavy = false, arcHeight = 0, rocket = false, sourceStructureId?: number, airOnly = false) {
-      const to = target.group.position.clone().add(new THREE.Vector3(0, 0.42, 0)); let mesh: THREE.Object3D;
-      if (rocket) {
-        const projectile = new THREE.Group();
-        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.072, 0.32, 8), new THREE.MeshStandardMaterial({ color: 0x5c665e, metalness: 0.42, roughness: 0.34 })); projectile.add(body);
-        const nose = new THREE.Mesh(new THREE.ConeGeometry(0.058, 0.16, 8), new THREE.MeshStandardMaterial({ color, emissive: 0x7f2314, emissiveIntensity: 0.8, roughness: 0.3 })); nose.position.y = 0.24; projectile.add(nose);
-        const exhaust = new THREE.Mesh(new THREE.SphereGeometry(0.055, 7, 5), new THREE.MeshBasicMaterial({ color: 0xffc45d })); exhaust.position.y = -0.2; projectile.add(exhaust);
-        projectile.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), to.clone().sub(from).normalize()); mesh = projectile;
-      } else mesh = new THREE.Mesh(new THREE.SphereGeometry(heavy ? 0.11 : 0.045, 7, 5), new THREE.MeshBasicMaterial({ color }));
+    function fire(from: THREE.Vector3, target: Enemy, damage: number, splash: number, color: number, heavy = false, arcHeight = 0, rocket = false, sourceStructureId?: number, airOnly = false, hitscan = false) {
+      if (hitscan) { damageEnemy(target, damage); provokeEnemy(target, sourceStructureId); return; }
+      const to = target.group.position.clone().add(new THREE.Vector3(0, 0.42, 0)), pool: ProjectilePool = rocket ? "rocket" : heavy ? "heavy" : "light", mesh = acquireProjectile(pool, color);
+      if (rocket) mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), to.clone().sub(from).normalize());
       mesh.position.copy(from); world.add(mesh);
-      bullets.push({ mesh, from: from.clone(), to, impactX: target.x, impactY: target.y, t: 0, speed: heavy ? 1.35 : 4.8, target: target.id, damage, splash, arcHeight, color, sourceStructureId, airOnly });
+      bullets.push({ mesh, pool, from: from.clone(), to, impactX: target.x, impactY: target.y, t: 0, speed: heavy ? 1.35 : 4.8, target: target.id, damage, splash, arcHeight, color, sourceStructureId, airOnly });
     }
     function incomingDamageAt(enemy: Enemy) {
       return bullets.reduce((total, shot) => {
@@ -1328,7 +1358,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     }
     function restart() {
       [...structures, ...enemies, ...marines].forEach(o => { removeHealthBar(o.group); world.remove(o.group); }); bullets.forEach(b => world.remove(b.mesh)); hostileProjectiles.forEach(p => world.remove(p.group)); particles.forEach(p => world.remove(p.mesh));
-      structures = []; enemies = []; marines = []; bullets = []; hostileProjectiles = []; particles = []; selectedMarines.clear(); selectedEmplacements.clear(); selectedBarracksId = null; callbacks.current.onUnitSelected(null); callbacks.current.onBarracksSelected(null); credits = 750; integrity = 100; wave = 0; kills = 0; active = false; buildTimer = 0; gameOver = false; victory = false; spawnLeft = 0; spawnTimer = 0; assaultFront = 0;
+      structures = []; enemies = []; marines = []; bullets = []; hostileProjectiles = []; particles = []; enemyRouteCache.clear(); routeRevision++; selectedMarines.clear(); selectedEmplacements.clear(); selectedBarracksId = null; callbacks.current.onUnitSelected(null); callbacks.current.onBarracksSelected(null); credits = 750; integrity = 100; wave = 0; kills = 0; active = false; buildTimer = 0; gameOver = false; victory = false; spawnLeft = 0; spawnTimer = 0; assaultFront = 0;
       deployStartingForces(); message("COMMAND SYSTEMS RESET · AWAITING DEPLOYMENT"); emitHud(true);
     }
     function rotate() {
@@ -1422,8 +1452,6 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       }
       updateFogOfWar(dt);
       type EnemyTargetChoice = { type: "marine" | "structure" | "base"; id: number | null; x: number; y: number; group: THREE.Group; directDistance: number };
-      type EnemyRoute = { path: Cell[]; travelTime: number };
-      const enemyPathCache = new Map<string, EnemyRoute>();
       const groundEnemyBlocked = blockedForEnemy("drone"), wallClimberBlocked = blockedForEnemy("stalker"), flyingEnemyBlocked = blockedForEnemy("flyer");
       const wallTraversalHeights = new Map<string, number>();
       structures.filter(isWall).forEach(wall => wallTraversalHeights.set(keyOf(wall.x, wall.y), Math.max(wallTraversalHeights.get(keyOf(wall.x, wall.y)) ?? 0, wallTopLift(wall))));
@@ -1443,12 +1471,14 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       };
       const routeFor = (enemy: Enemy, target: EnemyTargetChoice) => {
         const startX = Math.round(enemy.x), startY = Math.round(enemy.y), goalX = Math.round(target.x), goalY = Math.round(target.y), climbsWalls = WALL_CLIMBERS.has(enemy.kind), flying = FLYING_ENEMIES.has(enemy.kind);
-        const pathKey = `${enemy.kind}:${startX},${startY}>${goalX},${goalY}`;
-        const cached = enemyPathCache.get(pathKey); if (cached) return cached;
+        const pathKey = `${routeRevision}:${wave}:${enemy.kind}:${startX},${startY}>${goalX},${goalY}`;
+        const cached = enemyRouteCache.get(pathKey); if (cached) return cached;
         const path = findPathTo(enemy.x, enemy.y, { x: target.x, y: target.y }, undefined, flying ? flyingEnemyBlocked : climbsWalls ? wallClimberBlocked : groundEnemyBlocked, (from, to) => enemyStepTime(enemy, from, to), enemy.speed * 1.65);
         let travelTime = path.length ? Math.hypot(enemy.x - path[0].x, enemy.y - path[0].y) / Math.max(0.01, enemy.speed * 1.65) : Infinity;
         for (let i = 1; i < path.length; i++) travelTime += enemyStepTime(enemy, path[i - 1], path[i]);
-        const route = { path, travelTime }; enemyPathCache.set(pathKey, route); return route;
+        const route = { path, travelTime };
+        if (enemyRouteCache.size >= ROUTE_CACHE_LIMIT) enemyRouteCache.delete(enemyRouteCache.keys().next().value as string);
+        enemyRouteCache.set(pathKey, route); return route;
       };
       for (const e of enemies) {
         e.hitFlash = Math.max(0, e.hitFlash - dt); e.attackCooldown -= dt; e.pathTimer -= dt;
@@ -1471,16 +1501,18 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
           }).sort((a, b) => a.directDistance - b.directDistance)[0];
           const desiredTarget = interceptionTarget ?? retaliationTarget;
           if (targetChoice?.type !== desiredTarget.type || targetChoice.id !== desiredTarget.id || e.pathTimer <= 0 || !e.path.length) {
-            targetChoice = desiredTarget; e.targetType = desiredTarget.type; e.targetId = desiredTarget.id; e.path = routeFor(e, desiredTarget).path; e.index = 0; e.pathTimer = 0.36 + (e.id % 7) * 0.02;
+            targetChoice = desiredTarget; e.targetType = desiredTarget.type; e.targetId = desiredTarget.id; e.path = routeFor(e, desiredTarget).path; e.index = 0; e.pathTimer = 0.68 + (e.id % 7) * 0.04;
           }
         } else if (!targetChoice || e.pathTimer <= 0 || !e.path.length) {
           let bestRoute: EnemyRoute | undefined, bestTarget: EnemyTargetChoice | undefined, bestTargetScore = Infinity;
-          for (const candidate of [...targets].sort((a, b) => a.directDistance - b.directDistance)) {
+          const closestTargets = [...targets].sort((a, b) => a.directDistance - b.directDistance).slice(0, ROUTE_CANDIDATE_LIMIT);
+          const baseTarget = targets[0]; if (!closestTargets.includes(baseTarget)) closestTargets.push(baseTarget);
+          for (const candidate of closestTargets) {
             const fastestPossibleScore = candidate.directDistance / Math.max(0.01, e.speed * 1.65) * (1 - TARGET_SELECTION_VARIANCE * 0.5); if (fastestPossibleScore >= bestTargetScore) break;
             const route = routeFor(e, candidate), targetScore = route.travelTime * targetPreferenceMultiplier(e, candidate);
             if (route.path.length && targetScore < bestTargetScore) { bestRoute = route; bestTarget = candidate; bestTargetScore = targetScore; }
           }
-          targetChoice = bestTarget ?? targets[0]; e.targetType = targetChoice.type; e.targetId = targetChoice.id; e.path = bestRoute?.path ?? routeFor(e, targetChoice).path; e.index = 0; e.pathTimer = (targetChoice.type === "marine" ? 0.42 : 0.82) + (e.id % 7) * 0.025;
+          targetChoice = bestTarget ?? targets[0]; e.targetType = targetChoice.type; e.targetId = targetChoice.id; e.path = bestRoute?.path ?? routeFor(e, targetChoice).path; e.index = 0; e.pathTimer = (targetChoice.type === "marine" ? 0.7 : 1.15) + (e.id % 7) * 0.04;
         }
         const combatTarget = targetChoice.type === "base" ? undefined : targetChoice as EnemyTargetChoice & { type: "marine" | "structure"; id: number };
         const tx = targetChoice.x, ty = targetChoice.y;
@@ -1571,7 +1603,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         const target = enemies.find(e => e.hp > 0 && isRevealed(e.x, e.y) && Math.hypot(e.x - m.x, e.y - m.y) < (settledOnWall ? stats.range + 0.95 : stats.range));
         if (target && !isMoving) {
           turnToward(m.group, Math.atan2(-(target.x - m.x), -(target.y - m.y)), 10, dt);
-          if (m.cooldown <= 0) { const muzzle = m.group.userData.muzzle as THREE.Object3D | undefined; fire(muzzle ? muzzle.getWorldPosition(new THREE.Vector3()) : m.group.position.clone().add(new THREE.Vector3(0, 0.72, 0)), target, stats.damage * (settledOnWall ? 1.32 : 1), stats.splash ?? 0, stats.projectileColor, stats.heavy, stats.arcHeight, m.kind === "rocketeer"); m.cooldown = stats.cooldown; }
+          if (m.cooldown <= 0) { const muzzle = m.group.userData.muzzle as THREE.Object3D | undefined; fire(muzzle ? muzzle.getWorldPosition(new THREE.Vector3()) : m.group.position.clone().add(new THREE.Vector3(0, 0.72, 0)), target, stats.damage * (settledOnWall ? 1.32 : 1), stats.splash ?? 0, stats.projectileColor, stats.heavy, stats.arcHeight, m.kind === "rocketeer", undefined, false, m.kind !== "rocketeer"); m.cooldown = stats.cooldown; }
         }
       }
       for (const s of [...structures]) if (s.kind === "mine") {
@@ -1597,9 +1629,8 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
           if (b.splash) {
             const impactX = target?.x ?? b.impactX, impactY = target?.y ?? b.impactY;
             enemies.forEach(e => { const d = Math.hypot(e.x - impactX, e.y - impactY); if (d <= b.splash && (!b.airOnly || FLYING_ENEMIES.has(e.kind))) { damageEnemy(e, b.damage * (1 - d / (b.splash * 1.8))); provokeEnemy(e, b.sourceStructureId); } });
-            burst(target?.group.position.clone().add(new THREE.Vector3(0, 0.42, 0)) ?? b.to, b.color, 18);
-          } else if (target) { damageEnemy(target, b.damage); provokeEnemy(target, b.sourceStructureId); burst(b.to, b.color, 4); }
-          world.remove(b.mesh); bullets.splice(bullets.indexOf(b), 1);
+          } else if (target) { damageEnemy(target, b.damage); provokeEnemy(target, b.sourceStructureId); }
+          releaseProjectile(b.mesh, b.pool); bullets.splice(bullets.indexOf(b), 1);
         }
       }
       for (const e of [...enemies]) {
@@ -1617,10 +1648,9 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     }
 
     let raf = 0, last = performance.now();
-    const frameInterval = 1000 / TARGET_FRAME_RATE;
     function animate(now: number) {
-      const elapsedSinceFrame = now - last;
-      if (elapsedSinceFrame >= frameInterval) { const dt = Math.min(0.04, elapsedSinceFrame / 1000); last = now - (elapsedSinceFrame % frameInterval); update(dt); controls.update(); renderer.render(scene, camera); }
+      const dt = Math.min(MAX_FRAME_DELTA, Math.max(0, (now - last) / 1000)); last = now;
+      update(dt); controls.update(); renderer.render(scene, camera);
       raf = requestAnimationFrame(animate);
     }
     emitHud(true); raf = requestAnimationFrame(animate);
