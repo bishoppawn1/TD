@@ -11,6 +11,10 @@ type AlienKind = "drone" | "spitter" | "brute" | "razortail" | "stalker" | "stri
 
 const MAX_WAVES = 25;
 const ALIEN_SPEED_MULTIPLIER = 1.8;
+const ENEMY_SWARM_MULTIPLIER = 5;
+const MAX_ACTIVE_ENEMIES = 90;
+const TARGET_FRAME_RATE = 45;
+const ENEMY_SEPARATION_DISTANCE = 0.48;
 const WALL_STACK_HEIGHT = 0.62;
 const TRENCH_CAPACITY = 4;
 const TRENCH_DAMAGE_MULTIPLIER = 0.6;
@@ -163,7 +167,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     const camera = new THREE.PerspectiveCamera(42, host.clientWidth / host.clientHeight, 0.1, 180);
     camera.position.set(22, 24, 25);
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
-    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
     renderer.setSize(host.clientWidth, host.clientHeight);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -188,7 +192,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     const sun = new THREE.DirectionalLight(0xffe4c2, 3.8);
     sun.position.set(-14, 24, 12);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.mapSize.set(1024, 1024);
     sun.shadow.camera.left = -25; sun.shadow.camera.right = 25; sun.shadow.camera.top = 25; sun.shadow.camera.bottom = -25;
     scene.add(sun);
     const rim = new THREE.DirectionalLight(0x55ffb0, 0.9);
@@ -615,7 +619,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       const classScale = brute ? 0.9 : broodmother ? 0.82 : spitter ? 0.68 : razortail ? 0.74 : strider ? 0.72 : stalker ? 0.4 : 0.52;
       g.scale.setScalar(classScale * (0.94 + Math.random() * 0.12));
       g.userData.legs = legs; g.userData.legPhases = legPhases; g.userData.tails = tails; g.userData.bodyRig = bodyRig; g.userData.kind = kind;
-      shadowify(g); return g;
+      g.traverse(o => { if (o instanceof THREE.Mesh) { o.castShadow = false; o.receiveShadow = false; } }); return g;
     }
     function makeBase() {
       const g = new THREE.Group();
@@ -979,7 +983,8 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       enemies.push({ id: nextId++, kind, x: spawnX, y: spawnY, hp, maxHp: hp, speed: stats.speed * ALIEN_SPEED_MULTIPLIER * (1 + wave * 0.008), damage: stats.damage * (1 + wave * 0.022), reward: stats.reward, path: [], index: 0, group, hitFlash: 0, attackCooldown: Math.random() * 0.35, pathTimer: 0, targetId: null, targetType: "base" });
     }
     function spawnAssaultGroup() {
-      const groupSize = Math.min(spawnLeft, Math.min(8, 4 + Math.floor(wave / 4)));
+      const groupSize = Math.min(spawnLeft, MAX_ACTIVE_ENEMIES - enemies.length, Math.min(8, 4 + Math.floor(wave / 4)));
+      if (groupSize <= 0) return;
       for (let i = 0; i < groupSize; i++) {
         const frontIndex = (assaultFront + i) % spawnCells.length, formationIndex = Math.floor(i / spawnCells.length);
         spawnEnemy(spawnCells[frontIndex], formationIndex);
@@ -990,7 +995,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     function startWave() {
       if (active || gameOver) return;
       if (wave >= MAX_WAVES) { victory = true; gameOver = true; message("SECTOR SECURED · ALL WAVES REPELLED"); emitHud(true); return; }
-      wave++; active = true; spawnLeft = 14 + Math.floor(wave * 2.35); spawnTimer = 0.45; assaultFront = Math.floor(Math.random() * spawnCells.length); message(`WAVE ${String(wave).padStart(2, "0")} INBOUND · ${spawnLeft} LIFE SIGNS · THREE FRONTS`); emitHud(true);
+      wave++; active = true; spawnLeft = (14 + Math.floor(wave * 2.35)) * ENEMY_SWARM_MULTIPLIER; spawnTimer = 0.45; assaultFront = Math.floor(Math.random() * spawnCells.length); message(`WAVE ${String(wave).padStart(2, "0")} INBOUND · ${spawnLeft} LIFE SIGNS · THREE FRONTS`); emitHud(true);
     }
     function burst(at: THREE.Vector3, color: number, count = 10) {
       for (let i = 0; i < count; i++) {
@@ -1083,7 +1088,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       if (drag > 5) {
         const minX = Math.min(downX, e.clientX), maxX = Math.max(downX, e.clientX), minY = Math.min(downY, e.clientY), maxY = Math.max(downY, e.clientY), r = renderer.domElement.getBoundingClientRect(); if (!e.shiftKey) { selectedMarines.clear(); selectedEmplacements.clear(); }
         marines.forEach(m => { const p = m.group.getWorldPosition(new THREE.Vector3()).project(camera), sx = r.left + (p.x + 1) * r.width / 2, sy = r.top + (-p.y + 1) * r.height / 2; if (sx >= minX && sx <= maxX && sy >= minY && sy <= maxY) selectedMarines.add(m.id); });
-        structures.filter(isCombatStructure).forEach(s => { const p = s.group.getWorldPosition(new THREE.Vector3()).project(camera), sx = r.left + (p.x + 1) * r.width / 2, sy = r.top + (-p.y + 1) * r.height / 2; if (sx >= minX && sx <= maxX && sy >= minY && sy <= maxY) selectedEmplacements.add(s.id); }); selectedBarracksId = null; refreshSelection(); publishStructureSelection(); publishBarracksSelection(); const count = selectedMarines.size + selectedEmplacements.size; message(`${count} UNIT${count === 1 ? "" : "S"} BOX-SELECTED · RIGHT-CLICK TO FORM A LINE`); return;
+        structures.filter(isCombatStructure).forEach(s => { const p = s.group.getWorldPosition(new THREE.Vector3()).project(camera), sx = r.left + (p.x + 1) * r.width / 2, sy = r.top + (-p.y + 1) * r.height / 2; if (sx >= minX && sx <= maxX && sy >= minY && sy <= maxY) selectedEmplacements.add(s.id); }); selectedBarracksId = null; refreshSelection(); publishStructureSelection(); publishBarracksSelection(); const count = selectedMarines.size + selectedEmplacements.size; message(`${count} UNIT${count === 1 ? "" : "S"} BOX-SELECTED · RIGHT-CLICK FOR COMPACT FORMATION`); return;
       }
       const tile = pick(e); if (!tile) return; const x = tile.userData.x, y = tile.userData.y;
       const stackOrder = (selectedRef.current === "wall" || selectedRef.current === "bastion") && !!topWallAt(x, y);
@@ -1106,31 +1111,51 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       if (heldKeys.has("w")) intent.add(forward); if (heldKeys.has("s")) intent.sub(forward); if (heldKeys.has("d")) intent.add(right); if (heldKeys.has("a")) intent.sub(right);
       if (intent.lengthSq()) cameraVelocity.addScaledVector(intent.normalize(), dt * 25); cameraVelocity.multiplyScalar(Math.exp(-dt * 5.2));
       const cameraStep = cameraVelocity.clone().multiplyScalar(dt); camera.position.add(cameraStep); controls.target.add(cameraStep); controls.target.x = clamp(controls.target.x, -15, 15); controls.target.z = clamp(controls.target.z, -11, 11);
-      if (active && spawnLeft > 0) {
+      if (active && spawnLeft > 0 && enemies.length < MAX_ACTIVE_ENEMIES) {
         spawnTimer -= dt;
-        if (spawnTimer <= 0) { spawnAssaultGroup(); spawnTimer = Math.max(1.15, 2.45 - wave * 0.045) + Math.random() * 0.55; }
+        if (spawnTimer <= 0) { spawnAssaultGroup(); spawnTimer = (Math.max(1.15, 2.45 - wave * 0.045) + Math.random() * 0.55) / ENEMY_SWARM_MULTIPLIER; }
       }
       updateFogOfWar(dt);
+      const enemyBuckets = new Map<string, Enemy[]>();
+      for (const enemy of enemies) {
+        const bucketKey = keyOf(Math.floor(enemy.x / ENEMY_SEPARATION_DISTANCE), Math.floor(enemy.y / ENEMY_SEPARATION_DISTANCE));
+        const bucket = enemyBuckets.get(bucketKey);
+        if (bucket) bucket.push(enemy); else enemyBuckets.set(bucketKey, [enemy]);
+      }
+      const enemyPathCache = new Map<string, Cell[]>();
+      const groundEnemyBlocked = blockedForEnemy("drone"), wallClimberBlocked = blockedForEnemy("stalker");
       for (const e of enemies) {
         e.hitFlash = Math.max(0, e.hitFlash - dt); e.attackCooldown -= dt; e.pathTimer -= dt;
         let separationX = 0, separationY = 0;
-        for (const other of enemies) {
-          if (other.id === e.id) continue;
-          const apartX = e.x - other.x, apartY = e.y - other.y, apart = Math.hypot(apartX, apartY), spacing = 0.48;
-          if (apart >= spacing) continue;
-          const force = (spacing - apart) / spacing;
-          if (apart < 0.001) { const angle = (e.id * 2.399 + other.id * 0.73) % (Math.PI * 2); separationX += Math.cos(angle) * force; separationY += Math.sin(angle) * force; }
-          else { separationX += apartX / apart * force; separationY += apartY / apart * force; }
+        const bucketX = Math.floor(e.x / ENEMY_SEPARATION_DISTANCE), bucketY = Math.floor(e.y / ENEMY_SEPARATION_DISTANCE);
+        for (let offsetY = -1; offsetY <= 1; offsetY++) for (let offsetX = -1; offsetX <= 1; offsetX++) {
+          for (const other of enemyBuckets.get(keyOf(bucketX + offsetX, bucketY + offsetY)) ?? []) {
+            if (other.id === e.id) continue;
+            const apartX = e.x - other.x, apartY = e.y - other.y, apart = Math.hypot(apartX, apartY);
+            if (apart >= ENEMY_SEPARATION_DISTANCE) continue;
+            const force = (ENEMY_SEPARATION_DISTANCE - apart) / ENEMY_SEPARATION_DISTANCE;
+            if (apart < 0.001) { const angle = (e.id * 2.399 + other.id * 0.73) % (Math.PI * 2); separationX += Math.cos(angle) * force; separationY += Math.sin(angle) * force; }
+            else { separationX += apartX / apart * force; separationY += apartY / apart * force; }
+          }
         }
         const separationLength = Math.hypot(separationX, separationY);
         if (separationLength > 0.001) { const separationStep = Math.min(0.42 * dt, separationLength * 0.08); e.x = clamp(e.x + separationX / separationLength * separationStep, 0, GRID_W - 1); e.y = clamp(e.y + separationY / separationLength * separationStep, 0, GRID_H - 1); }
         const enemyStats = ENEMY_STATS[e.kind], climbsWalls = WALL_CLIMBERS.has(e.kind);
-        const closestMarine = marines.map(m => ({ type: "marine" as const, id: m.id, x: m.x, y: m.y, group: m.group, marine: m, d: Math.hypot(m.x - e.x, m.y - e.y) })).sort((a, b) => a.d - b.d)[0];
-        const closestDefense = structures.filter(s => (isPathBlocking(s) && (!climbsWalls || !isWall(s))) || isCombatStructure(s)).map(s => ({ type: "structure" as const, id: s.id, x: s.x, y: s.y, group: s.group, structure: s, d: Math.hypot(s.x - e.x, s.y - e.y) })).sort((a, b) => a.d - b.d)[0];
-        const combatTarget = closestMarine && closestDefense ? (closestMarine.d <= closestDefense.d ? closestMarine : closestDefense) : closestMarine || closestDefense;
+        let combatTarget: { type: "marine" | "structure"; id: number; x: number; y: number; group: THREE.Group; d: number } | undefined;
+        for (const m of marines) { const d = Math.hypot(m.x - e.x, m.y - e.y); if (!combatTarget || d < combatTarget.d) combatTarget = { type: "marine", id: m.id, x: m.x, y: m.y, group: m.group, d }; }
+        for (const s of structures) {
+          if (!((isPathBlocking(s) && (!climbsWalls || !isWall(s))) || isCombatStructure(s))) continue;
+          const d = Math.hypot(s.x - e.x, s.y - e.y); if (!combatTarget || d < combatTarget.d) combatTarget = { type: "structure", id: s.id, x: s.x, y: s.y, group: s.group, d };
+        }
         const targetType = combatTarget?.type ?? "base", targetId = combatTarget?.id ?? null, tx = combatTarget?.x ?? baseCell.x, ty = combatTarget?.y ?? baseCell.y;
         const targetChanged = e.targetType !== targetType || e.targetId !== targetId; e.targetType = targetType; e.targetId = targetId;
-        if (targetChanged || e.pathTimer <= 0 || !e.path.length) { e.path = findPathTo(e.x, e.y, { x: tx, y: ty }, undefined, blockedForEnemy(e.kind)); e.index = 0; e.pathTimer = targetType === "marine" ? 0.28 : 0.75; }
+        if (targetChanged || e.pathTimer <= 0 || !e.path.length) {
+          const startX = Math.round(e.x), startY = Math.round(e.y), goalX = Math.round(tx), goalY = Math.round(ty);
+          const pathKey = `${climbsWalls ? "c" : "g"}:${startX},${startY}>${goalX},${goalY}`;
+          let path = enemyPathCache.get(pathKey);
+          if (!path) { path = findPathTo(e.x, e.y, { x: tx, y: ty }, undefined, climbsWalls ? wallClimberBlocked : groundEnemyBlocked); enemyPathCache.set(pathKey, path); }
+          e.path = path; e.index = 0; e.pathTimer = (targetType === "marine" ? 0.28 : 0.75) + (e.id % 7) * 0.025;
+        }
         const targetDistance = Math.hypot(tx - e.x, ty - e.y), attackRange = enemyStats.attackRange;
         const wire = structures.find(s => s.kind === "wire" && Math.hypot(s.x - e.x, s.y - e.y) < 0.95);
         let isMoving = false, isAttacking = false, movementRate = e.speed * (wire ? 0.38 : 1);
@@ -1242,7 +1267,12 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     }
 
     let raf = 0, last = performance.now();
-    function animate(now: number) { const dt = Math.min(0.04, (now - last) / 1000); last = now; update(dt); controls.update(); renderer.render(scene, camera); raf = requestAnimationFrame(animate); }
+    const frameInterval = 1000 / TARGET_FRAME_RATE;
+    function animate(now: number) {
+      const elapsedSinceFrame = now - last;
+      if (elapsedSinceFrame >= frameInterval) { const dt = Math.min(0.04, elapsedSinceFrame / 1000); last = now - (elapsedSinceFrame % frameInterval); update(dt); controls.update(); renderer.render(scene, camera); }
+      raf = requestAnimationFrame(animate);
+    }
     emitHud(true); raf = requestAnimationFrame(animate);
     const resize = () => { camera.aspect = host.clientWidth / host.clientHeight; camera.updateProjectionMatrix(); renderer.setSize(host.clientWidth, host.clientHeight); };
     window.addEventListener("resize", resize);
