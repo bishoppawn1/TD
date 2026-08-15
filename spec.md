@@ -34,17 +34,17 @@ Protect the command post through all 25 enemy waves.
 - The player selects a battlefield during the opening briefing and can return to the selector between waves.
 - Each map changes terrain elevation, ground palette, command-post position, invasion-portal positions, and the opening friendly deployment.
 - Every map begins with five infantry and eight free structures: Ridge favors a balanced sentry screen, Basin starts with long-range fire support, and Divide receives close-range chokepoint defenses.
-- Razorback Ridge is the balanced high-ground map, Cinder Basin exposes a low central defense to encirclement, and Blackglass Divide creates steep chokepoints between volcanic mesas.
+- Razorback Ridge is the balanced high-ground map, Cinder Basin exposes a low central defense to encirclement, and Blackglass Divide uses sheer multi-level mesas and deep approach channels.
 - Every battlefield has three alien portals that pressure distinct approaches to the command post.
 - The battlefield is covered by dynamic fog of war. Friendly infantry, combat defenses, the barracks, and the command post reveal limited areas around themselves.
 - Hostiles outside all friendly vision radii are hidden and cannot be targeted by weapons until they enter a revealed area.
 - Sentinel light towers project sweeping searchlights and reveal a substantially wider area than ordinary units. They can be mounted on top of Hesco or Bastion walls.
 - Enemies travel between adjacent grid cells and dynamically recalculate their route around structures.
-- Enemies choose the closest soldier, combat emplacement, or wall with equal targeting priority and will reroute to attack it.
+- Enemies choose targets by estimated travel time rather than straight-line distance. The estimate uses the actual route, terrain grade, movement speed, and any wall ascent or descent required.
 - Friendly infantry and mobile crewed weapons use grid routes around walls and other solid fortifications instead of moving through them.
 - Every wall has visible access stairs. A move order onto a wall routes units to a stair approach, animates the climb, and leaves them stationed on top.
 - Construction may redirect or completely seal the route to the command post. Blocked ground enemies attack fortifications to reopen a path.
-- Stalkers and razortails can climb directly over walls, including stacked wall sections.
+- Stalkers and razortails can climb directly over walls, including stacked wall sections, but taller climbs take proportionally longer and may make another route or target more attractive.
 - Elevated weapon positions gain additional range, rewarding control of ridges and high ground.
 - The camera supports orbiting, panning, zooming, and 90-degree rotation.
 
@@ -120,6 +120,10 @@ The standard swarm unit. Drones are relatively fast and fragile, deal light comm
 ### Spitter
 
 An upgraded alien introduced after the opening wave. Spitters have more health and damage than drones and award a larger bounty. Their bright biological sacs make them visually distinct.
+
+### Stalker
+
+A small, fast blue climber that appears from wave one onward. Stalkers make up a minority of the opening swarm, then become slightly more common as the operation escalates.
 
 ### Brute
 

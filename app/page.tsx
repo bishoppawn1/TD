@@ -16,6 +16,7 @@ const MAX_ACTIVE_ENEMIES = 90;
 const TARGET_FRAME_RATE = 45;
 const ENEMY_SEPARATION_DISTANCE = 0.48;
 const WALL_STACK_HEIGHT = 0.62;
+const WALL_CLIMB_SPEED = 0.46;
 const TRENCH_CAPACITY = 4;
 const TRENCH_DAMAGE_MULTIPLIER = 0.6;
 const WALL_CLIMBERS = new Set<AlienKind>(["stalker", "razortail"]);
@@ -33,20 +34,20 @@ const GRID_W = 24;
 const GRID_H = 18;
 const TILE = 1.36;
 const ASSETS: Record<AssetKey, { name: string; role: string; cost: number; range: number; icon: string; accent: string }> = {
-  rifle: { name: "M240 Gun Team", role: "Sustained fire · Anti-swarm", cost: 150, range: 4.7, icon: "⌖", accent: "#9fe870" },
-  sentry: { name: "GAU-19 Sentry", role: "Fast tracking · Heavy burst", cost: 250, range: 5.6, icon: "◉", accent: "#62e8ff" },
-  flame: { name: "Inferno Turret", role: "Short range · Burning splash", cost: 210, range: 3.25, icon: "♨", accent: "#ff875c" },
-  laser: { name: "Helios Laser Tower", role: "Instant beam · Precision damage", cost: 360, range: 7.2, icon: "◇", accent: "#ff4ff5" },
-  railgun: { name: "M-90 Rail Turret", role: "Long range · Armor piercing", cost: 410, range: 9.6, icon: "↯", accent: "#b889ff" },
-  howitzer: { name: "M777 Howitzer", role: "Heavy shell · Area damage", cost: 350, range: 7.4, icon: "◎", accent: "#ffb45d" },
-  missile: { name: "Javelin Battery", role: "Long range · Wide blast", cost: 480, range: 8.8, icon: "✦", accent: "#ff7f91" },
-  light: { name: "Sentinel Light Tower", role: "Wide vision · Sweeping searchlights", cost: 135, range: 0, icon: "☼", accent: "#fff1a3" },
-  wall: { name: "Hesco Wall", role: "600 armor · Supports units", cost: 70, range: 0, icon: "▦", accent: "#d1b98e" },
-  bastion: { name: "Bastion Wall", role: "1,050 armor · Reinforced cover", cost: 125, range: 0, icon: "▰", accent: "#aab8bd" },
-  trench: { name: "Infantry Trench", role: "4 infantry · 40% damage reduction", cost: 85, range: 0, icon: "⌓", accent: "#b89568" },
-  wire: { name: "Razor Wire", role: "Slows and wounds hostiles", cost: 40, range: 0, icon: "〰", accent: "#e4cc9e" },
-  mine: { name: "Shock Mine", role: "Proximity · One use", cost: 100, range: 1.35, icon: "⌁", accent: "#ff655f" },
-  barracks: { name: "Field Barracks", role: "Trains specialized infantry", cost: 425, range: 0, icon: "⌂", accent: "#67c8ff" },
+  rifle: { name: "M240 Gun Team", role: "Sustained fire · Anti-swarm", cost: 225, range: 4.7, icon: "⌖", accent: "#9fe870" },
+  sentry: { name: "GAU-19 Sentry", role: "Fast tracking · Heavy burst", cost: 375, range: 5.6, icon: "◉", accent: "#62e8ff" },
+  flame: { name: "Inferno Turret", role: "Short range · Burning splash", cost: 315, range: 3.25, icon: "♨", accent: "#ff875c" },
+  laser: { name: "Helios Laser Tower", role: "Instant beam · Precision damage", cost: 540, range: 7.2, icon: "◇", accent: "#ff4ff5" },
+  railgun: { name: "M-90 Rail Turret", role: "Long range · Armor piercing", cost: 615, range: 9.6, icon: "↯", accent: "#b889ff" },
+  howitzer: { name: "M777 Howitzer", role: "Heavy shell · Area damage", cost: 525, range: 7.4, icon: "◎", accent: "#ffb45d" },
+  missile: { name: "Javelin Battery", role: "Long range · Wide blast", cost: 720, range: 8.8, icon: "✦", accent: "#ff7f91" },
+  light: { name: "Sentinel Light Tower", role: "Wide vision · Sweeping searchlights", cost: 205, range: 0, icon: "☼", accent: "#fff1a3" },
+  wall: { name: "Hesco Wall", role: "600 armor · Supports units", cost: 105, range: 0, icon: "▦", accent: "#d1b98e" },
+  bastion: { name: "Bastion Wall", role: "1,050 armor · Reinforced cover", cost: 190, range: 0, icon: "▰", accent: "#aab8bd" },
+  trench: { name: "Infantry Trench", role: "4 infantry · 40% damage reduction", cost: 130, range: 0, icon: "⌓", accent: "#b89568" },
+  wire: { name: "Razor Wire", role: "Slows and wounds hostiles", cost: 60, range: 0, icon: "〰", accent: "#e4cc9e" },
+  mine: { name: "Shock Mine", role: "Proximity · One use", cost: 150, range: 1.35, icon: "⌁", accent: "#ff655f" },
+  barracks: { name: "Field Barracks", role: "Trains specialized infantry", cost: 640, range: 0, icon: "⌂", accent: "#67c8ff" },
 };
 
 const TURRET_STATS: Record<CombatKey, { damage: number; cooldown: number; splash: number; arcHeight: number; color: number; heavy: boolean; turnSpeed: number; beam?: boolean }> = {
@@ -60,10 +61,10 @@ const TURRET_STATS: Record<CombatKey, { damage: number; cooldown: number; splash
 };
 
 const MARINE_STATS: Record<MarineKind, { name: string; role: string; cost: number; train: number; hp: number; speed: number; damage: number; cooldown: number; range: number; color: string; projectileColor: number; splash?: number; arcHeight?: number; heavy?: boolean }> = {
-  rifleman: { name: "Rifleman", role: "Mobile all-round infantry", cost: 60, train: 3.5, hp: 100, speed: 1.65, damage: 9, cooldown: 0.55, range: 3.25, color: "#a8f76b", projectileColor: 0xbaff77 },
-  gunner: { name: "Heavy Gunner", role: "Armored sustained fire", cost: 115, train: 5.5, hp: 165, speed: 1.2, damage: 18, cooldown: 0.34, range: 3.7, color: "#ffbe62", projectileColor: 0xffbe62 },
-  medic: { name: "Combat Medic", role: "Heals nearby infantry", cost: 90, train: 4.5, hp: 85, speed: 1.75, damage: 5, cooldown: 0.72, range: 2.9, color: "#63e9ff", projectileColor: 0x63e9ff },
-  rocketeer: { name: "Rocketeer", role: "Long-range anti-swarm rockets", cost: 155, train: 6.5, hp: 95, speed: 1.08, damage: 62, cooldown: 2.15, range: 5.2, color: "#ff8a5b", projectileColor: 0xff7048, splash: 1.05, arcHeight: 0.65, heavy: true },
+  rifleman: { name: "Rifleman", role: "Mobile all-round infantry", cost: 90, train: 3.5, hp: 100, speed: 1.65, damage: 9, cooldown: 0.55, range: 3.25, color: "#a8f76b", projectileColor: 0xbaff77 },
+  gunner: { name: "Heavy Gunner", role: "Armored sustained fire", cost: 175, train: 5.5, hp: 165, speed: 1.2, damage: 18, cooldown: 0.34, range: 3.7, color: "#ffbe62", projectileColor: 0xffbe62 },
+  medic: { name: "Combat Medic", role: "Heals nearby infantry", cost: 135, train: 4.5, hp: 85, speed: 1.75, damage: 5, cooldown: 0.72, range: 2.9, color: "#63e9ff", projectileColor: 0x63e9ff },
+  rocketeer: { name: "Rocketeer", role: "Long-range anti-swarm rockets", cost: 235, train: 6.5, hp: 95, speed: 1.08, damage: 62, cooldown: 2.15, range: 5.2, color: "#ff8a5b", projectileColor: 0xff7048, splash: 1.05, arcHeight: 0.65, heavy: true },
 };
 
 type Hud = { credits: number; integrity: number; wave: number; enemies: number; kills: number; active: boolean; gameOver: boolean; victory: boolean };
@@ -133,18 +134,20 @@ const MAPS: Record<MapKey, MapConfig> = {
     },
   },
   divide: {
-    key: "divide", operation: "BLACKGLASS", sector: "R-3", name: "Blackglass Divide", objective: "Control the fractured mesas", terrain: "CHOKEPOINTS · STEEP",
-    description: "Twin volcanic mesas split the approach into tight channels. The western command post starts close to the front line.",
+    key: "divide", operation: "BLACKGLASS", sector: "R-3", name: "Blackglass Divide", objective: "Control the fractured mesas", terrain: "CHOKEPOINTS · EXTREME HEIGHT",
+    description: "Sheer, terraced volcanic mesas split the approach into deep channels. Climbers can cross the heights, but the ascent costs them time.",
     background: 0x090811, ground: 0x100f18, fog: 0x030207, hue: 0.69, saturation: 0.18,
     baseCell: { x: 2, y: 8 }, spawnCells: [{ x: 23, y: 1 }, { x: 23, y: 16 }, { x: 12, y: 0 }],
     startingStructures: [{ kind: "barracks", x: 4, y: 8 }, { kind: "rifle", x: 5, y: 6 }, { kind: "wall", x: 5, y: 9 }, { kind: "howitzer", x: 6, y: 11 }, { kind: "wire", x: 6, y: 7 }, { kind: "flame", x: 6, y: 8 }, { kind: "bastion", x: 5, y: 10 }, { kind: "light", x: 7, y: 9 }],
     startingMarines: [{ kind: "rifleman", x: 4, y: 7 }, { kind: "medic", x: 4, y: 10 }, { kind: "rifleman", x: 4, y: 9 }, { kind: "gunner", x: 5, y: 7 }, { kind: "rocketeer", x: 6, y: 10 }],
     heightAt: (x, y) => {
-      const northMesa = Math.max(0, 1 - Math.hypot(x - 8, y - 4) / 4.6) * 1.05;
-      const southMesa = Math.max(0, 1 - Math.hypot(x - 15, y - 13) / 4.8) * 1.12;
-      const fracture = Math.max(0, 1 - Math.abs((y - 8.5) - (x - 11.5) * 0.22) / 1.8) * 0.24;
-      const brokenGround = Math.max(0, Math.sin(x * 0.72) * Math.cos(y * 0.61)) * 0.18;
-      return steppedHeight(0.08 + northMesa + southMesa + brokenGround - fracture);
+      const terrace = (distance: number) => distance < 2.05 ? 4.32 : distance < 3.05 ? 3.2 : distance < 4.15 ? 1.76 : distance < 5 ? 0.64 : 0;
+      const northMesa = terrace(Math.hypot((x - 8) * 0.92, (y - 4.5) * 1.08));
+      const southMesa = terrace(Math.hypot((x - 15) * 0.9, (y - 13) * 1.05));
+      const fractureDistance = Math.abs((y - 8.5) - (x - 11.5) * 0.22);
+      const fracture = fractureDistance < 0.72 ? 0.56 : fractureDistance < 1.35 ? 0.24 : 0;
+      const brokenGround = Math.max(0, Math.sin(x * 0.82) * Math.cos(y * 0.67)) * 0.22;
+      return steppedHeight(0.08 + Math.max(northMesa, southMesa) + brokenGround - fracture);
     },
   },
 };
@@ -686,7 +689,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     const topWallAt = (x: number, y: number) => structures.filter(s => isWall(s) && s.x === x && s.y === y).sort((a, b) => b.stackLevel - a.stackLevel)[0];
     const wallTopLift = (wall: Structure) => (wall.stackLevel + 1) * WALL_STACK_HEIGHT;
     const blockedForEnemy = (kind: AlienKind) => new Set(structures.filter(s => isPathBlocking(s) && (!WALL_CLIMBERS.has(kind) || !isWall(s))).map(s => keyOf(Math.round(s.x), Math.round(s.y))));
-    const terrainSpeedMultiplier = (from: Cell, to: Cell) => clamp(1 - (heights[to.y][to.x] - heights[from.y][from.x]) * 1.45, 0.55, 1.45);
+    const terrainSpeedMultiplier = (from: Cell, to: Cell) => clamp(1 - (heights[to.y][to.x] - heights[from.y][from.x]) * 1.45, 0.28, 1.65);
     let visionSources: Array<{ x: number; y: number; radius: number }> = [], fogTimer = 0;
     function rebuildVision() {
       visionSources = [{ x: baseCell.x, y: baseCell.y, radius: 4.2 }];
@@ -712,7 +715,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       enemies.forEach(enemy => { enemy.group.visible = isRevealed(enemy.x, enemy.y); });
       hostileProjectiles.forEach(shot => { shot.group.visible = isRevealed((shot.to.x / TILE) + (GRID_W - 1) / 2, (shot.to.z / TILE) + (GRID_H - 1) / 2); });
     }
-    function findPathTo(sx: number, sy: number, target: Cell, extra?: Cell, blockedCells?: Set<string>): Cell[] {
+    function findPathTo(sx: number, sy: number, target: Cell, extra?: Cell, blockedCells?: Set<string>, stepCost?: (from: Cell, to: Cell) => number, fastestRate = 1.65): Cell[] {
       const ban = blockedCells ? new Set(blockedCells) : blocked(); if (extra) ban.add(keyOf(extra.x, extra.y));
       const start = { x: clamp(Math.round(sx), 0, GRID_W - 1), y: clamp(Math.round(sy), 0, GRID_H - 1) };
       const goal = { x: clamp(Math.round(target.x), 0, GRID_W - 1), y: clamp(Math.round(target.y), 0, GRID_H - 1) }; ban.delete(keyOf(start.x, start.y)); ban.delete(keyOf(goal.x, goal.y));
@@ -721,7 +724,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       while (open.size) {
         let currentKey = "", bestScore = Infinity;
         for (const candidate of open) {
-          const cell = cells.get(candidate)!; const heuristic = Math.hypot(goal.x - cell.x, goal.y - cell.y) / 1.45, score = (cost.get(candidate) ?? Infinity) + heuristic;
+          const cell = cells.get(candidate)!; const heuristic = Math.hypot(goal.x - cell.x, goal.y - cell.y) / fastestRate, score = (cost.get(candidate) ?? Infinity) + heuristic;
           if (score < bestScore) { bestScore = score; currentKey = candidate; }
         }
         if (currentKey === goalKey) break;
@@ -729,7 +732,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         for (const { dx, dy } of directions) {
           const n = { x: cur.x + dx, y: cur.y + dy }, nKey = keyOf(n.x, n.y); if (n.x < 0 || n.y < 0 || n.x >= GRID_W || n.y >= GRID_H || ban.has(nKey)) continue;
           if (dx && dy && (ban.has(keyOf(cur.x + dx, cur.y)) || ban.has(keyOf(cur.x, cur.y + dy)))) continue;
-          const travelCost = Math.hypot(dx, dy) / terrainSpeedMultiplier(cur, n), nextCost = (cost.get(currentKey) ?? 0) + travelCost;
+          const travelCost = stepCost ? stepCost(cur, n) : Math.hypot(dx, dy) / terrainSpeedMultiplier(cur, n), nextCost = (cost.get(currentKey) ?? 0) + travelCost;
           if (nextCost >= (cost.get(nKey) ?? Infinity)) continue;
           prev.set(nKey, currentKey); cost.set(nKey, nextCost); cells.set(nKey, n); open.add(nKey);
         }
@@ -969,7 +972,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       const weights: Array<[AlienKind, number]> = [
         ["drone", Math.max(30, 82 - wave * 2)],
         ["spitter", wave >= 3 ? 18 + wave * 0.8 : 0],
-        ["stalker", wave >= 5 ? 8 + wave * 0.45 : 0],
+        ["stalker", 10 + wave * 0.45],
         ["brute", wave >= 7 ? 7 + wave * 0.55 : 0],
         ["strider", wave >= 8 ? 7 + wave * 0.42 : 0],
         ["razortail", wave >= 10 ? 6 + wave * 0.5 : 0],
@@ -1122,8 +1125,27 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         const bucket = enemyBuckets.get(bucketKey);
         if (bucket) bucket.push(enemy); else enemyBuckets.set(bucketKey, [enemy]);
       }
-      const enemyPathCache = new Map<string, Cell[]>();
+      type EnemyTargetChoice = { type: "marine" | "structure" | "base"; id: number | null; x: number; y: number; group: THREE.Group; directDistance: number };
+      type EnemyRoute = { path: Cell[]; travelTime: number };
+      const enemyPathCache = new Map<string, EnemyRoute>();
       const groundEnemyBlocked = blockedForEnemy("drone"), wallClimberBlocked = blockedForEnemy("stalker");
+      const wallTraversalHeights = new Map<string, number>();
+      structures.filter(isWall).forEach(wall => wallTraversalHeights.set(keyOf(wall.x, wall.y), Math.max(wallTraversalHeights.get(keyOf(wall.x, wall.y)) ?? 0, wallTopLift(wall))));
+      const wallLiftAt = (cell: Cell) => wallTraversalHeights.get(keyOf(Math.round(cell.x), Math.round(cell.y))) ?? 0;
+      const enemyStepTime = (enemy: Enemy, from: Cell, to: Cell) => {
+        const groundTime = Math.hypot(to.x - from.x, to.y - from.y) / Math.max(0.01, enemy.speed * terrainSpeedMultiplier(from, to));
+        const climbTime = WALL_CLIMBERS.has(enemy.kind) ? Math.abs(wallLiftAt(to) - wallLiftAt(from)) / WALL_CLIMB_SPEED : 0;
+        return groundTime + climbTime;
+      };
+      const routeFor = (enemy: Enemy, target: EnemyTargetChoice) => {
+        const startX = Math.round(enemy.x), startY = Math.round(enemy.y), goalX = Math.round(target.x), goalY = Math.round(target.y), climbsWalls = WALL_CLIMBERS.has(enemy.kind);
+        const pathKey = `${enemy.kind}:${startX},${startY}>${goalX},${goalY}`;
+        const cached = enemyPathCache.get(pathKey); if (cached) return cached;
+        const path = findPathTo(enemy.x, enemy.y, { x: target.x, y: target.y }, undefined, climbsWalls ? wallClimberBlocked : groundEnemyBlocked, (from, to) => enemyStepTime(enemy, from, to), enemy.speed * 1.65);
+        let travelTime = path.length ? Math.hypot(enemy.x - path[0].x, enemy.y - path[0].y) / Math.max(0.01, enemy.speed * 1.65) : Infinity;
+        for (let i = 1; i < path.length; i++) travelTime += enemyStepTime(enemy, path[i - 1], path[i]);
+        const route = { path, travelTime }; enemyPathCache.set(pathKey, route); return route;
+      };
       for (const e of enemies) {
         e.hitFlash = Math.max(0, e.hitFlash - dt); e.attackCooldown -= dt; e.pathTimer -= dt;
         let separationX = 0, separationY = 0;
@@ -1141,21 +1163,20 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         const separationLength = Math.hypot(separationX, separationY);
         if (separationLength > 0.001) { const separationStep = Math.min(0.42 * dt, separationLength * 0.08); e.x = clamp(e.x + separationX / separationLength * separationStep, 0, GRID_W - 1); e.y = clamp(e.y + separationY / separationLength * separationStep, 0, GRID_H - 1); }
         const enemyStats = ENEMY_STATS[e.kind], climbsWalls = WALL_CLIMBERS.has(e.kind);
-        let combatTarget: { type: "marine" | "structure"; id: number; x: number; y: number; group: THREE.Group; d: number } | undefined;
-        for (const m of marines) { const d = Math.hypot(m.x - e.x, m.y - e.y); if (!combatTarget || d < combatTarget.d) combatTarget = { type: "marine", id: m.id, x: m.x, y: m.y, group: m.group, d }; }
-        for (const s of structures) {
-          if (!((isPathBlocking(s) && (!climbsWalls || !isWall(s))) || isCombatStructure(s))) continue;
-          const d = Math.hypot(s.x - e.x, s.y - e.y); if (!combatTarget || d < combatTarget.d) combatTarget = { type: "structure", id: s.id, x: s.x, y: s.y, group: s.group, d };
+        const targets: EnemyTargetChoice[] = [{ type: "base", id: null, x: baseCell.x, y: baseCell.y, group: base, directDistance: Math.hypot(baseCell.x - e.x, baseCell.y - e.y) }];
+        marines.forEach(m => targets.push({ type: "marine", id: m.id, x: m.x, y: m.y, group: m.group, directDistance: Math.hypot(m.x - e.x, m.y - e.y) }));
+        structures.forEach(s => { if ((isPathBlocking(s) && (!climbsWalls || !isWall(s))) || isCombatStructure(s)) targets.push({ type: "structure", id: s.id, x: s.x, y: s.y, group: s.group, directDistance: Math.hypot(s.x - e.x, s.y - e.y) }); });
+        let targetChoice = targets.find(target => target.type === e.targetType && target.id === e.targetId);
+        if (!targetChoice || e.pathTimer <= 0 || !e.path.length) {
+          let bestRoute: EnemyRoute | undefined, bestTarget: EnemyTargetChoice | undefined;
+          for (const candidate of [...targets].sort((a, b) => a.directDistance - b.directDistance)) {
+            const fastestPossibleTime = candidate.directDistance / Math.max(0.01, e.speed * 1.65); if (bestRoute && fastestPossibleTime >= bestRoute.travelTime) break;
+            const route = routeFor(e, candidate); if (route.path.length && (!bestRoute || route.travelTime < bestRoute.travelTime)) { bestRoute = route; bestTarget = candidate; }
+          }
+          targetChoice = bestTarget ?? targets[0]; e.targetType = targetChoice.type; e.targetId = targetChoice.id; e.path = bestRoute?.path ?? routeFor(e, targetChoice).path; e.index = 0; e.pathTimer = (targetChoice.type === "marine" ? 0.42 : 0.82) + (e.id % 7) * 0.025;
         }
-        const targetType = combatTarget?.type ?? "base", targetId = combatTarget?.id ?? null, tx = combatTarget?.x ?? baseCell.x, ty = combatTarget?.y ?? baseCell.y;
-        const targetChanged = e.targetType !== targetType || e.targetId !== targetId; e.targetType = targetType; e.targetId = targetId;
-        if (targetChanged || e.pathTimer <= 0 || !e.path.length) {
-          const startX = Math.round(e.x), startY = Math.round(e.y), goalX = Math.round(tx), goalY = Math.round(ty);
-          const pathKey = `${climbsWalls ? "c" : "g"}:${startX},${startY}>${goalX},${goalY}`;
-          let path = enemyPathCache.get(pathKey);
-          if (!path) { path = findPathTo(e.x, e.y, { x: tx, y: ty }, undefined, climbsWalls ? wallClimberBlocked : groundEnemyBlocked); enemyPathCache.set(pathKey, path); }
-          e.path = path; e.index = 0; e.pathTimer = (targetType === "marine" ? 0.28 : 0.75) + (e.id % 7) * 0.025;
-        }
+        const combatTarget = targetChoice.type === "base" ? undefined : targetChoice as EnemyTargetChoice & { type: "marine" | "structure"; id: number };
+        const tx = targetChoice.x, ty = targetChoice.y;
         const targetDistance = Math.hypot(tx - e.x, ty - e.y), attackRange = enemyStats.attackRange;
         const wire = structures.find(s => s.kind === "wire" && Math.hypot(s.x - e.x, s.y - e.y) < 0.95);
         let isMoving = false, isAttacking = false, movementRate = e.speed * (wire ? 0.38 : 1);
@@ -1170,7 +1191,9 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
           const targetCell = e.path[Math.min(e.index + 1, e.path.length - 1)];
           if (targetCell) {
             const dx = targetCell.x - e.x, dy = targetCell.y - e.y, dist = Math.hypot(dx, dy);
-            const segmentStart = e.path[Math.min(e.index, e.path.length - 1)] ?? targetCell; movementRate = e.speed * terrainSpeedMultiplier(segmentStart, targetCell) * (wire ? 0.38 : 1);
+            const segmentStart = e.path[Math.min(e.index, e.path.length - 1)] ?? targetCell, segmentLength = Math.max(0.01, Math.hypot(targetCell.x - segmentStart.x, targetCell.y - segmentStart.y));
+            const groundRate = e.speed * terrainSpeedMultiplier(segmentStart, targetCell), wallClimbDistance = climbsWalls ? Math.abs(wallLiftAt(targetCell) - wallLiftAt(segmentStart)) : 0;
+            movementRate = segmentLength / (segmentLength / Math.max(0.01, groundRate) + wallClimbDistance / WALL_CLIMB_SPEED) * (wire ? 0.38 : 1);
             if (dist < 0.025) e.index++; else { const step = Math.min(dist, movementRate * dt); e.x += dx / dist * step; e.y += dy / dist * step; e.group.rotation.y = Math.atan2(-dx, -dy); isMoving = true; }
           }
         }
@@ -1328,7 +1351,7 @@ export default function Home() {
       <aside className="build-panel">
         <div className="panel-title"><small>FORWARD ENGINEERING</small><b>DEPLOYABLE ASSETS</b></div>
         {(Object.keys(ASSETS) as AssetKey[]).map(key => { const a = ASSETS[key]; return <button key={key} className={`asset ${selected === key ? "active" : ""}`} onClick={() => setSelected(key)} style={{ "--asset-color": a.accent } as React.CSSProperties}><span>{a.icon}</span><div><b>{a.name}</b><small>{a.role}</small></div><em>{a.cost}</em></button>; })}
-        <div className="intel"><span>FIELD INTEL</span><p>Sentinel lights and weapons may mount on walls. Right-click a trench with infantry selected to take cover; crewed weapons cannot enter. Rocketeers deliver mobile splash fire; late waves include egg-launching Broodmothers. Shift + right-click salvages.</p></div>
+        <div className="intel"><span>FIELD INTEL</span><p>Sentinel lights and weapons may mount on walls. Climbers cross walls slowly and may choose a faster target instead. Right-click a trench with infantry selected to take cover; crewed weapons cannot enter. Rocketeers deliver mobile splash fire; late waves include egg-launching Broodmothers. Shift + right-click salvages.</p></div>
       </aside>
       <footer className="controls"><span><kbd>DRAG BOX</kbd> SELECT UNITS</span><span><kbd>RIGHT CLICK</kbd> FORMATION MOVE</span><span><kbd>MIDDLE DRAG</kbd> ORBIT</span><span><kbd>WASD</kbd> GLIDE CAMERA</span><span><kbd>SPACE</kbd> START WAVE</span><span className="online">● GITHUB PAGES</span></footer>
     </main>
