@@ -10,7 +10,7 @@ type UpgradableKey = CombatKey | "light";
 type MarineKind = "rifleman" | "gunner" | "medic" | "rocketeer";
 type AlienKind = "drone" | "spitter" | "brute" | "razortail" | "stalker" | "strider" | "broodmother" | "flyer" | "prowler";
 
-const MAX_WAVES = 25;
+const FINAL_MAP_WAVES = 25;
 const BETWEEN_WAVE_BUILD_SECONDS = 30;
 const ALIEN_SPEED_MULTIPLIER = 1.8;
 const ENEMY_SWARM_MULTIPLIER = 6;
@@ -127,6 +127,7 @@ type MapConfig = {
   saturation: number;
   baseCell: Cell;
   spawnCells: Cell[];
+  waveCount: number;
   startingStructures: Array<{ kind: AssetKey; x: number; y: number }>;
   startingMarines: Array<{ kind: MarineKind; x: number; y: number }>;
   activeEnemyCap?: number;
@@ -144,10 +145,11 @@ const steppedHeight = (height: number) => Math.max(0.04, Math.round(height / 0.1
 
 const MAPS: Record<MapKey, MapConfig> = {
   ridge: {
-    key: "ridge", operation: "LAST BASTION", sector: "HQ-1", name: "HQ Command", objective: "Defend humanity's headquarters", terrain: "FORTIFIED HQ · HEAVY ASSAULT",
-    description: "Humanity's vast field headquarters begins behind layered walls with a full defensive network and reinforced garrison, but five invasion fronts answer with an overwhelming assault.",
+    key: "ridge", operation: "FIRST WATCH", sector: "HQ-1", name: "HQ Command", objective: "Tutorial operation · Fortified training ground", terrain: "TUTORIAL · FORTIFIED HQ",
+    description: "Learn the battlefield from a large, reinforced bastion. Select units, right-click to move a formation, recruit from the field barracks, and use the build windows to expand your defenses before six forgiving waves.",
     background: 0x07120f, ground: 0x0b1713, fog: 0x010705, hue: 0.29, saturation: 0.24,
     baseCell: { x: 10, y: 35 }, spawnCells: [{ x: 43, y: 4 }, { x: 43, y: 39 }, { x: 23, y: 0 }, { x: 0, y: 8 }, { x: 0, y: 41 }],
+    waveCount: 6,
     startingStructures: [
       { kind: "barracks", x: 8, y: 35 }, { kind: "barracks", x: 12, y: 35 },
       { kind: "rifle", x: 7, y: 33 }, { kind: "rifle", x: 10, y: 33 }, { kind: "rifle", x: 13, y: 33 },
@@ -157,7 +159,8 @@ const MAPS: Record<MapKey, MapConfig> = {
       { kind: "laser", x: 16, y: 34 }, { kind: "railgun", x: 17, y: 37 },
       { kind: "howitzer", x: 10, y: 28 }, { kind: "howitzer", x: 18, y: 35 }, { kind: "missile", x: 18, y: 31 },
       { kind: "light", x: 6, y: 30 }, { kind: "light", x: 14, y: 29 }, { kind: "light", x: 18, y: 39 },
-      { kind: "bastion", x: 7, y: 32 }, { kind: "bastion", x: 8, y: 32 }, { kind: "bastion", x: 9, y: 32 }, { kind: "bastion", x: 10, y: 32 }, { kind: "bastion", x: 11, y: 32 }, { kind: "bastion", x: 12, y: 32 }, { kind: "bastion", x: 13, y: 32 },
+      { kind: "bastion", x: 6, y: 32 }, { kind: "bastion", x: 7, y: 32 }, { kind: "bastion", x: 8, y: 32 }, { kind: "bastion", x: 9, y: 32 }, { kind: "bastion", x: 10, y: 32 }, { kind: "bastion", x: 11, y: 32 }, { kind: "bastion", x: 12, y: 32 }, { kind: "bastion", x: 13, y: 32 }, { kind: "bastion", x: 14, y: 32 },
+      { kind: "bastion", x: 6, y: 39 }, { kind: "bastion", x: 14, y: 39 }, { kind: "bastion", x: 6, y: 40 }, { kind: "bastion", x: 14, y: 40 },
       { kind: "wall", x: 5, y: 34 }, { kind: "wall", x: 5, y: 35 }, { kind: "wall", x: 5, y: 36 }, { kind: "wall", x: 5, y: 37 }, { kind: "wall", x: 5, y: 38 },
       { kind: "wall", x: 7, y: 40 }, { kind: "wall", x: 8, y: 40 }, { kind: "wall", x: 9, y: 40 }, { kind: "wall", x: 10, y: 40 }, { kind: "wall", x: 11, y: 40 }, { kind: "wall", x: 12, y: 40 }, { kind: "wall", x: 13, y: 40 },
       { kind: "trench", x: 7, y: 30 }, { kind: "trench", x: 8, y: 30 }, { kind: "trench", x: 11, y: 30 }, { kind: "trench", x: 12, y: 30 },
@@ -171,7 +174,7 @@ const MAPS: Record<MapKey, MapConfig> = {
       { kind: "medic", x: 9, y: 36 }, { kind: "medic", x: 11, y: 36 },
       { kind: "rocketeer", x: 16, y: 32 }, { kind: "rocketeer", x: 16, y: 36 },
     ],
-    activeEnemyCap: 170, waveMultiplier: 1.75, burstScale: 1.15, spawnIntervalMultiplier: 0.62,
+    activeEnemyCap: 75, waveMultiplier: 0.7, burstScale: 0.5, spawnIntervalMultiplier: 1.15,
     heightAt: (x, y) => {
       const rolling = Math.max(0, Math.sin(x * 0.31) + Math.cos(y * 0.37) - 0.7) * 0.12;
       const broadRise = Math.max(0, 1 - Math.hypot(x - 28, y - 17) / 13) * 0.34;
@@ -184,6 +187,7 @@ const MAPS: Record<MapKey, MapConfig> = {
     description: "Your command post sits low in a broad ash basin. Long sightlines help artillery, but portals wrap around both flanks.",
     background: 0x160b08, ground: 0x1d100c, fog: 0x090301, hue: 0.065, saturation: 0.34,
     baseCell: { x: 22, y: 37 }, spawnCells: [{ x: 0, y: 4 }, { x: 43, y: 5 }, { x: 43, y: 35 }, { x: 5, y: 0 }],
+    waveCount: 11,
     startingStructures: [{ kind: "barracks", x: 22, y: 34 }, { kind: "rifle", x: 18, y: 34 }, { kind: "wall", x: 21, y: 36 }, { kind: "howitzer", x: 26, y: 34 }, { kind: "wire", x: 23, y: 32 }, { kind: "railgun", x: 28, y: 30 }, { kind: "light", x: 22, y: 30 }, { kind: "bastion", x: 18, y: 32 }],
     startingMarines: [{ kind: "rifleman", x: 20, y: 32 }, { kind: "medic", x: 23, y: 34 }, { kind: "rifleman", x: 24, y: 30 }, { kind: "gunner", x: 20, y: 30 }, { kind: "rocketeer", x: 26, y: 30 }],
     heightAt: (x, y) => {
@@ -198,6 +202,7 @@ const MAPS: Record<MapKey, MapConfig> = {
     description: "Sheer, terraced volcanic mesas split the approach into deep channels. Climbers can cross the heights, but the ascent costs them time.",
     background: 0x090811, ground: 0x100f18, fog: 0x030207, hue: 0.69, saturation: 0.18,
     baseCell: { x: 4, y: 22 }, spawnCells: [{ x: 43, y: 3 }, { x: 43, y: 40 }, { x: 22, y: 0 }, { x: 22, y: 43 }],
+    waveCount: 16,
     startingStructures: [{ kind: "barracks", x: 7, y: 22 }, { kind: "rifle", x: 9, y: 18 }, { kind: "wall", x: 9, y: 24 }, { kind: "howitzer", x: 11, y: 28 }, { kind: "wire", x: 11, y: 20 }, { kind: "flame", x: 11, y: 22 }, { kind: "bastion", x: 9, y: 26 }, { kind: "light", x: 13, y: 24 }],
     startingMarines: [{ kind: "rifleman", x: 7, y: 19 }, { kind: "medic", x: 7, y: 26 }, { kind: "rifleman", x: 7, y: 24 }, { kind: "gunner", x: 9, y: 20 }, { kind: "rocketeer", x: 11, y: 26 }],
     heightAt: (x, y) => {
@@ -215,6 +220,7 @@ const MAPS: Record<MapKey, MapConfig> = {
     description: "A central command post stands inside a shattered temple maze. Staggered gates and broken stone corridors bend eight invasion routes around the ruins.",
     background: 0x15120c, ground: 0x211d14, fog: 0x080603, hue: 0.115, saturation: 0.2,
     baseCell: { x: 22, y: 22 }, spawnCells: [{ x: 0, y: 7 }, { x: 0, y: 36 }, { x: 43, y: 7 }, { x: 43, y: 36 }, { x: 7, y: 0 }, { x: 36, y: 0 }, { x: 7, y: 43 }, { x: 36, y: 43 }],
+    waveCount: 21,
     startingStructures: [{ kind: "barracks", x: 20, y: 20 }, { kind: "rifle", x: 24, y: 20 }, { kind: "wall", x: 19, y: 22 }, { kind: "howitzer", x: 25, y: 24 }, { kind: "wire", x: 22, y: 18 }, { kind: "flak", x: 22, y: 25 }, { kind: "light", x: 22, y: 16 }, { kind: "bastion", x: 18, y: 24 }],
     startingMarines: [{ kind: "rifleman", x: 21, y: 20 }, { kind: "medic", x: 23, y: 23 }, { kind: "rifleman", x: 24, y: 22 }, { kind: "gunner", x: 20, y: 24 }, { kind: "rocketeer", x: 25, y: 21 }],
     burstScale: 0.42,
@@ -245,6 +251,7 @@ const MAPS: Record<MapKey, MapConfig> = {
     description: "The command post is surrounded by spawning pits, luminous growths, and organic ridges. Twelve perimeter gates feed a relentless homeworld swarm.",
     background: 0x100619, ground: 0x160b20, fog: 0x050108, hue: 0.78, saturation: 0.46,
     baseCell: { x: 22, y: 22 }, spawnCells: [{ x: 0, y: 5 }, { x: 0, y: 16 }, { x: 0, y: 38 }, { x: 43, y: 5 }, { x: 43, y: 27 }, { x: 43, y: 38 }, { x: 7, y: 0 }, { x: 22, y: 0 }, { x: 37, y: 0 }, { x: 7, y: 43 }, { x: 22, y: 43 }, { x: 37, y: 43 }],
+    waveCount: FINAL_MAP_WAVES,
     startingStructures: [{ kind: "barracks", x: 20, y: 20 }, { kind: "rifle", x: 24, y: 20 }, { kind: "wall", x: 19, y: 22 }, { kind: "missile", x: 25, y: 24 }, { kind: "wire", x: 22, y: 18 }, { kind: "flak", x: 22, y: 25 }, { kind: "light", x: 22, y: 16 }, { kind: "bastion", x: 18, y: 24 }],
     startingMarines: [{ kind: "rifleman", x: 21, y: 20 }, { kind: "medic", x: 23, y: 23 }, { kind: "rifleman", x: 24, y: 22 }, { kind: "gunner", x: 20, y: 24 }, { kind: "rocketeer", x: 25, y: 21 }],
     activeEnemyCap: 170, waveMultiplier: 2.15, burstScale: 0.55, spawnIntervalMultiplier: 0.58,
@@ -1312,7 +1319,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     }
     function startWave() {
       if (active || gameOver) return;
-      if (wave >= MAX_WAVES) { victory = true; gameOver = true; message("SECTOR SECURED · ALL WAVES REPELLED"); emitHud(true); return; }
+      if (wave >= map.waveCount) { victory = true; gameOver = true; message("SECTOR SECURED · ALL WAVES REPELLED"); emitHud(true); return; }
       buildTimer = 0; wave++; active = true; spawnLeft = Math.round((14 + Math.floor(wave * 2.35)) * ENEMY_SWARM_MULTIPLIER * (map.waveMultiplier ?? 1)); spawnTimer = 0.45; assaultFront = Math.floor(Math.random() * spawnCells.length); message(`WAVE ${String(wave).padStart(2, "0")} INBOUND · ${spawnLeft} LIFE SIGNS · ${spawnCells.length} FRONTS · CONSTRUCTION LOCKED`); emitHud(true);
     }
     function burst(at: THREE.Vector3, color: number, count = 10, spread = 1) {
@@ -1515,7 +1522,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     function update(dt: number) {
       elapsed += dt; spawnBeacons.forEach(beacon => { beacon.portal.rotation.z += dt * 0.7; beacon.inner.rotation.z -= dt * 0.42; beacon.light.intensity = 2.6 + Math.sin(elapsed * 3.2 + beacon.phase) * 0.7; });
       incomingDamageCache.clear();
-      if (!active && !gameOver && wave > 0 && wave < MAX_WAVES && buildTimer > 0) {
+      if (!active && !gameOver && wave > 0 && wave < map.waveCount && buildTimer > 0) {
         buildTimer = Math.max(0, buildTimer - dt);
         if (buildTimer === 0) { message("BUILD WINDOW CLOSED · NEXT WAVE DEPLOYING"); startWave(); }
       }
@@ -1725,7 +1732,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       }
       for (const m of [...marines]) if (m.hp <= 0) { selectedMarines.delete(m.id); burst(m.group.position.clone().add(new THREE.Vector3(0, 0.5, 0)), 0xff5f47, 9); removeHealthBar(m.group); world.remove(m.group); marines.splice(marines.indexOf(m), 1); message(`${MARINE_STATS[m.kind].name.toUpperCase()} KILLED IN ACTION`); }
       for (const p of [...particles]) { p.life -= dt; p.velocity.y -= dt * 2.6; p.mesh.position.addScaledVector(p.velocity, dt); (p.mesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, p.life / p.maxLife); if (p.life <= 0) { world.remove(p.mesh); particles.splice(particles.indexOf(p), 1); } }
-      if (active && spawnLeft === 0 && enemies.length === 0) { active = false; credits += 125 + wave * 25; if (wave >= MAX_WAVES) { victory = true; gameOver = true; message("SECTOR SECURED · HUMANITY HOLDS THE RIDGE"); } else { buildTimer = BETWEEN_WAVE_BUILD_SECONDS; message(`WAVE ${String(wave).padStart(2, "0")} DESTROYED · 30-SECOND BUILD WINDOW OPEN`); } }
+      if (active && spawnLeft === 0 && enemies.length === 0) { active = false; credits += 125 + wave * 25; if (wave >= map.waveCount) { victory = true; gameOver = true; message(`SECTOR SECURED · ${map.name.toUpperCase()} HOLDS`); } else { buildTimer = BETWEEN_WAVE_BUILD_SECONDS; message(`WAVE ${String(wave).padStart(2, "0")} DESTROYED · 30-SECOND BUILD WINDOW OPEN`); } }
       emitHud();
     }
 
@@ -1772,7 +1779,7 @@ export default function Home() {
       </header>
       <section className="battlefield">
         <Battlefield selected={selected} mapKey={mapKey} onHud={setHud} onMessage={showMessage} onUnitSelected={setSelectedUnit} onBarracksSelected={setSelectedBarracks} apiRef={apiRef} />
-        <div className="mission-card"><span>OPERATION {map.operation} · SECTOR {map.sector}</span><b>{map.objective}</b><small>Wave {Math.min(hud.wave + (hud.active ? 0 : 1), MAX_WAVES)} of {MAX_WAVES} · {hud.kills} confirmed eliminations · {hud.active ? "CONSTRUCTION LOCKED" : hud.buildSeconds === null ? "STAGING AREA OPEN" : `BUILD ${formatBuildTime(hud.buildSeconds)}`}</small><button className="map-change" disabled={hud.active} onClick={() => setBriefing(true)}>CHANGE MAP</button></div>
+        <div className="mission-card"><span>OPERATION {map.operation} · SECTOR {map.sector}</span><b>{map.objective}</b><small>Wave {Math.min(hud.wave + (hud.active ? 0 : 1), map.waveCount)} of {map.waveCount} · {hud.kills} confirmed eliminations · {hud.active ? "CONSTRUCTION LOCKED" : hud.buildSeconds === null ? "STAGING AREA OPEN" : `BUILD ${formatBuildTime(hud.buildSeconds)}`}</small><button className="map-change" disabled={hud.active} onClick={() => setBriefing(true)}>CHANGE MAP</button></div>
         <div className="status-feed"><i />{message}</div>
         {selectedUnit && <div className="upgrade-card" style={{ "--upgrade-color": ASSETS[selectedUnit.kind].accent } as React.CSSProperties}>
           <small>SELECTED DEFENSE</small><div className="upgrade-heading"><b>{selectedUnit.name}</b><em>TIER {selectedUnit.level}/{selectedUnit.maxLevel}</em></div>
@@ -1786,7 +1793,7 @@ export default function Home() {
           <p>Recruit as many specialists as command credits allow. Every infantry unit deploys beside the barracks immediately.</p>
         </div>}
         <div className="camera-tools"><button onClick={() => apiRef.current?.rotate()} aria-label="Rotate camera">↻</button><span>ORBIT</span></div>
-        {briefing && <div className="briefing map-briefing"><div className="briefing-id">THEATER SELECTION // FIVE ACTIVE SECTORS</div><h1>Choose the ground you hold.</h1><p>Five huge square battlefields offer different elevation profiles, command-post locations, invasion portals, and opening deployments. Fog still conceals everything outside friendly vision.</p><div className="map-selector" aria-label="Available battlefields">{MAP_ORDER.map(key => { const option = MAPS[key]; const pipPosition = (cell: Cell) => ({ left: `${(cell.x / (GRID_W - 1)) * 100}%`, top: `${(cell.y / (GRID_H - 1)) * 100}%` }); return <button key={key} className={`map-option ${mapKey === key ? "active" : ""}`} aria-pressed={mapKey === key} onClick={() => selectMap(key)}><span className={`map-preview ${key}`} aria-hidden="true"><i className="base-pip" style={pipPosition(option.baseCell)} />{option.spawnCells.map((cell, index) => <i key={`${cell.x}-${cell.y}-${index}`} className="portal-pip" style={pipPosition(cell)} />)}</span><small>{option.terrain}</small><b>{option.name}</b><em>{option.objective}</em></button>; })}</div><p className="map-description"><b>OPERATION {map.operation} · SECTOR {map.sector}</b>{map.description}</p><div className="brief-grid"><span><kbd>LIGHT TOWER</kbd><b>Reveal a wide area</b></span><span><kbd>RIGHT CLICK</kbd><b>Move scouts forward</b></span><span><kbd>STACK WALLS</kbd><b>Shape every approach</b></span><span><kbd>MIDDLE DRAG</kbd><b>Orbit camera</b></span></div><button onClick={() => setBriefing(false)}>DEPLOY TO {map.name.toUpperCase()}</button></div>}
+        {briefing && <div className="briefing map-briefing"><div className="briefing-id">THEATER SELECTION // FIVE ACTIVE SECTORS</div><h1>Choose the ground you hold.</h1><p>Five huge square battlefields offer different elevation profiles, command-post locations, invasion portals, and opening deployments. Every new sector asks you to survive more waves. Fog still conceals everything outside friendly vision.</p><div className="map-selector" aria-label="Available battlefields">{MAP_ORDER.map(key => { const option = MAPS[key]; const pipPosition = (cell: Cell) => ({ left: `${(cell.x / (GRID_W - 1)) * 100}%`, top: `${(cell.y / (GRID_H - 1)) * 100}%` }); return <button key={key} className={`map-option ${mapKey === key ? "active" : ""}`} aria-pressed={mapKey === key} onClick={() => selectMap(key)}><span className={`map-preview ${key}`} aria-hidden="true"><i className="base-pip" style={pipPosition(option.baseCell)} />{option.spawnCells.map((cell, index) => <i key={`${cell.x}-${cell.y}-${index}`} className="portal-pip" style={pipPosition(cell)} />)}</span><small>{option.terrain}</small><b>{option.name}</b><em>{option.objective} · {option.waveCount} waves</em></button>; })}</div><p className="map-description"><b>OPERATION {map.operation} · SECTOR {map.sector}</b>{map.description}</p><div className="brief-grid"><span><kbd>LIGHT TOWER</kbd><b>Reveal a wide area</b></span><span><kbd>RIGHT CLICK</kbd><b>Move scouts forward</b></span><span><kbd>STACK WALLS</kbd><b>Shape every approach</b></span><span><kbd>MIDDLE DRAG</kbd><b>Orbit camera</b></span></div><button onClick={() => setBriefing(false)}>DEPLOY TO {map.name.toUpperCase()}</button></div>}
         {hud.gameOver && <div className={`end-card ${hud.victory ? "won" : "lost"}`}><small>{hud.victory ? "OPERATION COMPLETE" : "SIGNAL LOST"}</small><h2>{hud.victory ? `${map.name.toUpperCase()} HOLDS` : "COMMAND OVERRUN"}</h2><p>{hud.kills} hostiles eliminated across {hud.wave} waves.</p><button onClick={() => apiRef.current?.restart()}>RESTART OPERATION</button></div>}
       </section>
       <aside className={`build-panel ${hud.active || hud.gameOver ? "locked" : ""}`}>
