@@ -21,7 +21,7 @@ const ASSETS: Record<AssetKey, { name: string; role: string; cost: number; range
 type Hud = { credits: number; integrity: number; wave: number; enemies: number; kills: number; active: boolean; gameOver: boolean; victory: boolean };
 type Cell = { x: number; y: number };
 type Structure = { id: number; kind: AssetKey; x: number; y: number; hp: number; maxHp: number; mountedOn?: number; group: THREE.Group; cooldown: number; spawnTimer: number };
-type Enemy = { id: number; kind: AlienKind; x: number; y: number; hp: number; maxHp: number; speed: number; damage: number; reward: number; path: Cell[]; index: number; group: THREE.Group; hitFlash: number; attackCooldown: number };
+type Enemy = { id: number; kind: AlienKind; x: number; y: number; hp: number; maxHp: number; speed: number; damage: number; reward: number; path: Cell[]; index: number; group: THREE.Group; hitFlash: number; attackCooldown: number; pathTimer: number; targetId: number | null; targetType: "marine" | "structure" | "base" };
 type Marine = { id: number; x: number; y: number; targetX: number; targetY: number; vx: number; vy: number; hp: number; maxHp: number; cooldown: number; mountedOn?: number; group: THREE.Group };
 type Bullet = { mesh: THREE.Mesh; from: THREE.Vector3; to: THREE.Vector3; t: number; speed: number; target: number; damage: number; splash: number; color: number };
 type Particle = { mesh: THREE.Mesh; velocity: THREE.Vector3; life: number; maxLife: number };
@@ -302,36 +302,43 @@ function Battlefield({ selected, onHud, onMessage, apiRef }: { selected: AssetKe
 
     const STRUCTURE_HP: Record<AssetKey, number> = { rifle: 190, howitzer: 300, wall: 600, mine: 45, barracks: 500 };
     function attachHealthBar(group: THREE.Group, y = 1.75) {
-      const bar = new THREE.Group(); bar.position.y = y;
-      const back = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0x35120f, depthTest: false })); back.scale.set(1.18, 0.105, 1); back.renderOrder = 20; bar.add(back);
-      const fill = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0x7dff79, depthTest: false })); fill.scale.set(1.12, 0.065, 1); fill.position.z = 0.01; fill.renderOrder = 21; bar.add(fill);
-      group.add(bar); group.userData.healthBar = bar; group.userData.healthFill = fill;
+      const bar = new THREE.Group();
+      const back = new THREE.Mesh(new THREE.PlaneGeometry(1.18, 0.12), new THREE.MeshBasicMaterial({ color: 0x190d0c, depthTest: false, transparent: true, opacity: 0.92 })); back.renderOrder = 30; bar.add(back);
+      const fill = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.072), new THREE.MeshBasicMaterial({ color: 0x7dff79, depthTest: false })); fill.position.z = 0.012; fill.renderOrder = 31; bar.add(fill);
+      bar.position.copy(group.position).add(new THREE.Vector3(0, y * group.scale.y, 0)); world.add(bar); group.userData.healthBar = bar; group.userData.healthFill = fill; group.userData.healthOffset = y * group.scale.y;
     }
     function setHealthVisual(group: THREE.Group, hp: number, maxHp: number) {
-      const ratio = clamp(hp / maxHp, 0, 1); const fill = group.userData.healthFill as THREE.Sprite | undefined;
-      if (fill) { fill.scale.x = 1.12 * ratio; fill.position.x = -0.56 * (1 - ratio); (fill.material as THREE.SpriteMaterial).color.setHex(ratio > 0.55 ? 0x7dff79 : ratio > 0.25 ? 0xffbd55 : 0xff5249); }
+      const ratio = clamp(Number.isFinite(hp / maxHp) ? hp / maxHp : 0, 0, 1); const fill = group.userData.healthFill as THREE.Mesh | undefined;
+      if (fill) { fill.scale.x = Math.max(0.001, ratio); fill.position.x = -0.55 * (1 - ratio); (fill.material as THREE.MeshBasicMaterial).color.setHex(ratio > 0.55 ? 0x7dff79 : ratio > 0.25 ? 0xffbd55 : 0xff5249); }
+    }
+    function syncHealthBar(group: THREE.Group) {
+      const bar = group.userData.healthBar as THREE.Group | undefined; if (!bar) return; bar.position.copy(group.position).add(new THREE.Vector3(0, group.userData.healthOffset as number, 0)); bar.quaternion.copy(camera.quaternion);
+    }
+    function removeHealthBar(group: THREE.Group) {
+      const bar = group.userData.healthBar as THREE.Group | undefined; if (bar) world.remove(bar); group.userData.healthBar = undefined; group.userData.healthFill = undefined;
     }
     let credits = 750, integrity = 100, wave = 0, kills = 0, active = false, gameOver = false, victory = false;
     let spawnLeft = 0, spawnTimer = 0, nextId = 1, elapsed = 0, lastHud = -1;
     let structures: Structure[] = [], enemies: Enemy[] = [], marines: Marine[] = [], bullets: Bullet[] = [], particles: Particle[] = [];
     const selectedMarines = new Set<number>();
     const blocked = () => new Set(structures.filter(s => s.kind !== "mine" && !s.mountedOn).map(s => keyOf(s.x, s.y)));
-    function findPath(sx: number, sy: number, extra?: Cell): Cell[] {
+    function findPathTo(sx: number, sy: number, target: Cell, extra?: Cell): Cell[] {
       const ban = blocked(); if (extra) ban.add(keyOf(extra.x, extra.y));
       const start = { x: clamp(Math.round(sx), 0, GRID_W - 1), y: clamp(Math.round(sy), 0, GRID_H - 1) };
-      ban.delete(keyOf(start.x, start.y));
+      const goal = { x: clamp(Math.round(target.x), 0, GRID_W - 1), y: clamp(Math.round(target.y), 0, GRID_H - 1) }; ban.delete(keyOf(start.x, start.y)); ban.delete(keyOf(goal.x, goal.y));
       const queue: Cell[] = [start], prev = new Map<string, string>(); prev.set(keyOf(start.x, start.y), "");
       for (let qi = 0; qi < queue.length; qi++) {
-        const cur = queue[qi]; if (cur.x === baseCell.x && cur.y === baseCell.y) break;
+        const cur = queue[qi]; if (cur.x === goal.x && cur.y === goal.y) break;
         const next = [{ x: cur.x + 1, y: cur.y }, { x: cur.x - 1, y: cur.y }, { x: cur.x, y: cur.y + 1 }, { x: cur.x, y: cur.y - 1 }];
-        next.sort((a, b) => (Math.abs(a.x - baseCell.x) + Math.abs(a.y - baseCell.y)) - (Math.abs(b.x - baseCell.x) + Math.abs(b.y - baseCell.y)));
+        next.sort((a, b) => (Math.abs(a.x - goal.x) + Math.abs(a.y - goal.y)) - (Math.abs(b.x - goal.x) + Math.abs(b.y - goal.y)));
         for (const n of next) if (n.x >= 0 && n.y >= 0 && n.x < GRID_W && n.y < GRID_H && !ban.has(keyOf(n.x, n.y)) && !prev.has(keyOf(n.x, n.y))) { prev.set(keyOf(n.x, n.y), keyOf(cur.x, cur.y)); queue.push(n); }
       }
-      const endKey = keyOf(baseCell.x, baseCell.y); if (!prev.has(endKey)) return [];
+      const endKey = keyOf(goal.x, goal.y); if (!prev.has(endKey)) return [];
       const out: Cell[] = []; let k = endKey;
       while (k) { const [x, y] = k.split(",").map(Number); out.push({ x, y }); k = prev.get(k) || ""; }
       return out.reverse();
     }
+    const findPath = (sx: number, sy: number, extra?: Cell) => findPathTo(sx, sy, baseCell, extra);
     function emitHud(force = false) {
       if (!force && elapsed - lastHud < 0.12) return; lastHud = elapsed;
       callbacks.current.onHud({ credits, integrity, wave, enemies: enemies.length + spawnLeft, kills, active, gameOver, victory });
@@ -355,19 +362,19 @@ function Battlefield({ selected, onHud, onMessage, apiRef }: { selected: AssetKe
       if (wall && !canMount) return message("ONLY RIFLE TEAMS OR ARTILLERY CAN MOUNT WALLS");
       if (kind !== "mine" && !canMount && !findPath(spawnCell.x, spawnCell.y, { x, y }).length) return message("FORTIFICATION WOULD SEAL THE EVACUATION CORRIDOR");
       addStructure(kind, x, y, false, canMount ? wall?.id : undefined);
-      if (kind !== "mine" && !canMount) enemies.forEach(e => { e.path = findPath(e.x, e.y); e.index = 0; });
+      if (kind !== "mine" && !canMount) enemies.forEach(e => { e.pathTimer = 0; e.index = 0; });
       message(`${asset.name.toUpperCase()} ${canMount ? "MOUNTED ON WALL" : "DEPLOYED"} · ELEVATION ${Math.round((heights[y][x] + (canMount ? 0.62 : 0)) * 100)}M`); emitHud(true);
     }
     function destroyStructure(s: Structure, salvaged = false) {
       if (!structures.includes(s)) return;
       if (s.kind === "wall") {
-        structures.filter(other => other.mountedOn === s.id).forEach(other => { burst(other.group.position, 0xff794f, 10); world.remove(other.group); structures.splice(structures.indexOf(other), 1); });
-        marines.filter(m => m.mountedOn === s.id).forEach(m => { m.mountedOn = undefined; m.hp -= 35; m.targetX = clamp(m.x + 1, 0, GRID_W - 1); m.targetY = m.y; });
+        structures.filter(other => other.mountedOn === s.id).forEach(other => { burst(other.group.position, 0xff794f, 10); removeHealthBar(other.group); world.remove(other.group); structures.splice(structures.indexOf(other), 1); });
+        marines.filter(m => m.mountedOn === s.id).forEach(m => { m.mountedOn = undefined; m.hp = Math.max(0, m.hp - 35); setHealthVisual(m.group, m.hp, m.maxHp); m.targetX = clamp(m.x + 1, 0, GRID_W - 1); m.targetY = m.y; });
       }
       if (salvaged) credits += Math.floor(ASSETS[s.kind].cost * 0.6);
       burst(s.group.position.clone().add(new THREE.Vector3(0, 0.5, 0)), salvaged ? 0x9dff8b : 0xff553f, salvaged ? 5 : 15);
-      world.remove(s.group); structures.splice(structures.indexOf(s), 1);
-      enemies.forEach(e => { e.path = findPath(e.x, e.y); e.index = 0; });
+      removeHealthBar(s.group); world.remove(s.group); structures.splice(structures.indexOf(s), 1);
+      enemies.forEach(e => { e.pathTimer = 0; e.index = 0; });
     }
     function removeStructureAt(x: number, y: number) {
       const s = structures.filter(item => item.x === x && item.y === y).sort((a, b) => Number(!!b.mountedOn) - Number(!!a.mountedOn))[0]; if (!s) return;
@@ -406,8 +413,8 @@ function Battlefield({ selected, onHud, onMessage, apiRef }: { selected: AssetKe
     function spawnEnemy() {
       const roll = Math.random(); const kind: AlienKind = wave >= 4 && roll > 0.78 ? "brute" : wave >= 2 && roll > 0.58 ? "spitter" : "drone";
       const scale = 1 + wave * 0.12; const hp = (kind === "brute" ? 340 : kind === "spitter" ? 125 : 82) * scale;
-      const group = makeAlien(kind); const p = worldPos(spawnCell.x, spawnCell.y); group.position.copy(p); world.add(group);
-      enemies.push({ id: nextId++, kind, x: spawnCell.x, y: spawnCell.y, hp, maxHp: hp, speed: (kind === "brute" ? 0.48 : kind === "spitter" ? 0.72 : 0.9) * (1 + wave * 0.018), damage: kind === "brute" ? 18 : kind === "spitter" ? 9 : 6, reward: kind === "brute" ? 65 : kind === "spitter" ? 36 : 24, path: findPath(spawnCell.x, spawnCell.y), index: 0, group, hitFlash: 0, attackCooldown: 0 });
+      const group = makeAlien(kind); const p = worldPos(spawnCell.x, spawnCell.y); group.position.copy(p); attachHealthBar(group, kind === "brute" ? 2.05 : kind === "spitter" ? 1.45 : 1.05); world.add(group);
+      enemies.push({ id: nextId++, kind, x: spawnCell.x, y: spawnCell.y, hp, maxHp: hp, speed: (kind === "brute" ? 0.48 : kind === "spitter" ? 0.72 : 0.9) * (1 + wave * 0.018), damage: kind === "brute" ? 18 : kind === "spitter" ? 9 : 6, reward: kind === "brute" ? 65 : kind === "spitter" ? 36 : 24, path: [], index: 0, group, hitFlash: 0, attackCooldown: 0, pathTimer: 0, targetId: null, targetType: "base" });
     }
     function startWave() {
       if (active || gameOver) return;
@@ -429,9 +436,9 @@ function Battlefield({ selected, onHud, onMessage, apiRef }: { selected: AssetKe
       const mesh = new THREE.Mesh(new THREE.SphereGeometry(heavy ? 0.11 : 0.045, 7, 5), new THREE.MeshBasicMaterial({ color })); mesh.position.copy(from); world.add(mesh);
       bullets.push({ mesh, from: from.clone(), to: target.group.position.clone().add(new THREE.Vector3(0, 0.42, 0)), t: 0, speed: heavy ? 1.35 : 4.8, target: target.id, damage, splash, color });
     }
-    function damageEnemy(e: Enemy, amount: number) { e.hp -= amount; e.hitFlash = 0.09; }
+    function damageEnemy(e: Enemy, amount: number) { e.hp = clamp(e.hp - Math.max(0, amount), 0, e.maxHp); e.hitFlash = 0.09; setHealthVisual(e.group, e.hp, e.maxHp); }
     function restart() {
-      [...structures, ...enemies, ...marines].forEach(o => world.remove(o.group)); bullets.forEach(b => world.remove(b.mesh)); particles.forEach(p => world.remove(p.mesh));
+      [...structures, ...enemies, ...marines].forEach(o => { removeHealthBar(o.group); world.remove(o.group); }); bullets.forEach(b => world.remove(b.mesh)); particles.forEach(p => world.remove(p.mesh));
       structures = []; enemies = []; marines = []; bullets = []; particles = []; selectedMarines.clear(); credits = 750; integrity = 100; wave = 0; kills = 0; active = false; gameOver = false; victory = false; spawnLeft = 0;
       addStructure("barracks", 3, 14, true); addStructure("rifle", 6, 14, true); addStructure("wall", 4, 15, true); addStructure("howitzer", 8, 15, true); spawnMarine(3, 13); spawnMarine(4, 14); message("COMMAND SYSTEMS RESET · AWAITING DEPLOYMENT"); emitHud(true);
     }
@@ -466,6 +473,11 @@ function Battlefield({ selected, onHud, onMessage, apiRef }: { selected: AssetKe
     function onKeyUp(e: KeyboardEvent) { heldKeys.delete(e.key.toLowerCase()); }
     renderer.domElement.addEventListener("pointermove", onMove, true); renderer.domElement.addEventListener("pointerdown", onDown, true); renderer.domElement.addEventListener("pointerup", onUp, true); renderer.domElement.addEventListener("contextmenu", onContext); window.addEventListener("keydown", onKey); window.addEventListener("keyup", onKeyUp);
 
+    function turnToward(group: THREE.Group, angle: number, speed: number, dt: number) {
+      const delta = Math.atan2(Math.sin(angle - group.rotation.y), Math.cos(angle - group.rotation.y));
+      group.rotation.y += delta * Math.min(1, speed * dt);
+    }
+
     function update(dt: number) {
       elapsed += dt; portal.rotation.z += dt * 0.7;
       const forward = controls.target.clone().sub(camera.position); forward.y = 0; forward.normalize(); const right = new THREE.Vector3(-forward.z, 0, forward.x); const intent = new THREE.Vector3();
@@ -474,22 +486,25 @@ function Battlefield({ selected, onHud, onMessage, apiRef }: { selected: AssetKe
       const cameraStep = cameraVelocity.clone().multiplyScalar(dt); camera.position.add(cameraStep); controls.target.add(cameraStep); controls.target.x = clamp(controls.target.x, -15, 15); controls.target.z = clamp(controls.target.z, -11, 11);
       if (active && spawnLeft > 0) { spawnTimer -= dt; if (spawnTimer <= 0) { spawnEnemy(); spawnLeft--; spawnTimer = Math.max(0.35, 1.2 - wave * 0.07); } }
       for (const e of enemies) {
-        e.hitFlash = Math.max(0, e.hitFlash - dt); e.attackCooldown -= dt;
-        const attackRange = e.kind === "spitter" ? 3.1 : e.kind === "brute" ? 1.7 : 1.45;
-        const defense = structures.filter(s => s.kind !== "mine").map(s => ({ s, d: Math.hypot(s.x - e.x, s.y - e.y) })).filter(v => v.d <= attackRange).sort((a, b) => a.d - b.d)[0];
-        const soldier = marines.map(m => ({ m, d: Math.hypot(m.x - e.x, m.y - e.y) })).filter(v => v.d <= attackRange).sort((a, b) => a.d - b.d)[0];
-        let isMoving = false;
-        if (defense || soldier) {
-          const tx = defense ? defense.s.x : soldier.m.x, ty = defense ? defense.s.y : soldier.m.y; e.group.rotation.y = Math.atan2(-(tx - e.x), -(ty - e.y));
+        e.hitFlash = Math.max(0, e.hitFlash - dt); e.attackCooldown -= dt; e.pathTimer -= dt;
+        const closestMarine = marines.map(m => ({ type: "marine" as const, id: m.id, x: m.x, y: m.y, group: m.group, marine: m, d: Math.hypot(m.x - e.x, m.y - e.y) })).sort((a, b) => a.d - b.d)[0];
+        const closestEmplacement = structures.filter(s => s.kind === "rifle" || s.kind === "howitzer").map(s => ({ type: "structure" as const, id: s.id, x: s.x, y: s.y, group: s.group, structure: s, d: Math.hypot(s.x - e.x, s.y - e.y) })).sort((a, b) => a.d - b.d)[0];
+        const combatTarget = closestMarine && closestEmplacement ? (closestMarine.d <= closestEmplacement.d ? closestMarine : closestEmplacement) : closestMarine || closestEmplacement;
+        const targetType = combatTarget?.type ?? "base", targetId = combatTarget?.id ?? null, tx = combatTarget?.x ?? baseCell.x, ty = combatTarget?.y ?? baseCell.y;
+        const targetChanged = e.targetType !== targetType || e.targetId !== targetId; e.targetType = targetType; e.targetId = targetId;
+        if (targetChanged || e.pathTimer <= 0 || !e.path.length) { e.path = findPathTo(e.x, e.y, { x: tx, y: ty }); e.index = 0; e.pathTimer = targetType === "marine" ? 0.28 : 0.75; }
+        const targetDistance = Math.hypot(tx - e.x, ty - e.y), attackRange = e.kind === "spitter" ? 3.1 : e.kind === "brute" ? 1.7 : 1.45;
+        let isMoving = false, isAttacking = false;
+        if (combatTarget && targetDistance <= attackRange) {
+          isAttacking = true; e.group.rotation.y = Math.atan2(-(tx - e.x), -(ty - e.y));
           if (e.attackCooldown <= 0) {
-            const hit = e.damage * (e.kind === "brute" ? 1.45 : 1); const targetPos = defense ? defense.s.group.position : soldier.m.group.position;
+            const hit = e.damage * (e.kind === "brute" ? 1.45 : 1); const targetPos = combatTarget.group.position;
             hostileStrike(e.group.position, targetPos, e.kind === "spitter" ? 0x58ff9a : e.kind === "brute" ? 0xff493c : 0xff8b52, e.kind === "spitter");
-            if (defense) { defense.s.hp -= hit; setHealthVisual(defense.s.group, defense.s.hp, defense.s.maxHp); if (defense.s.hp <= 0) { message(`${ASSETS[defense.s.kind].name.toUpperCase()} DESTROYED BY HOSTILES`); destroyStructure(defense.s); } }
-            else { soldier.m.hp -= hit; setHealthVisual(soldier.m.group, soldier.m.hp, soldier.m.maxHp); }
+            if (combatTarget.type === "structure") { const s = combatTarget.structure; s.hp = clamp(s.hp - hit, 0, s.maxHp); setHealthVisual(s.group, s.hp, s.maxHp); if (s.hp <= 0) { message(`${ASSETS[s.kind].name.toUpperCase()} DESTROYED BY HOSTILES`); destroyStructure(s); } }
+            else { const m = combatTarget.marine; m.hp = clamp(m.hp - hit, 0, m.maxHp); setHealthVisual(m.group, m.hp, m.maxHp); }
             burst(targetPos.clone().add(new THREE.Vector3(0, 0.55, 0)), e.kind === "spitter" ? 0x65ffac : 0xff694d, e.kind === "brute" ? 8 : 4); e.attackCooldown = e.kind === "brute" ? 1.35 : e.kind === "spitter" ? 1.15 : 0.82;
           }
         } else {
-          if (!e.path.length) e.path = findPath(e.x, e.y);
           const targetCell = e.path[Math.min(e.index + 1, e.path.length - 1)];
           if (targetCell) {
             const dx = targetCell.x - e.x, dy = targetCell.y - e.y, dist = Math.hypot(dx, dy);
@@ -504,28 +519,34 @@ function Battlefield({ selected, onHud, onMessage, apiRef }: { selected: AssetKe
         const bodyRig = e.group.userData.bodyRig as THREE.Group | undefined;
         if (bodyRig) {
           bodyRig.position.y = Math.sin(gait * 2) * (isMoving ? (e.kind === "brute" ? 0.035 : 0.055) : 0.012);
-          bodyRig.position.z = defense || soldier ? Math.max(0, Math.sin(gait * 1.4)) * (e.kind === "brute" ? -0.11 : -0.06) : 0;
+          bodyRig.position.z = isAttacking ? Math.max(0, Math.sin(gait * 1.4)) * (e.kind === "brute" ? -0.11 : -0.06) : 0;
           bodyRig.rotation.z = Math.sin(gait) * (isMoving ? 0.035 : 0.012);
         }
-        const p = worldPos(e.x, e.y); e.group.position.lerp(p, Math.min(1, dt * 12)); e.group.position.y += Math.sin(elapsed * 9 + e.id) * (e.kind === "brute" ? 0.005 : 0.01);
+        const p = worldPos(e.x, e.y); e.group.position.lerp(p, Math.min(1, dt * 12)); e.group.position.y += Math.sin(elapsed * 9 + e.id) * (e.kind === "brute" ? 0.005 : 0.01); syncHealthBar(e.group);
       }
       for (const s of structures) {
-        s.cooldown -= dt;
+        s.cooldown -= dt; syncHealthBar(s.group);
         if (s.kind === "barracks") {
           s.spawnTimer = Math.max(0, s.spawnTimer - dt);
         }
         if (s.kind !== "rifle" && s.kind !== "howitzer") continue;
         const range = ASSETS[s.kind].range + heights[s.y][s.x] * 0.9; const target = enemies.filter(e => e.hp > 0 && Math.hypot(e.x - s.x, e.y - s.y) <= range).sort((a, b) => b.index - a.index)[0];
-        if (target && s.cooldown <= 0) { const muzzle = s.group.userData.muzzle as THREE.Object3D | undefined; const from = muzzle ? muzzle.getWorldPosition(new THREE.Vector3()) : s.group.position.clone().add(new THREE.Vector3(0, 1.05, 0)); fire(from, target, s.kind === "howitzer" ? 105 : 5.8, s.kind === "howitzer" ? 1.25 : 0, s.kind === "howitzer" ? 0xffa64d : 0xd6ff81, s.kind === "howitzer"); s.cooldown = s.kind === "howitzer" ? 2.35 : 0.15; }
+        if (target) {
+          turnToward(s.group, Math.atan2(-(target.x - s.x), -(target.y - s.y)), s.kind === "howitzer" ? 3.5 : 8, dt);
+          if (s.cooldown <= 0) { const muzzle = s.group.userData.muzzle as THREE.Object3D | undefined; const from = muzzle ? muzzle.getWorldPosition(new THREE.Vector3()) : s.group.position.clone().add(new THREE.Vector3(0, 1.05, 0)); fire(from, target, s.kind === "howitzer" ? 105 : 5.8, s.kind === "howitzer" ? 1.25 : 0, s.kind === "howitzer" ? 0xffa64d : 0xd6ff81, s.kind === "howitzer"); s.cooldown = s.kind === "howitzer" ? 2.35 : 0.15; }
+        }
       }
       for (const m of marines) {
         m.cooldown -= dt; const mdx = m.targetX - m.x, mdy = m.targetY - m.y, moveDist = Math.hypot(mdx, mdy);
         if (moveDist > 0.035) { const accel = 5.2; m.vx += mdx / moveDist * accel * dt; m.vy += mdy / moveDist * accel * dt; const speed = Math.hypot(m.vx, m.vy), max = 1.65; if (speed > max) { m.vx *= max / speed; m.vy *= max / speed; } m.x += m.vx * dt; m.y += m.vy * dt; m.group.rotation.y = Math.atan2(-m.vx, -m.vy); }
         else { m.x = m.targetX; m.y = m.targetY; m.vx *= Math.exp(-dt * 10); m.vy *= Math.exp(-dt * 10); }
-        m.vx *= Math.exp(-dt * 3.2); m.vy *= Math.exp(-dt * 3.2); const settledOnWall = m.mountedOn && moveDist < 0.12; m.group.position.lerp(worldPos(m.x, m.y, settledOnWall ? 0.62 : 0), Math.min(1, dt * 14));
+        m.vx *= Math.exp(-dt * 3.2); m.vy *= Math.exp(-dt * 3.2); const settledOnWall = m.mountedOn && moveDist < 0.12; m.group.position.lerp(worldPos(m.x, m.y, settledOnWall ? 0.62 : 0), Math.min(1, dt * 14)); syncHealthBar(m.group);
         const soldierLegs = m.group.userData.legs as THREE.Group[] | undefined; if (soldierLegs) soldierLegs.forEach((leg, i) => { leg.rotation.x = moveDist > 0.06 ? Math.sin(elapsed * 11 + i * Math.PI) * 0.5 : 0; });
         const target = enemies.find(e => e.hp > 0 && Math.hypot(e.x - m.x, e.y - m.y) < (settledOnWall ? 4.2 : 3.25));
-        if (target && m.cooldown <= 0) { m.group.rotation.y = Math.atan2(-(target.x - m.x), -(target.y - m.y)); const muzzle = m.group.userData.muzzle as THREE.Object3D | undefined; fire(muzzle ? muzzle.getWorldPosition(new THREE.Vector3()) : m.group.position.clone().add(new THREE.Vector3(0, 0.72, 0)), target, settledOnWall ? 12 : 9, 0, 0xbaff77); m.cooldown = 0.55; }
+        if (target) {
+          turnToward(m.group, Math.atan2(-(target.x - m.x), -(target.y - m.y)), 10, dt);
+          if (m.cooldown <= 0) { const muzzle = m.group.userData.muzzle as THREE.Object3D | undefined; fire(muzzle ? muzzle.getWorldPosition(new THREE.Vector3()) : m.group.position.clone().add(new THREE.Vector3(0, 0.72, 0)), target, settledOnWall ? 12 : 9, 0, 0xbaff77); m.cooldown = 0.55; }
+        }
       }
       for (const s of [...structures]) if (s.kind === "mine") {
         const target = enemies.find(e => e.hp > 0 && Math.hypot(e.x - s.x, e.y - s.y) < 1.25); if (target) { enemies.forEach(e => { if (Math.hypot(e.x - s.x, e.y - s.y) < 1.75) damageEnemy(e, 145); }); burst(s.group.position.clone().add(new THREE.Vector3(0, 0.3, 0)), 0x6ffff3, 25); destroyStructure(s); message("SHOCK MINE DETONATED"); }
@@ -535,10 +556,10 @@ function Battlefield({ selected, onHud, onMessage, apiRef }: { selected: AssetKe
         if (b.t >= 1) { const target = enemies.find(e => e.id === b.target); if (target) { if (b.splash) enemies.forEach(e => { const d = Math.hypot(e.x - target.x, e.y - target.y); if (d <= b.splash) damageEnemy(e, b.damage * (1 - d / (b.splash * 1.8))); }); else damageEnemy(target, b.damage); burst(b.to, b.color, b.splash ? 18 : 4); } world.remove(b.mesh); bullets.splice(bullets.indexOf(b), 1); }
       }
       for (const e of [...enemies]) {
-        if (e.hp <= 0) { credits += e.reward; kills++; burst(e.group.position.clone().add(new THREE.Vector3(0, 0.4, 0)), e.kind === "spitter" ? 0x58ff96 : 0xff573e, e.kind === "brute" ? 24 : 12); world.remove(e.group); enemies.splice(enemies.indexOf(e), 1); continue; }
-        if (Math.hypot(e.x - baseCell.x, e.y - baseCell.y) < 0.22) { integrity = Math.max(0, integrity - e.damage); burst(base.position.clone().add(new THREE.Vector3(0, 1, 0)), 0xff4a31, 14); world.remove(e.group); enemies.splice(enemies.indexOf(e), 1); if (integrity <= 0) { gameOver = true; active = false; message("COMMAND POST OVERRUN · SECTOR LOST"); } }
+        if (e.hp <= 0) { credits += e.reward; kills++; burst(e.group.position.clone().add(new THREE.Vector3(0, 0.4, 0)), e.kind === "spitter" ? 0x58ff96 : 0xff573e, e.kind === "brute" ? 24 : 12); removeHealthBar(e.group); world.remove(e.group); enemies.splice(enemies.indexOf(e), 1); continue; }
+        if (e.targetType === "base" && Math.hypot(e.x - baseCell.x, e.y - baseCell.y) < 0.22) { integrity = Math.max(0, integrity - e.damage); burst(base.position.clone().add(new THREE.Vector3(0, 1, 0)), 0xff4a31, 14); removeHealthBar(e.group); world.remove(e.group); enemies.splice(enemies.indexOf(e), 1); if (integrity <= 0) { gameOver = true; active = false; message("COMMAND POST OVERRUN · SECTOR LOST"); } }
       }
-      for (const m of [...marines]) if (m.hp <= 0) { selectedMarines.delete(m.id); burst(m.group.position.clone().add(new THREE.Vector3(0, 0.5, 0)), 0xff5f47, 9); world.remove(m.group); marines.splice(marines.indexOf(m), 1); message("RIFLEMAN KILLED IN ACTION"); }
+      for (const m of [...marines]) if (m.hp <= 0) { selectedMarines.delete(m.id); burst(m.group.position.clone().add(new THREE.Vector3(0, 0.5, 0)), 0xff5f47, 9); removeHealthBar(m.group); world.remove(m.group); marines.splice(marines.indexOf(m), 1); message("RIFLEMAN KILLED IN ACTION"); }
       for (const p of [...particles]) { p.life -= dt; p.velocity.y -= dt * 2.6; p.mesh.position.addScaledVector(p.velocity, dt); (p.mesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, p.life / p.maxLife); if (p.life <= 0) { world.remove(p.mesh); particles.splice(particles.indexOf(p), 1); } }
       if (active && spawnLeft === 0 && enemies.length === 0) { active = false; credits += 125 + wave * 25; if (wave >= 8) { victory = true; gameOver = true; message("SECTOR SECURED · HUMANITY HOLDS THE RIDGE"); } else message(`WAVE ${String(wave).padStart(2, "0")} DESTROYED · RESUPPLY DELIVERED`); }
       emitHud();
