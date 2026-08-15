@@ -54,7 +54,7 @@ A rapid-fire, short-to-medium-range emplacement designed to eliminate groups of 
 
 ### GAU-19 Sentry — 250 credits
 
-A static, fast-tracking autocannon turret with twin barrels. It delivers powerful bursts against priority targets and has modest impact splash, but it cannot redeploy after placement.
+A static, fast-tracking autocannon turret with twin barrels. It fires direct-line projectiles with no artillery arc, delivers powerful bursts with modest impact splash, and cannot redeploy after placement.
 
 ### M777 Howitzer — 350 credits
 
