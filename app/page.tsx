@@ -17,6 +17,10 @@ const TARGET_FRAME_RATE = 45;
 const ENEMY_SEPARATION_DISTANCE = 0.48;
 const WALL_STACK_HEIGHT = 0.62;
 const WALL_CLIMB_SPEED = 0.46;
+const RAZOR_WIRE_RADIUS = 1.05;
+const RAZOR_WIRE_SLOW_MULTIPLIER = 0.32;
+const RAZOR_WIRE_ENTRY_DAMAGE = 18;
+const RAZOR_WIRE_DAMAGE_PER_SECOND = 24;
 const TRENCH_CAPACITY = 4;
 const TRENCH_DAMAGE_MULTIPLIER = 0.6;
 const WALL_CLIMBERS = new Set<AlienKind>(["stalker", "razortail"]);
@@ -45,7 +49,7 @@ const ASSETS: Record<AssetKey, { name: string; role: string; cost: number; range
   wall: { name: "Hesco Wall", role: "600 armor · Supports units", cost: 70, range: 0, icon: "▦", accent: "#d1b98e" },
   bastion: { name: "Bastion Wall", role: "1,050 armor · Reinforced cover", cost: 125, range: 0, icon: "▰", accent: "#aab8bd" },
   trench: { name: "Infantry Trench", role: "4 infantry · 40% damage reduction", cost: 85, range: 0, icon: "⌓", accent: "#b89568" },
-  wire: { name: "Razor Wire", role: "Slows and wounds hostiles", cost: 40, range: 0, icon: "〰", accent: "#e4cc9e" },
+  wire: { name: "Razor Wire", role: "Snags hostiles · Heavy bleed", cost: 40, range: 0, icon: "〰", accent: "#e4cc9e" },
   mine: { name: "Shock Mine", role: "Proximity · One use", cost: 100, range: 1.35, icon: "⌁", accent: "#ff655f" },
   barracks: { name: "Field Barracks", role: "Trains specialized infantry", cost: 425, range: 0, icon: "⌂", accent: "#67c8ff" },
 };
@@ -71,7 +75,7 @@ type Hud = { credits: number; integrity: number; wave: number; enemies: number; 
 type Cell = { x: number; y: number };
 type MoveWaypoint = Cell & { lift: number };
 type Structure = { id: number; kind: AssetKey; level: number; x: number; y: number; targetX: number; targetY: number; hp: number; maxHp: number; mountedOn?: number; mountTarget?: number; movePath: MoveWaypoint[]; pathIndex: number; lift: number; stackLevel: number; group: THREE.Group; cooldown: number; spawnTimer: number };
-type Enemy = { id: number; kind: AlienKind; x: number; y: number; hp: number; maxHp: number; speed: number; damage: number; reward: number; path: Cell[]; index: number; group: THREE.Group; hitFlash: number; attackCooldown: number; pathTimer: number; targetId: number | null; targetType: "marine" | "structure" | "base" };
+type Enemy = { id: number; kind: AlienKind; x: number; y: number; hp: number; maxHp: number; speed: number; damage: number; reward: number; path: Cell[]; index: number; group: THREE.Group; hitFlash: number; attackCooldown: number; pathTimer: number; targetId: number | null; targetType: "marine" | "structure" | "base"; wireContactId?: number };
 type Marine = { id: number; kind: MarineKind; x: number; y: number; targetX: number; targetY: number; vx: number; vy: number; hp: number; maxHp: number; cooldown: number; supportCooldown: number; mountedOn?: number; mountTarget?: number; trenchId?: number; movePath: MoveWaypoint[]; pathIndex: number; lift: number; group: THREE.Group };
 type Bullet = { mesh: THREE.Object3D; from: THREE.Vector3; to: THREE.Vector3; impactX: number; impactY: number; t: number; speed: number; target: number; damage: number; splash: number; arcHeight: number; color: number };
 type HostileProjectile = { group: THREE.Group; kind: AlienKind; from: THREE.Vector3; to: THREE.Vector3; t: number; speed: number; arcHeight: number; targetId: number; targetType: "marine" | "structure"; damage: number; color: number; impactCount: number };
@@ -1203,9 +1207,17 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         const combatTarget = targetChoice.type === "base" ? undefined : targetChoice as EnemyTargetChoice & { type: "marine" | "structure"; id: number };
         const tx = targetChoice.x, ty = targetChoice.y;
         const targetDistance = Math.hypot(tx - e.x, ty - e.y), attackRange = enemyStats.attackRange;
-        const wire = structures.find(s => s.kind === "wire" && Math.hypot(s.x - e.x, s.y - e.y) < 0.95);
-        let isMoving = false, isAttacking = false, movementRate = e.speed * (wire ? 0.38 : 1);
-        if (wire) { damageEnemy(e, 7.5 * dt); if (Math.random() < dt * 3) burst(e.group.position.clone().add(new THREE.Vector3(0, 0.2, 0)), 0xd8cab0, 1); }
+        const wire = structures.find(s => s.kind === "wire" && Math.hypot(s.x - e.x, s.y - e.y) < RAZOR_WIRE_RADIUS);
+        let isMoving = false, isAttacking = false, movementRate = e.speed * (wire ? RAZOR_WIRE_SLOW_MULTIPLIER : 1);
+        if (wire) {
+          if (e.wireContactId !== wire.id) {
+            damageEnemy(e, RAZOR_WIRE_ENTRY_DAMAGE);
+            burst(e.group.position.clone().add(new THREE.Vector3(0, 0.22, 0)), 0xff6b55, 5);
+          }
+          e.wireContactId = wire.id;
+          damageEnemy(e, RAZOR_WIRE_DAMAGE_PER_SECOND * dt);
+          if (Math.random() < dt * 5) burst(e.group.position.clone().add(new THREE.Vector3(0, 0.2, 0)), 0xd8cab0, 1);
+        } else e.wireContactId = undefined;
         if (combatTarget && targetDistance <= attackRange) {
           isAttacking = true; e.group.rotation.y = Math.atan2(-(tx - e.x), -(ty - e.y));
           if (e.attackCooldown <= 0) {
@@ -1218,7 +1230,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
             const dx = targetCell.x - e.x, dy = targetCell.y - e.y, dist = Math.hypot(dx, dy);
             const segmentStart = e.path[Math.min(e.index, e.path.length - 1)] ?? targetCell, segmentLength = Math.max(0.01, Math.hypot(targetCell.x - segmentStart.x, targetCell.y - segmentStart.y));
             const groundRate = e.speed * terrainSpeedMultiplier(segmentStart, targetCell), wallClimbDistance = climbsWalls ? Math.abs(wallLiftAt(targetCell) - wallLiftAt(segmentStart)) : 0;
-            movementRate = segmentLength / (segmentLength / Math.max(0.01, groundRate) + wallClimbDistance / WALL_CLIMB_SPEED) * (wire ? 0.38 : 1);
+            movementRate = segmentLength / (segmentLength / Math.max(0.01, groundRate) + wallClimbDistance / WALL_CLIMB_SPEED) * (wire ? RAZOR_WIRE_SLOW_MULTIPLIER : 1);
             if (dist < 0.025) e.index++; else { const step = Math.min(dist, movementRate * dt); e.x += dx / dist * step; e.y += dy / dist * step; e.group.rotation.y = Math.atan2(-dx, -dy); isMoving = true; }
           }
         }
