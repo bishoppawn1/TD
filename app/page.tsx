@@ -193,12 +193,7 @@ const MAPS: Record<MapKey, MapConfig> = {
       const scatter = terrainNoise(x, y, 11);
       return scatter > 0.988 ? "supply" : scatter < 0.018 && x < 31 ? "pine" : null;
     },
-    heightAt: (x, y) => {
-      const rolling = Math.max(0, Math.sin(x * 0.31) + Math.cos(y * 0.37) - 0.7) * 0.12;
-      const broadRise = Math.max(0, 1 - Math.hypot(x - 28, y - 17) / 13) * 0.34;
-      const northKnoll = Math.max(0, 1 - Math.hypot(x - 11, y - 9) / 8) * 0.22;
-      return steppedHeight(0.04 + rolling + broadRise + northKnoll);
-    },
+    heightAt: () => 0.04,
   },
   basin: {
     key: "basin", operation: "SUNSCOUR", sector: "K-12", name: "Cinder Basin", objective: "Defend the basin floor", terrain: "OPEN · ENCIRCLED",
