@@ -161,7 +161,7 @@ A durable ranged alien introduced in wave 12. Broodmothers launch slow, high-arc
 
 ### Skyrazor
 
-A fast airborne alien introduced in wave three. Skyrazors are the only winged enemy class: their two pairs of translucent wings clearly signal that they fly over walls and difficult terrain. They ignore ground hazards and attack the command post, infantry, weapons, lights, or barracks from above. Flak turrets are the purpose-built counter, though suitable general-purpose direct-fire weapons can also engage them.
+A small, fragile airborne alien introduced in wave three. Skyrazors are the only winged enemy class: their two pairs of translucent wings clearly signal that they fly over walls and difficult terrain. They trade durability for mobility, ignore ground hazards, and attack the command post, infantry, weapons, lights, or barracks from above. Flak turrets are the purpose-built counter, though suitable general-purpose direct-fire weapons can also engage them.
 
 All ground alien classes are visually wingless. Their legs, crawling bodies, armor, tails, and other silhouettes communicate how they move across or climb over the battlefield.
 

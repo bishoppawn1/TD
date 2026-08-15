@@ -59,7 +59,7 @@ const ENEMY_STATS: Record<AlienKind, { hp: number; speed: number; damage: number
   stalker: { hp: 64, speed: 1.85, damage: 5, reward: 30, attackRange: 1.25, attackCooldown: 0.48, gait: 18, barHeight: 0.95 },
   strider: { hp: 118, speed: 0.7, damage: 10, reward: 48, attackRange: 4.55, attackCooldown: 1.9, gait: 5.4, barHeight: 1.8 },
   broodmother: { hp: 285, speed: 0.52, damage: 14, reward: 75, attackRange: 3.65, attackCooldown: 2.75, gait: 3.8, barHeight: 2.2 },
-  flyer: { hp: 104, speed: 1.18, damage: 7, reward: 42, attackRange: 2.7, attackCooldown: 1.25, gait: 14, barHeight: 3.25 },
+  flyer: { hp: 70, speed: 1.18, damage: 7, reward: 42, attackRange: 2.7, attackCooldown: 1.25, gait: 14, barHeight: 3.1 },
   prowler: { hp: 155, speed: 1.08, damage: 11, reward: 52, attackRange: 1.55, attackCooldown: 0.68, gait: 10.2, barHeight: 1.15 },
 };
 
@@ -938,7 +938,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
         for (const side of [-1, 1]) addOrb(bodyRig, 0.25, [side * 0.6, 1.12, -0.2], [1.2, 0.7, 1], shell);
       }
 
-      const classScale = brute ? 0.9 : broodmother ? 0.82 : spitter ? 0.68 : razortail ? 0.74 : strider ? 0.72 : prowler ? 0.62 : stalker ? 0.4 : flyer ? 0.62 : 0.52;
+      const classScale = brute ? 0.9 : broodmother ? 0.82 : spitter ? 0.68 : razortail ? 0.74 : strider ? 0.72 : prowler ? 0.62 : stalker ? 0.4 : flyer ? 0.48 : 0.52;
       g.scale.setScalar(classScale * (0.94 + Math.random() * 0.12));
       g.userData.legs = legs; g.userData.legPhases = legPhases; g.userData.tails = tails; g.userData.wings = wings; g.userData.bodyRig = bodyRig; g.userData.kind = kind;
       return g;
