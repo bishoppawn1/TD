@@ -21,6 +21,7 @@ const MAX_FRAME_DELTA = 0.1;
 const ROUTE_CANDIDATE_LIMIT = 5;
 const ROUTE_CACHE_LIMIT = 900;
 const PROJECTILE_POOL_LIMIT = 80;
+const AOE_RADIUS_MULTIPLIER = 0.85;
 const ENEMY_COLLISION_BUCKET_SIZE = 1.12;
 const WALL_STACK_HEIGHT = 0.62;
 const WALL_CLIMB_SPEED = 0.46;
@@ -138,6 +139,7 @@ type MapConfig = {
 
 const keyOf = (x: number, y: number) => `${x},${y}`;
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+const aoeRadius = (radius: number) => radius * AOE_RADIUS_MULTIPLIER;
 const steppedHeight = (height: number) => Math.max(0.04, Math.round(height / 0.16) * 0.16);
 
 const MAPS: Record<MapKey, MapConfig> = {
@@ -1312,10 +1314,10 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       if (wave >= MAX_WAVES) { victory = true; gameOver = true; message("SECTOR SECURED · ALL WAVES REPELLED"); emitHud(true); return; }
       buildTimer = 0; wave++; active = true; spawnLeft = Math.round((14 + Math.floor(wave * 2.35)) * ENEMY_SWARM_MULTIPLIER * (map.waveMultiplier ?? 1)); spawnTimer = 0.45; assaultFront = Math.floor(Math.random() * spawnCells.length); message(`WAVE ${String(wave).padStart(2, "0")} INBOUND · ${spawnLeft} LIFE SIGNS · ${spawnCells.length} FRONTS · CONSTRUCTION LOCKED`); emitHud(true);
     }
-    function burst(at: THREE.Vector3, color: number, count = 10) {
+    function burst(at: THREE.Vector3, color: number, count = 10, spread = 1) {
       for (let i = 0; i < count; i++) {
         const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.035 + Math.random() * 0.05, 5, 4), new THREE.MeshBasicMaterial({ color, transparent: true })); mesh.position.copy(at); world.add(mesh);
-        particles.push({ mesh, velocity: new THREE.Vector3((Math.random() - 0.5) * 2.8, Math.random() * 2.3, (Math.random() - 0.5) * 2.8), life: 0.5 + Math.random() * 0.5, maxLife: 1 });
+        particles.push({ mesh, velocity: new THREE.Vector3((Math.random() - 0.5) * 2.8 * spread, Math.random() * 2.3 * spread, (Math.random() - 0.5) * 2.8 * spread), life: 0.5 + Math.random() * 0.5, maxLife: 1 });
       }
     }
     function hostileStrike(kind: AlienKind, from: THREE.Vector3, to: THREE.Vector3, targetType: "marine" | "structure", targetId: number, damage: number) {
@@ -1367,7 +1369,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       const to = target.group.position.clone().add(new THREE.Vector3(0, 0.42, 0)), pool: ProjectilePool = rocket ? "rocket" : heavy ? "heavy" : "light", mesh = acquireProjectile(pool, color);
       if (rocket) mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), to.clone().sub(from).normalize());
       mesh.position.copy(from); world.add(mesh);
-      bullets.push({ mesh, pool, from: from.clone(), to, impactX: target.x, impactY: target.y, t: 0, speed: heavy ? 1.35 : 4.8, target: target.id, damage, splash, arcHeight, color, sourceStructureId });
+      bullets.push({ mesh, pool, from: from.clone(), to, impactX: target.x, impactY: target.y, t: 0, speed: heavy ? 1.35 : 4.8, target: target.id, damage, splash: aoeRadius(splash), arcHeight, color, sourceStructureId });
     }
     function incomingDamageAt(enemy: Enemy) {
       return bullets.reduce((total, shot) => {
@@ -1638,7 +1640,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         const stats = TURRET_STATS[s.kind], levelDamage = 1 + (s.level - 1) * 0.42, levelSpeed = 1 + (s.level - 1) * 0.18;
         const range = ASSETS[s.kind].range + (s.level - 1) * 0.65 + heights[terrainY][terrainX] * 0.9;
         const candidates = enemies.filter(e => e.hp > 0 && isRevealed(e.x, e.y) && Math.hypot(e.x - s.x, e.y - s.y) <= range);
-        const target = s.kind === "howitzer" || s.kind === "missile" ? chooseArtilleryTarget(candidates, stats.damage * levelDamage, stats.splash) : candidates.sort((a, b) => b.index - a.index)[0];
+        const target = s.kind === "howitzer" || s.kind === "missile" ? chooseArtilleryTarget(candidates, stats.damage * levelDamage, aoeRadius(stats.splash)) : candidates.sort((a, b) => b.index - a.index)[0];
         if (target) {
           turnToward(s.group, Math.atan2(-(target.x - s.x), -(target.y - s.y)), stats.turnSpeed, dt);
           if (s.cooldown <= 0) { const muzzle = s.group.userData.muzzle as THREE.Object3D | undefined, targetMultiplier = FLYING_ENEMIES.has(target.kind) ? stats.airDamageMultiplier ?? AIR_DAMAGE_MULTIPLIER : 1, shotDamage = stats.damage * levelDamage * targetMultiplier; const from = muzzle ? muzzle.getWorldPosition(new THREE.Vector3()) : s.group.position.clone().add(new THREE.Vector3(0, 1.05, 0)); if (stats.beam) laserStrike(from, target, shotDamage, stats.color); else fire(from, target, shotDamage, stats.splash, stats.color, stats.heavy, stats.arcHeight, false, s.kind === "howitzer" || s.kind === "missile" ? s.id : undefined); s.cooldown = stats.cooldown / levelSpeed; }
@@ -1662,7 +1664,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         }
       }
       for (const s of [...structures]) if (s.kind === "mine") {
-        const target = enemies.find(e => e.hp > 0 && !FLYING_ENEMIES.has(e.kind) && Math.hypot(e.x - s.x, e.y - s.y) < 1.25); if (target) { enemies.forEach(e => { if (!FLYING_ENEMIES.has(e.kind) && Math.hypot(e.x - s.x, e.y - s.y) < 1.75) damageEnemy(e, 145); }); burst(s.group.position.clone().add(new THREE.Vector3(0, 0.3, 0)), 0x6ffff3, 25); destroyStructure(s); message("SHOCK MINE DETONATED"); }
+        const target = enemies.find(e => e.hp > 0 && !FLYING_ENEMIES.has(e.kind) && Math.hypot(e.x - s.x, e.y - s.y) < 1.25); if (target) { enemies.forEach(e => { if (!FLYING_ENEMIES.has(e.kind) && Math.hypot(e.x - s.x, e.y - s.y) < aoeRadius(1.75)) damageEnemy(e, 145); }); burst(s.group.position.clone().add(new THREE.Vector3(0, 0.3, 0)), 0x6ffff3, 25, AOE_RADIUS_MULTIPLIER); destroyStructure(s); message("SHOCK MINE DETONATED"); }
       }
       for (const shot of [...hostileProjectiles]) {
         shot.t += dt * shot.speed; const progress = Math.min(1, shot.t), arc = Math.sin(progress * Math.PI) * shot.arcHeight;

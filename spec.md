@@ -46,6 +46,7 @@ Protect the command post through all 25 enemy waves.
 - Sentinel light towers project sweeping searchlights and reveal a substantially wider area than ordinary units. They can be mounted on top of Hesco or Bastion walls.
 - Enemies travel between adjacent grid cells and dynamically recalculate their route around structures.
 - Enemy bodies use size-aware collision spacing, forming a dense moving swarm without occupying the same physical space.
+- All friendly splash weapons and shock mines use a slightly tighter area-of-effect radius while retaining their direct-hit damage.
 - Enemies choose targets by estimated travel time rather than straight-line distance. The estimate uses the actual route, terrain grade, movement speed, and any wall ascent or descent required.
 - Ascending natural terrain adds substantial vertical climb time to both movement and route estimates, while downhill travel retains its speed advantage.
 - Each alien applies a stable individual preference of up to 17 percent in either direction to those travel-time estimates, spreading a swarm across near-equivalent targets without making obviously bad routes attractive.
