@@ -144,6 +144,7 @@ type MapConfig = {
   waterColor: number;
   waterGlow: number;
   waterAt: (x: number, y: number) => boolean;
+  bridgeAt?: (x: number, y: number) => boolean;
   decorAt?: (x: number, y: number) => DecorKind | null;
   heightAt: (x: number, y: number) => number;
 };
@@ -156,6 +157,8 @@ const terrainNoise = (x: number, y: number, seed: number) => {
   const raw = Math.sin(x * 12.9898 + y * 78.233 + seed * 37.719) * 43758.5453;
   return raw - Math.floor(raw);
 };
+const BLACKGLASS_BRIDGES: Cell[] = [{ x: 9, y: 18 }, { x: 22, y: 21 }, { x: 35, y: 24 }];
+const blackglassBridgeAt = (x: number, y: number) => BLACKGLASS_BRIDGES.some(bridge => Math.abs(x - bridge.x) < 0.5 && Math.abs(y - bridge.y) <= 1.5);
 
 const MAPS: Record<MapKey, MapConfig> = {
   ridge: {
@@ -222,20 +225,22 @@ const MAPS: Record<MapKey, MapConfig> = {
   },
   divide: {
     key: "divide", operation: "BLACKGLASS", sector: "R-3", name: "Blackglass Divide", objective: "Control the fractured mesas", terrain: "CHOKEPOINTS · EXTREME HEIGHT",
-    description: "Seven terraced peaks, obsidian crystal fields, and a molten-water fracture split every approach into dangerous channels.",
+    description: "Seven terraced peaks, obsidian crystal fields, and a dark fracture river split every approach, with three narrow bridges linking both banks.",
     background: 0x090811, ground: 0x100f18, fog: 0x030207, hue: 0.69, saturation: 0.18,
     baseCell: { x: 4, y: 22 }, spawnCells: [{ x: 43, y: 3 }, { x: 43, y: 40 }, { x: 22, y: 0 }, { x: 22, y: 43 }],
     waveCount: 16,
     startingStructures: [{ kind: "barracks", x: 7, y: 22 }, { kind: "rifle", x: 9, y: 18 }, { kind: "wall", x: 9, y: 24 }, { kind: "howitzer", x: 11, y: 28 }, { kind: "wire", x: 11, y: 20 }, { kind: "flame", x: 11, y: 22 }, { kind: "bastion", x: 9, y: 26 }, { kind: "light", x: 13, y: 24 }],
     startingMarines: [{ kind: "rifleman", x: 7, y: 19 }, { kind: "medic", x: 7, y: 26 }, { kind: "rifleman", x: 7, y: 24 }, { kind: "gunner", x: 9, y: 20 }, { kind: "rocketeer", x: 11, y: 26 }],
     waterColor: 0x243d62, waterGlow: 0x101f4a,
-    waterAt: (x, y) => Math.abs((y - 21) - (x - 22) * 0.24) <= 0.72,
+    waterAt: (x, y) => Math.abs((y - 21) - (x - 22) * 0.24) <= 0.72 && !blackglassBridgeAt(x, y),
+    bridgeAt: blackglassBridgeAt,
     decorAt: (x, y) => {
       if (Math.hypot(x - 4, y - 22) < 7) return null;
       const scatter = terrainNoise(x, y, 37);
       return scatter > 0.974 ? "crystal" : scatter < 0.012 ? "vent" : null;
     },
     heightAt: (x, y) => {
+      if (blackglassBridgeAt(x, y)) return steppedHeight(0.16);
       const terrace = (cx: number, cy: number, rx: number, ry: number, peak: number) => {
         const distance = Math.hypot((x - cx) / rx, (y - cy) / ry);
         return distance < 0.38 ? peak : distance < 0.58 ? peak * 0.74 : distance < 0.78 ? peak * 0.42 : distance < 1 ? peak * 0.16 : 0;
@@ -381,11 +386,11 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
     const fogTiles: Array<{ x: number; y: number; mesh: THREE.Mesh; material: THREE.MeshBasicMaterial }> = [];
     for (let y = 0; y < GRID_H; y++) for (let x = 0; x < GRID_W; x++) {
       const h = heights[y][x];
-      const water = isWaterCell(x, y);
-      const color = water ? new THREE.Color(map.waterColor).offsetHSL(0, 0, ((x + y) % 3 - 1) * 0.025) : new THREE.Color().setHSL(map.hue + ((x * 7 + y * 3) % 5) * 0.006, map.saturation, 0.20 + h * 0.035);
-      const material = new THREE.MeshStandardMaterial({ color, roughness: water ? 0.18 : 0.98, metalness: water ? 0.34 : 0, emissive: water ? map.waterGlow : 0x000000, emissiveIntensity: water ? 0.8 : 1 });
+      const water = isWaterCell(x, y), bridge = !!map.bridgeAt?.(x, y);
+      const color = bridge ? new THREE.Color((x + y) % 2 ? 0x515a62 : 0x626c73) : water ? new THREE.Color(map.waterColor).offsetHSL(0, 0, ((x + y) % 3 - 1) * 0.025) : new THREE.Color().setHSL(map.hue + ((x * 7 + y * 3) % 5) * 0.006, map.saturation, 0.20 + h * 0.035);
+      const material = new THREE.MeshStandardMaterial({ color, roughness: bridge ? 0.48 : water ? 0.18 : 0.98, metalness: bridge ? 0.46 : water ? 0.34 : 0, emissive: water ? map.waterGlow : 0x000000, emissiveIntensity: water ? 0.8 : 1 });
       const tile = new THREE.Mesh(new THREE.BoxGeometry(TILE - 0.045, 0.55 + h, TILE - 0.045), material);
-      const p = worldPos(x, y); tile.position.set(p.x, (h - 0.55) / 2, p.z); tile.userData = { x, y, base: color.clone(), water };
+      const p = worldPos(x, y); tile.position.set(p.x, (h - 0.55) / 2, p.z); tile.userData = { x, y, base: color.clone(), water, bridge };
       world.add(tile); tileMeshes.push(tile);
       if (water && terrainNoise(x, y, 71) > 0.58) {
         const rippleMaterial = new THREE.MeshBasicMaterial({ color: new THREE.Color(map.waterColor).offsetHSL(0.02, 0.12, 0.25), transparent: true, opacity: 0.25, side: THREE.DoubleSide, depthWrite: false });
@@ -396,7 +401,16 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       const fogMaterial = new THREE.MeshBasicMaterial({ color: map.fog, transparent: true, opacity: 0.88, depthWrite: false, side: THREE.DoubleSide });
       const fogTile = new THREE.Mesh(new THREE.PlaneGeometry(TILE - 0.025, TILE - 0.025), fogMaterial);
       fogTile.rotation.x = -Math.PI / 2; fogTile.position.copy(p).add(new THREE.Vector3(0, 0.045, 0)); fogTile.renderOrder = 8; world.add(fogTile); fogTiles.push({ x, y, mesh: fogTile, material: fogMaterial });
-      const decor = water ? null : map.decorAt?.(x, y);
+      if (bridge) {
+        const bridgeRig = new THREE.Group(); bridgeRig.position.copy(p); world.add(bridgeRig);
+        for (const crossX of [-0.42, 0, 0.42]) box(bridgeRig, [0.08, 0.035, TILE * 0.94], [crossX, 0.035, 0], 0xa08149, 0.66);
+        for (const side of [-1, 1]) {
+          beam(bridgeRig, new THREE.Vector3(side * 0.55, 0.12, -0.62), new THREE.Vector3(side * 0.55, 0.12, 0.62), 0.035, 0x222a2f);
+          beam(bridgeRig, new THREE.Vector3(side * 0.55, 0.12, -0.58), new THREE.Vector3(side * 0.55, 0.38, -0.58), 0.03, 0x2d363b);
+          beam(bridgeRig, new THREE.Vector3(side * 0.55, 0.12, 0.58), new THREE.Vector3(side * 0.55, 0.38, 0.58), 0.03, 0x2d363b);
+        }
+      }
+      const decor = water || bridge ? null : map.decorAt?.(x, y);
       if (decor) {
         const landmark = new THREE.Group(); landmark.position.copy(p); world.add(landmark);
         if (decor === "supply") {
@@ -1331,6 +1345,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       if (active && !testerMode) return message("CONSTRUCTION LOCKED · BUILDINGS DEPLOY BETWEEN WAVES ONLY");
       if (!testerMode && credits < asset.cost) return message("INSUFFICIENT COMMAND CREDITS");
       if (isWaterCell(x, y)) return message("WATERLOGGED GROUND · CONSTRUCTION REQUIRES DRY LAND");
+      if (map.bridgeAt?.(x, y)) return message("BRIDGE DECK MUST REMAIN CLEAR");
       const wall = topWallAt(x, y), stackingWall = !!wall && (kind === "wall" || kind === "bastion");
       const canMount = !!wall && (kind in TURRET_STATS || kind === "light");
       const occupied = structures.some(s => Math.hypot(s.x - x, s.y - y) < 0.72 && !s.mountedOn && !(stackingWall && isWall(s)));
