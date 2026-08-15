@@ -10,7 +10,7 @@ type MarineKind = "rifleman" | "gunner" | "medic";
 type AlienKind = "drone" | "spitter" | "brute" | "razortail" | "stalker" | "strider";
 
 const MAX_WAVES = 25;
-const ALIEN_SPEED_MULTIPLIER = 1.45;
+const ALIEN_SPEED_MULTIPLIER = 1.8;
 const WALL_STACK_HEIGHT = 0.62;
 const WALL_CLIMBERS = new Set<AlienKind>(["stalker", "razortail"]);
 const ENEMY_STATS: Record<AlienKind, { hp: number; speed: number; damage: number; reward: number; attackRange: number; attackCooldown: number; gait: number; barHeight: number }> = {
