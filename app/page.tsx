@@ -11,11 +11,11 @@ const GRID_W = 24;
 const GRID_H = 18;
 const TILE = 1.36;
 const ASSETS: Record<AssetKey, { name: string; role: string; cost: number; range: number; icon: string; accent: string }> = {
-  rifle: { name: "Rifle Team", role: "Rapid fire · Anti-swarm", cost: 150, range: 4.2, icon: "⌖", accent: "#9fe870" },
+  rifle: { name: "M240 Gun Team", role: "Sustained fire · Anti-swarm", cost: 150, range: 4.7, icon: "⌖", accent: "#9fe870" },
   howitzer: { name: "M777 Howitzer", role: "Heavy shell · Area damage", cost: 350, range: 7.4, icon: "◎", accent: "#ffb45d" },
   wall: { name: "Hesco Wall", role: "600 armor · Supports units", cost: 70, range: 0, icon: "▦", accent: "#d1b98e" },
   mine: { name: "Shock Mine", role: "Proximity · One use", cost: 100, range: 1.35, icon: "⌁", accent: "#ff655f" },
-  barracks: { name: "Field Barracks", role: "Deploys infantry squads", cost: 425, range: 0, icon: "⌂", accent: "#67c8ff" },
+  barracks: { name: "Field Barracks", role: "Click placed barracks · Recruit ¤60", cost: 425, range: 0, icon: "⌂", accent: "#67c8ff" },
 };
 
 type Hud = { credits: number; integrity: number; wave: number; enemies: number; kills: number; active: boolean; gameOver: boolean; victory: boolean };
@@ -63,6 +63,8 @@ function Battlefield({ selected, onHud, onMessage, apiRef }: { selected: AssetKe
     controls.minPolarAngle = Math.PI * 0.2;
     controls.target.set(0, 0, 0);
     controls.enablePan = true;
+    controls.mouseButtons.MIDDLE = THREE.MOUSE.ROTATE;
+    controls.mouseButtons.RIGHT = THREE.MOUSE.PAN;
 
     scene.add(new THREE.HemisphereLight(0x9fc9bd, 0x162018, 1.2));
     const sun = new THREE.DirectionalLight(0xffe4c2, 3.8);
@@ -130,8 +132,14 @@ function Battlefield({ selected, onHud, onMessage, apiRef }: { selected: AssetKe
       const g = new THREE.Group();
       const bags = 0xa48b61;
       for (let i = -2; i <= 2; i++) cyl(g, [0.16, 0.2, 0.48, 8], [i * 0.3, 0.2, -0.15], bags, [0, 0, Math.PI / 2]);
-      const a = makeSoldier(); a.position.set(-0.35, 0.22, 0.2); a.rotation.y = -0.55; g.add(a);
-      const b = makeSoldier(); b.position.set(0.32, 0.22, 0.2); b.rotation.y = -0.25; g.add(b);
+      const a = makeSoldier(); a.position.set(-0.38, 0.22, 0.28); a.rotation.y = -0.3; g.add(a);
+      const b = makeSoldier(); b.position.set(0.45, 0.22, 0.34); b.rotation.y = -0.05; g.add(b);
+      const receiver = box(g, [0.16, 0.18, 0.58], [0, 0.61, -0.18], 0x202724, 0.22);
+      receiver.rotation.x = -0.08;
+      const barrel = cyl(g, [0.025, 0.035, 0.82, 9], [0, 0.68, -0.76], 0x151b19, [Math.PI / 2, 0, 0]); barrel.rotation.x = Math.PI / 2;
+      beam(g, new THREE.Vector3(0, 0.55, -0.12), new THREE.Vector3(-0.35, 0.1, -0.38), 0.025, 0x252d29);
+      beam(g, new THREE.Vector3(0, 0.55, -0.12), new THREE.Vector3(0.35, 0.1, -0.38), 0.025, 0x252d29);
+      box(g, [0.32, 0.3, 0.28], [0.28, 0.34, -0.2], 0x5d6244); box(g, [0.25, 0.12, 0.22], [0.28, 0.56, -0.2], 0xb48d42);
       return g;
     }
     function makeHowitzer() {
@@ -167,33 +175,69 @@ function Battlefield({ selected, onHud, onMessage, apiRef }: { selected: AssetKe
     }
     function makeAlien(kind: AlienKind) {
       const g = new THREE.Group();
+      const bodyRig = new THREE.Group(); g.add(bodyRig);
+      const legs: THREE.Group[] = [], legPhases: number[] = [];
       const brute = kind === "brute", spitter = kind === "spitter";
-      const armor = brute ? 0x5b3132 : spitter ? 0x285746 : 0x344a45;
-      const skin = brute ? 0x35272c : 0x25352f;
-      const s = brute ? 1.22 : 1;
-      const pelvis = box(g, [0.42 * s, 0.26 * s, 0.28 * s], [0, 0.67 * s, 0], skin);
-      const torso = box(g, [0.68 * s, 0.62 * s, 0.34 * s], [0, 1.08 * s, 0], armor, 0.38);
-      torso.geometry.rotateX(-0.08);
-      const chest = box(g, [0.52 * s, 0.16 * s, 0.38 * s], [0, 1.21 * s, -0.08], brute ? 0x87504c : 0x49665d, 0.35);
-      chest.rotation.x = -0.12;
-      const head = new THREE.Mesh(new THREE.SphereGeometry(0.22 * s, 12, 8), new THREE.MeshStandardMaterial({ color: skin, roughness: 0.66 }));
-      head.scale.set(0.82, 1.18, 0.9); head.position.set(0, 1.58 * s, -0.03); g.add(head);
-      const crest = box(g, [0.1 * s, 0.34 * s, 0.32 * s], [0, 1.77 * s, 0.08], armor, 0.35); crest.rotation.x = -0.28;
-      const legs: THREE.Mesh[] = [], arms: THREE.Mesh[] = [];
-      for (const side of [-1, 1]) {
-        const leg = box(g, [0.17 * s, 0.62 * s, 0.19 * s], [side * 0.15 * s, 0.32 * s, 0], skin); legs.push(leg);
-        box(g, [0.24 * s, 0.14 * s, 0.34 * s], [side * 0.15 * s, 0.07, -0.08], 0x171e1c);
-        const arm = box(g, [0.17 * s, 0.62 * s, 0.18 * s], [side * 0.43 * s, 1.02 * s, -0.02], armor); arm.rotation.z = side * -0.12; arms.push(arm);
-        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.035 * s, 8, 6), new THREE.MeshBasicMaterial({ color: spitter ? 0x61ffad : 0xff4a4a })); eye.position.set(side * 0.075 * s, 1.62 * s, -0.19 * s); g.add(eye);
+      const shellColor = brute ? 0x673832 : spitter ? 0x28654b : 0x334d42;
+      const skinColor = brute ? 0x2c1c1b : spitter ? 0x172e25 : 0x192a24;
+      const glowColor = spitter ? 0x63ff9f : 0xff503f;
+      const shell = new THREE.MeshStandardMaterial({ color: shellColor, roughness: 0.48, metalness: 0.18 });
+      const skin = new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.82 });
+      const glow = new THREE.MeshBasicMaterial({ color: glowColor });
+
+      const addOrb = (parent: THREE.Object3D, radius: number, position: [number, number, number], scale: [number, number, number], material: THREE.Material) => {
+        const mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, 12, 8), material); mesh.position.set(...position); mesh.scale.set(...scale); parent.add(mesh); return mesh;
+      };
+      const addLeg = (side: number, z: number, phase: number, upper: number, lower: number, thickness: number, rootY: number) => {
+        const pivot = new THREE.Group(); pivot.position.set(side * 0.34, rootY, z); g.add(pivot);
+        const knee = new THREE.Vector3(side * upper, -0.13, side * 0.03);
+        const foot = new THREE.Vector3(side * (upper + lower), -rootY + 0.055, -0.08);
+        beam(pivot, new THREE.Vector3(), knee, thickness, shellColor);
+        beam(pivot, knee, foot, thickness * 0.72, skinColor);
+        const claw = new THREE.Mesh(new THREE.ConeGeometry(thickness * 1.25, 0.2, 6), skin); claw.position.copy(foot).add(new THREE.Vector3(0, 0.025, -0.09)); claw.rotation.x = -Math.PI / 2; pivot.add(claw);
+        legs.push(pivot); legPhases.push(phase);
+      };
+      const addEye = (x: number, y: number, z: number, radius: number) => {
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(radius, 8, 6), glow); eye.position.set(x, y, z); bodyRig.add(eye);
+      };
+      const addSpine = (x: number, y: number, z: number, size: number, color = shellColor) => {
+        const spine = new THREE.Mesh(new THREE.ConeGeometry(size * 0.34, size, 6), new THREE.MeshStandardMaterial({ color, roughness: 0.55 })); spine.position.set(x, y, z); bodyRig.add(spine);
+      };
+
+      if (kind === "drone") {
+        addOrb(bodyRig, 0.42, [0, 0.42, 0.18], [0.9, 0.56, 1.35], shell);
+        addOrb(bodyRig, 0.3, [0, 0.37, -0.42], [1.05, 0.62, 0.9], skin);
+        addOrb(bodyRig, 0.19, [0, 0.33, -0.7], [1.18, 0.56, 0.95], shell);
+        for (const side of [-1, 1]) {
+          addEye(side * 0.105, 0.38, -0.85, 0.045);
+          const mandible = new THREE.Mesh(new THREE.ConeGeometry(0.065, 0.38, 6), skin); mandible.position.set(side * 0.13, 0.26, -0.91); mandible.rotation.set(-Math.PI / 2, 0, side * 0.2); bodyRig.add(mandible);
+        }
+        [-0.25, 0.08, 0.38].forEach((z, i) => { addLeg(-1, z, i * Math.PI * 0.72, 0.42, 0.34, 0.045, 0.38); addLeg(1, z, Math.PI + i * Math.PI * 0.72, 0.42, 0.34, 0.045, 0.38); });
+        [-0.05, 0.22, 0.48].forEach((z, i) => addSpine(0, 0.77 - i * 0.035, z, 0.22 - i * 0.025));
+      } else if (kind === "spitter") {
+        const sac = addOrb(bodyRig, 0.48, [0, 0.62, 0.35], [0.88, 0.9, 1.35], new THREE.MeshStandardMaterial({ color: 0x2f9861, emissive: 0x145e39, emissiveIntensity: 1.1, roughness: 0.32, transparent: true, opacity: 0.92 }));
+        addOrb(bodyRig, 0.4, [0, 0.72, -0.28], [1.12, 0.82, 1.05], shell);
+        addOrb(bodyRig, 0.27, [0, 0.67, -0.72], [1.22, 0.68, 1.05], skin);
+        for (const side of [-1, 1]) { addEye(side * 0.12, 0.71, -0.93, 0.055); addEye(side * 0.2, 0.67, -0.86, 0.035); }
+        [-0.3, 0.18, 0.48].forEach((z, i) => { addLeg(-1, z, i * Math.PI * 0.8, 0.5, 0.45, 0.05, 0.56); addLeg(1, z, Math.PI + i * Math.PI * 0.8, 0.5, 0.45, 0.05, 0.56); });
+        for (const z of [-0.32, -0.05, 0.22]) addSpine(0, 1.12, z, 0.3, 0x3f9e70);
+        const mouthGlow = new THREE.PointLight(0x55ff99, 1.6, 2.6); mouthGlow.position.set(0, 0.61, -0.96); bodyRig.add(mouthGlow); sac.userData.pulse = true;
+      } else {
+        addOrb(bodyRig, 0.68, [0, 1.0, 0.12], [1.15, 0.94, 1.35], shell);
+        addOrb(bodyRig, 0.54, [0, 0.88, -0.7], [1.32, 0.78, 1.08], skin);
+        addOrb(bodyRig, 0.36, [0, 0.78, -1.12], [1.38, 0.72, 1.0], shell);
+        for (const side of [-1, 1]) {
+          addEye(side * 0.17, 0.83, -1.43, 0.065);
+          const tusk = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.7, 7), new THREE.MeshStandardMaterial({ color: 0xc6b78e, roughness: 0.78 })); tusk.position.set(side * 0.33, 0.7, -1.47); tusk.rotation.set(-Math.PI / 2, 0, side * 0.28); bodyRig.add(tusk);
+        }
+        [-0.42, 0.42].forEach((z, i) => { addLeg(-1, z, i * Math.PI, 0.58, 0.48, 0.1, 0.72); addLeg(1, z, Math.PI + i * Math.PI, 0.58, 0.48, 0.1, 0.72); });
+        [-0.42, -0.08, 0.26, 0.56].forEach((z, i) => addSpine(0, 1.66 - i * 0.05, z, 0.44 - i * 0.045, 0x8a4c3f));
+        for (const side of [-1, 1]) addOrb(bodyRig, 0.25, [side * 0.6, 1.12, -0.2], [1.2, 0.7, 1], shell);
       }
-      const weapon = box(g, [0.12 * s, 0.12 * s, 0.78 * s], [0.34 * s, 0.96 * s, -0.37 * s], spitter ? 0x2e9b6a : 0x242c2a, 0.25); weapon.rotation.x = -0.15;
-      for (const side of [-1, 1]) {
-        const pauldron = new THREE.Mesh(new THREE.SphereGeometry(0.19 * s, 9, 6), new THREE.MeshStandardMaterial({ color: armor, roughness: 0.45, metalness: 0.25 })); pauldron.scale.set(1.25, 0.75, 1); pauldron.position.set(side * 0.43 * s, 1.33 * s, 0); g.add(pauldron);
-      }
-      if (spitter) {
-        const cell = new THREE.PointLight(0x58ff9a, 1.3, 2); cell.position.set(0.34, 0.98, -0.48); g.add(cell);
-      }
-      g.userData.legs = legs; g.userData.arms = arms; g.userData.pelvis = pelvis;
+
+      const classScale = brute ? 1.42 : spitter ? 1.08 : 0.82;
+      g.scale.setScalar(classScale * (0.94 + Math.random() * 0.12));
+      g.userData.legs = legs; g.userData.legPhases = legPhases; g.userData.bodyRig = bodyRig; g.userData.kind = kind;
       shadowify(g); return g;
     }
     function makeBase() {
@@ -227,7 +271,7 @@ function Battlefield({ selected, onHud, onMessage, apiRef }: { selected: AssetKe
     let credits = 750, integrity = 100, wave = 0, kills = 0, active = false, gameOver = false, victory = false;
     let spawnLeft = 0, spawnTimer = 0, nextId = 1, elapsed = 0, lastHud = -1;
     let structures: Structure[] = [], enemies: Enemy[] = [], marines: Marine[] = [], bullets: Bullet[] = [], particles: Particle[] = [];
-    let selectedMarine: number | null = null;
+    const selectedMarines = new Set<number>();
     const blocked = () => new Set(structures.filter(s => s.kind !== "mine" && !s.mountedOn).map(s => keyOf(s.x, s.y)));
     function findPath(sx: number, sy: number, extra?: Cell): Cell[] {
       const ban = blocked(); if (extra) ban.add(keyOf(extra.x, extra.y));
@@ -252,8 +296,8 @@ function Battlefield({ selected, onHud, onMessage, apiRef }: { selected: AssetKe
     function message(text: string) { callbacks.current.onMessage(text); }
     function addStructure(kind: AssetKey, x: number, y: number, free = false, mountedOn?: number) {
       const group = kind === "rifle" ? makeRifleTeam() : kind === "howitzer" ? makeHowitzer() : kind === "wall" ? makeWall() : kind === "mine" ? makeMine() : makeBarracks();
-      group.position.copy(worldPos(x, y, mountedOn ? 0.62 : 0)); group.rotation.y = kind === "wall" ? Math.PI / 2 : -0.35; group.scale.multiplyScalar(0.72); attachHealthBar(group, kind === "wall" ? 1.25 : kind === "barracks" ? 2 : 1.65); world.add(group);
-      const maxHp = STRUCTURE_HP[kind]; structures.push({ id: nextId++, kind, x, y, hp: maxHp, maxHp, mountedOn, group, cooldown: Math.random(), spawnTimer: 5 });
+      const mountCount = mountedOn ? structures.filter(s => s.mountedOn === mountedOn).length : 0; group.position.copy(worldPos(x + (mountedOn ? (mountCount - 1) * 0.26 : 0), y, mountedOn ? 0.62 : 0)); group.rotation.y = kind === "wall" ? Math.PI / 2 : -0.35; group.scale.multiplyScalar(mountedOn ? 0.58 : 0.72); attachHealthBar(group, kind === "wall" ? 1.25 : kind === "barracks" ? 2 : 1.65); world.add(group);
+      const maxHp = STRUCTURE_HP[kind]; structures.push({ id: nextId++, kind, x, y, hp: maxHp, maxHp, mountedOn, group, cooldown: Math.random(), spawnTimer: 0 });
       if (!free) credits -= ASSETS[kind].cost;
     }
     addStructure("barracks", 3, 14, true); addStructure("rifle", 6, 14, true); addStructure("wall", 4, 15, true); addStructure("howitzer", 8, 15, true); spawnMarine(3, 13); spawnMarine(4, 14);
@@ -263,7 +307,7 @@ function Battlefield({ selected, onHud, onMessage, apiRef }: { selected: AssetKe
       if (gameOver) return;
       if (credits < asset.cost) return message("INSUFFICIENT COMMAND CREDITS");
       const wall = structures.find(s => s.kind === "wall" && s.x === x && s.y === y);
-      const canMount = !!wall && (kind === "rifle" || kind === "howitzer") && !structures.some(s => s.mountedOn === wall.id);
+      const canMount = !!wall && (kind === "rifle" || kind === "howitzer");
       if ((x === baseCell.x && y === baseCell.y) || (x === spawnCell.x && y === spawnCell.y) || (structures.some(s => s.x === x && s.y === y) && !canMount)) return message(wall ? "WALL POSITION ALREADY OCCUPIED" : "DEPLOYMENT ZONE OCCUPIED");
       if (wall && !canMount) return message("ONLY RIFLE TEAMS OR ARTILLERY CAN MOUNT WALLS");
       if (kind !== "mine" && !canMount && !findPath(spawnCell.x, spawnCell.y, { x, y }).length) return message("FORTIFICATION WOULD SEAL THE EVACUATION CORRIDOR");
@@ -293,20 +337,28 @@ function Battlefield({ selected, onHud, onMessage, apiRef }: { selected: AssetKe
       attachHealthBar(m, 1.22); world.add(m); const id = nextId++;
       marines.push({ id, x, y, targetX: x, targetY: y, vx: 0, vy: 0, hp: 100, maxHp: 100, cooldown: 0, mountedOn, group: m }); return id;
     }
-    function selectOrCommandMarine(x: number, y: number) {
-      const clicked = marines.find(m => Math.hypot(m.x - x, m.y - y) < 0.52);
-      if (clicked) {
-        selectedMarine = clicked.id; marines.forEach(m => { const ring = m.group.userData.selectionRing as THREE.Mesh; if (ring) ring.visible = m.id === selectedMarine; });
-        message("RIFLEMAN SELECTED · CLICK A GRID CELL TO MOVE"); return true;
-      }
-      if (selectedMarine !== null) {
-        const marine = marines.find(m => m.id === selectedMarine); if (!marine) { selectedMarine = null; return false; }
-        const wall = structures.find(s => s.kind === "wall" && s.x === x && s.y === y);
-        marine.targetX = x; marine.targetY = y; marine.mountedOn = wall?.id; selectedMarine = null;
-        const ring = marine.group.userData.selectionRing as THREE.Mesh; if (ring) ring.visible = false;
-        message(wall ? "RIFLEMAN ORDERED TO WALL FIRING STEP" : "RIFLEMAN MOVE ORDER CONFIRMED"); return true;
-      }
-      return false;
+    function refreshSelection() {
+      marines.forEach(m => { const ring = m.group.userData.selectionRing as THREE.Mesh; if (ring) ring.visible = selectedMarines.has(m.id); });
+    }
+    function selectMarineAt(x: number, y: number, additive = false) {
+      const clicked = marines.filter(m => Math.hypot(m.x - x, m.y - y) < 0.62).sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y))[0];
+      if (!clicked) { if (!additive) { selectedMarines.clear(); refreshSelection(); } return false; }
+      if (!additive) selectedMarines.clear(); if (additive && selectedMarines.has(clicked.id)) selectedMarines.delete(clicked.id); else selectedMarines.add(clicked.id); refreshSelection();
+      message(`${selectedMarines.size} SOLDIER${selectedMarines.size === 1 ? "" : "S"} SELECTED · RIGHT-CLICK TO MOVE`); return true;
+    }
+    function commandFormation(x: number, y: number) {
+      const squad = marines.filter(m => selectedMarines.has(m.id)); if (!squad.length) return false;
+      const cx = squad.reduce((sum, m) => sum + m.x, 0) / squad.length, cy = squad.reduce((sum, m) => sum + m.y, 0) / squad.length;
+      const dx = x - cx, dy = y - cy, len = Math.hypot(dx, dy) || 1, px = -dy / len, py = dx / len; const spacing = 0.72;
+      const wall = structures.find(s => s.kind === "wall" && s.x === x && s.y === y);
+      squad.forEach((m, i) => { const offset = (i - (squad.length - 1) / 2) * spacing; m.targetX = clamp(x + px * offset, 0, GRID_W - 1); m.targetY = clamp(y + py * offset, 0, GRID_H - 1); m.mountedOn = wall?.id; });
+      message(`${squad.length}-SOLDIER LINE FORMATION ${wall ? "ORDERED TO WALL" : "MOVING"}`); return true;
+    }
+    function recruitAt(x: number, y: number) {
+      const barracks = structures.find(s => s.kind === "barracks" && s.x === x && s.y === y); if (!barracks) return false;
+      if (credits < 60) { message("RECRUITMENT REQUIRES 60 COMMAND CREDITS"); return true; }
+      if (barracks.spawnTimer > 0) { message(`BARRACKS TRAINING · READY IN ${Math.ceil(barracks.spawnTimer)}S`); return true; }
+      credits -= 60; const n = marines.length; spawnMarine(clamp(barracks.x + 0.6 + (n % 3) * 0.28, 0, GRID_W - 1), clamp(barracks.y - 0.7 + (n % 2) * 0.45, 0, GRID_H - 1)); barracks.spawnTimer = 3.5; message("RIFLEMAN RECRUITED · DRAG A BOX TO ADD HIM TO A SQUAD"); emitHud(true); return true;
     }
     function spawnEnemy() {
       const roll = Math.random(); const kind: AlienKind = wave >= 4 && roll > 0.78 ? "brute" : wave >= 2 && roll > 0.58 ? "spitter" : "drone";
@@ -325,6 +377,11 @@ function Battlefield({ selected, onHud, onMessage, apiRef }: { selected: AssetKe
         particles.push({ mesh, velocity: new THREE.Vector3((Math.random() - 0.5) * 2.8, Math.random() * 2.3, (Math.random() - 0.5) * 2.8), life: 0.5 + Math.random() * 0.5, maxLife: 1 });
       }
     }
+    function hostileStrike(from: THREE.Vector3, to: THREE.Vector3, color: number, ranged: boolean) {
+      const start = from.clone().add(new THREE.Vector3(0, ranged ? 1.15 : 0.85, 0)), end = to.clone().add(new THREE.Vector3(0, 0.58, 0)), mid = start.clone().add(end).multiplyScalar(0.5), length = start.distanceTo(end);
+      const trace = new THREE.Mesh(new THREE.CylinderGeometry(ranged ? 0.035 : 0.055, ranged ? 0.055 : 0.02, length, 7), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95 }));
+      trace.position.copy(mid); trace.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), end.clone().sub(start).normalize()); trace.renderOrder = 15; world.add(trace); particles.push({ mesh: trace, velocity: new THREE.Vector3(), life: ranged ? 0.28 : 0.16, maxLife: ranged ? 0.28 : 0.16 });
+    }
     function fire(from: THREE.Vector3, target: Enemy, damage: number, splash: number, color: number, heavy = false) {
       const mesh = new THREE.Mesh(new THREE.SphereGeometry(heavy ? 0.11 : 0.045, 7, 5), new THREE.MeshBasicMaterial({ color })); mesh.position.copy(from); world.add(mesh);
       bullets.push({ mesh, from: from.clone(), to: target.group.position.clone().add(new THREE.Vector3(0, 0.42, 0)), t: 0, speed: heavy ? 1.35 : 4.8, target: target.id, damage, splash, color });
@@ -332,7 +389,7 @@ function Battlefield({ selected, onHud, onMessage, apiRef }: { selected: AssetKe
     function damageEnemy(e: Enemy, amount: number) { e.hp -= amount; e.hitFlash = 0.09; }
     function restart() {
       [...structures, ...enemies, ...marines].forEach(o => world.remove(o.group)); bullets.forEach(b => world.remove(b.mesh)); particles.forEach(p => world.remove(p.mesh));
-      structures = []; enemies = []; marines = []; bullets = []; particles = []; selectedMarine = null; credits = 750; integrity = 100; wave = 0; kills = 0; active = false; gameOver = false; victory = false; spawnLeft = 0;
+      structures = []; enemies = []; marines = []; bullets = []; particles = []; selectedMarines.clear(); credits = 750; integrity = 100; wave = 0; kills = 0; active = false; gameOver = false; victory = false; spawnLeft = 0;
       addStructure("barracks", 3, 14, true); addStructure("rifle", 6, 14, true); addStructure("wall", 4, 15, true); addStructure("howitzer", 8, 15, true); spawnMarine(3, 13); spawnMarine(4, 14); message("COMMAND SYSTEMS RESET · AWAITING DEPLOYMENT"); emitHud(true);
     }
     function rotate() {
@@ -341,21 +398,30 @@ function Battlefield({ selected, onHud, onMessage, apiRef }: { selected: AssetKe
     }
     apiRef.current = { start: startWave, restart, rotate };
 
-    const raycaster = new THREE.Raycaster(), pointer = new THREE.Vector2(), cameraVelocity = new THREE.Vector3(); const heldKeys = new Set<string>(); let hovered: THREE.Mesh | null = null, downX = 0, downY = 0;
+    const raycaster = new THREE.Raycaster(), pointer = new THREE.Vector2(), cameraVelocity = new THREE.Vector3(); const heldKeys = new Set<string>(); let hovered: THREE.Mesh | null = null, downX = 0, downY = 0, rightDownX = 0, rightDownY = 0, selecting = false;
+    const selectionBox = document.createElement("div"); selectionBox.className = "selection-box"; host.appendChild(selectionBox);
     function pick(e: PointerEvent) {
       const r = renderer.domElement.getBoundingClientRect(); pointer.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1); raycaster.setFromCamera(pointer, camera);
       return raycaster.intersectObjects(tileMeshes, false)[0]?.object as THREE.Mesh | undefined;
     }
     function onMove(e: PointerEvent) {
+      if (selecting) { const r = host.getBoundingClientRect(), x1 = Math.min(downX, e.clientX) - r.left, y1 = Math.min(downY, e.clientY) - r.top; selectionBox.style.display = "block"; selectionBox.style.left = `${x1}px`; selectionBox.style.top = `${y1}px`; selectionBox.style.width = `${Math.abs(e.clientX - downX)}px`; selectionBox.style.height = `${Math.abs(e.clientY - downY)}px`; return; }
       const tile = pick(e); if (hovered && hovered !== tile) (hovered.material as THREE.MeshStandardMaterial).emissive.setHex(0x000000);
       hovered = tile || null; if (hovered) (hovered.material as THREE.MeshStandardMaterial).emissive.setHex(0x16452e);
     }
-    function onDown(e: PointerEvent) { downX = e.clientX; downY = e.clientY; }
-    function onUp(e: PointerEvent) { if (Math.hypot(e.clientX - downX, e.clientY - downY) > 5 || e.button !== 0) return; const tile = pick(e); if (tile && !selectOrCommandMarine(tile.userData.x, tile.userData.y)) tryPlace(tile.userData.x, tile.userData.y); }
-    function onContext(e: MouseEvent) { e.preventDefault(); const tile = pick(e as PointerEvent); if (tile) removeStructureAt(tile.userData.x, tile.userData.y); }
-    function onKey(e: KeyboardEvent) { heldKeys.add(e.key.toLowerCase()); if (e.key.toLowerCase() === "r") rotate(); if (e.key === "Escape") { selectedMarine = null; marines.forEach(m => { const ring = m.group.userData.selectionRing as THREE.Mesh; if (ring) ring.visible = false; }); } if (e.code === "Space") { e.preventDefault(); startWave(); } }
+    function onDown(e: PointerEvent) { if (e.button === 2) { rightDownX = e.clientX; rightDownY = e.clientY; } if (e.button === 0) { downX = e.clientX; downY = e.clientY; selecting = true; controls.enabled = false; e.stopImmediatePropagation(); } }
+    function onUp(e: PointerEvent) {
+      if (e.button !== 0) return; e.stopImmediatePropagation(); const drag = Math.hypot(e.clientX - downX, e.clientY - downY); selecting = false; controls.enabled = true; selectionBox.style.display = "none";
+      if (drag > 5) {
+        const minX = Math.min(downX, e.clientX), maxX = Math.max(downX, e.clientX), minY = Math.min(downY, e.clientY), maxY = Math.max(downY, e.clientY), r = renderer.domElement.getBoundingClientRect(); if (!e.shiftKey) selectedMarines.clear();
+        marines.forEach(m => { const p = m.group.getWorldPosition(new THREE.Vector3()).project(camera), sx = r.left + (p.x + 1) * r.width / 2, sy = r.top + (-p.y + 1) * r.height / 2; if (sx >= minX && sx <= maxX && sy >= minY && sy <= maxY) selectedMarines.add(m.id); }); refreshSelection(); message(`${selectedMarines.size} SOLDIERS BOX-SELECTED · RIGHT-CLICK TO FORM A LINE`); return;
+      }
+      const tile = pick(e); if (!tile) return; const x = tile.userData.x, y = tile.userData.y; if (recruitAt(x, y)) return; if (selectMarineAt(x, y, e.shiftKey)) return; if (!selectedMarines.size) tryPlace(x, y);
+    }
+    function onContext(e: MouseEvent) { e.preventDefault(); if (Math.hypot(e.clientX - rightDownX, e.clientY - rightDownY) > 6) return; const tile = pick(e as PointerEvent); if (!tile) return; if (e.shiftKey) removeStructureAt(tile.userData.x, tile.userData.y); else if (!commandFormation(tile.userData.x, tile.userData.y)) message("SELECT SOLDIERS WITH A CLICK OR DRAG BOX FIRST"); }
+    function onKey(e: KeyboardEvent) { heldKeys.add(e.key.toLowerCase()); if (e.key.toLowerCase() === "r") rotate(); if (e.key === "Escape") { selectedMarines.clear(); refreshSelection(); } if (e.code === "Space") { e.preventDefault(); startWave(); } }
     function onKeyUp(e: KeyboardEvent) { heldKeys.delete(e.key.toLowerCase()); }
-    renderer.domElement.addEventListener("pointermove", onMove); renderer.domElement.addEventListener("pointerdown", onDown); renderer.domElement.addEventListener("pointerup", onUp); renderer.domElement.addEventListener("contextmenu", onContext); window.addEventListener("keydown", onKey); window.addEventListener("keyup", onKeyUp);
+    renderer.domElement.addEventListener("pointermove", onMove, true); renderer.domElement.addEventListener("pointerdown", onDown, true); renderer.domElement.addEventListener("pointerup", onUp, true); renderer.domElement.addEventListener("contextmenu", onContext); window.addEventListener("keydown", onKey); window.addEventListener("keyup", onKeyUp);
 
     function update(dt: number) {
       elapsed += dt; portal.rotation.z += dt * 0.7;
@@ -366,13 +432,15 @@ function Battlefield({ selected, onHud, onMessage, apiRef }: { selected: AssetKe
       if (active && spawnLeft > 0) { spawnTimer -= dt; if (spawnTimer <= 0) { spawnEnemy(); spawnLeft--; spawnTimer = Math.max(0.35, 1.2 - wave * 0.07); } }
       for (const e of enemies) {
         e.hitFlash = Math.max(0, e.hitFlash - dt); e.attackCooldown -= dt;
-        const attackRange = e.kind === "spitter" ? 2.45 : e.kind === "brute" ? 1.35 : 1.15;
+        const attackRange = e.kind === "spitter" ? 3.1 : e.kind === "brute" ? 1.7 : 1.45;
         const defense = structures.filter(s => s.kind !== "mine").map(s => ({ s, d: Math.hypot(s.x - e.x, s.y - e.y) })).filter(v => v.d <= attackRange).sort((a, b) => a.d - b.d)[0];
         const soldier = marines.map(m => ({ m, d: Math.hypot(m.x - e.x, m.y - e.y) })).filter(v => v.d <= attackRange).sort((a, b) => a.d - b.d)[0];
+        let isMoving = false;
         if (defense || soldier) {
           const tx = defense ? defense.s.x : soldier.m.x, ty = defense ? defense.s.y : soldier.m.y; e.group.rotation.y = Math.atan2(-(tx - e.x), -(ty - e.y));
           if (e.attackCooldown <= 0) {
             const hit = e.damage * (e.kind === "brute" ? 1.45 : 1); const targetPos = defense ? defense.s.group.position : soldier.m.group.position;
+            hostileStrike(e.group.position, targetPos, e.kind === "spitter" ? 0x58ff9a : e.kind === "brute" ? 0xff493c : 0xff8b52, e.kind === "spitter");
             if (defense) { defense.s.hp -= hit; setHealthVisual(defense.s.group, defense.s.hp, defense.s.maxHp); if (defense.s.hp <= 0) { message(`${ASSETS[defense.s.kind].name.toUpperCase()} DESTROYED BY HOSTILES`); destroyStructure(defense.s); } }
             else { soldier.m.hp -= hit; setHealthVisual(soldier.m.group, soldier.m.hp, soldier.m.maxHp); }
             burst(targetPos.clone().add(new THREE.Vector3(0, 0.55, 0)), e.kind === "spitter" ? 0x65ffac : 0xff694d, e.kind === "brute" ? 8 : 4); e.attackCooldown = e.kind === "brute" ? 1.35 : e.kind === "spitter" ? 1.15 : 0.82;
@@ -382,22 +450,30 @@ function Battlefield({ selected, onHud, onMessage, apiRef }: { selected: AssetKe
           const targetCell = e.path[Math.min(e.index + 1, e.path.length - 1)];
           if (targetCell) {
             const dx = targetCell.x - e.x, dy = targetCell.y - e.y, dist = Math.hypot(dx, dy);
-            if (dist < 0.025) e.index++; else { const step = Math.min(dist, e.speed * dt); e.x += dx / dist * step; e.y += dy / dist * step; e.group.rotation.y = Math.atan2(-dx, -dy); }
-            const legs = e.group.userData.legs as THREE.Mesh[] | undefined; if (legs) legs.forEach((leg, i) => { leg.rotation.x = Math.sin(elapsed * 9 * e.speed + i * Math.PI) * 0.42; });
+            if (dist < 0.025) e.index++; else { const step = Math.min(dist, e.speed * dt); e.x += dx / dist * step; e.y += dy / dist * step; e.group.rotation.y = Math.atan2(-dx, -dy); isMoving = true; }
           }
         }
-        const p = worldPos(e.x, e.y); e.group.position.lerp(p, Math.min(1, dt * 12)); e.group.position.y += Math.sin(elapsed * 9 + e.id) * 0.018;
+        const gaitSpeed = e.kind === "brute" ? 4.2 : e.kind === "spitter" ? 7.2 : 11.5;
+        const gait = elapsed * gaitSpeed * Math.max(0.65, e.speed) + e.id * 0.73;
+        const legs = e.group.userData.legs as THREE.Group[] | undefined;
+        const phases = e.group.userData.legPhases as number[] | undefined;
+        if (legs) legs.forEach((leg, i) => { leg.rotation.x = Math.sin(gait + (phases?.[i] ?? i * Math.PI)) * (isMoving ? (e.kind === "brute" ? 0.23 : 0.42) : 0.045); });
+        const bodyRig = e.group.userData.bodyRig as THREE.Group | undefined;
+        if (bodyRig) {
+          bodyRig.position.y = Math.sin(gait * 2) * (isMoving ? (e.kind === "brute" ? 0.035 : 0.055) : 0.012);
+          bodyRig.position.z = defense || soldier ? Math.max(0, Math.sin(gait * 1.4)) * (e.kind === "brute" ? -0.11 : -0.06) : 0;
+          bodyRig.rotation.z = Math.sin(gait) * (isMoving ? 0.035 : 0.012);
+        }
+        const p = worldPos(e.x, e.y); e.group.position.lerp(p, Math.min(1, dt * 12)); e.group.position.y += Math.sin(elapsed * 9 + e.id) * (e.kind === "brute" ? 0.005 : 0.01);
       }
       for (const s of structures) {
         s.cooldown -= dt;
         if (s.kind === "barracks") {
-          s.spawnTimer -= dt; if (s.spawnTimer <= 0 && marines.length < 7) {
-            const mx = clamp(s.x + 1, 0, GRID_W - 1), my = s.y; spawnMarine(mx, my); s.spawnTimer = 9; message("FIELD BARRACKS DEPLOYED A MOVABLE RIFLEMAN");
-          }
+          s.spawnTimer = Math.max(0, s.spawnTimer - dt);
         }
         if (s.kind !== "rifle" && s.kind !== "howitzer") continue;
         const range = ASSETS[s.kind].range + heights[s.y][s.x] * 0.9; const target = enemies.filter(e => e.hp > 0 && Math.hypot(e.x - s.x, e.y - s.y) <= range).sort((a, b) => b.index - a.index)[0];
-        if (target && s.cooldown <= 0) { const from = s.group.position.clone().add(new THREE.Vector3(s.kind === "howitzer" ? -0.55 : 0, s.kind === "howitzer" ? 1.5 : 1.05, 0)); fire(from, target, s.kind === "howitzer" ? 105 : 14, s.kind === "howitzer" ? 1.25 : 0, s.kind === "howitzer" ? 0xffa64d : 0xbaff77, s.kind === "howitzer"); s.cooldown = s.kind === "howitzer" ? 2.35 : 0.42; }
+        if (target && s.cooldown <= 0) { const from = s.group.position.clone().add(new THREE.Vector3(s.kind === "howitzer" ? -0.55 : 0, s.kind === "howitzer" ? 1.5 : 1.05, 0)); fire(from, target, s.kind === "howitzer" ? 105 : 5.8, s.kind === "howitzer" ? 1.25 : 0, s.kind === "howitzer" ? 0xffa64d : 0xd6ff81, s.kind === "howitzer"); s.cooldown = s.kind === "howitzer" ? 2.35 : 0.15; }
       }
       for (const m of marines) {
         m.cooldown -= dt; const mdx = m.targetX - m.x, mdy = m.targetY - m.y, moveDist = Math.hypot(mdx, mdy);
@@ -418,7 +494,7 @@ function Battlefield({ selected, onHud, onMessage, apiRef }: { selected: AssetKe
         if (e.hp <= 0) { credits += e.reward; kills++; burst(e.group.position.clone().add(new THREE.Vector3(0, 0.4, 0)), e.kind === "spitter" ? 0x58ff96 : 0xff573e, e.kind === "brute" ? 24 : 12); world.remove(e.group); enemies.splice(enemies.indexOf(e), 1); continue; }
         if (Math.hypot(e.x - baseCell.x, e.y - baseCell.y) < 0.22) { integrity = Math.max(0, integrity - e.damage); burst(base.position.clone().add(new THREE.Vector3(0, 1, 0)), 0xff4a31, 14); world.remove(e.group); enemies.splice(enemies.indexOf(e), 1); if (integrity <= 0) { gameOver = true; active = false; message("COMMAND POST OVERRUN · SECTOR LOST"); } }
       }
-      for (const m of [...marines]) if (m.hp <= 0) { if (selectedMarine === m.id) selectedMarine = null; burst(m.group.position.clone().add(new THREE.Vector3(0, 0.5, 0)), 0xff5f47, 9); world.remove(m.group); marines.splice(marines.indexOf(m), 1); message("RIFLEMAN KILLED IN ACTION"); }
+      for (const m of [...marines]) if (m.hp <= 0) { selectedMarines.delete(m.id); burst(m.group.position.clone().add(new THREE.Vector3(0, 0.5, 0)), 0xff5f47, 9); world.remove(m.group); marines.splice(marines.indexOf(m), 1); message("RIFLEMAN KILLED IN ACTION"); }
       for (const p of [...particles]) { p.life -= dt; p.velocity.y -= dt * 2.6; p.mesh.position.addScaledVector(p.velocity, dt); (p.mesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, p.life / p.maxLife); if (p.life <= 0) { world.remove(p.mesh); particles.splice(particles.indexOf(p), 1); } }
       if (active && spawnLeft === 0 && enemies.length === 0) { active = false; credits += 125 + wave * 25; if (wave >= 8) { victory = true; gameOver = true; message("SECTOR SECURED · HUMANITY HOLDS THE RIDGE"); } else message(`WAVE ${String(wave).padStart(2, "0")} DESTROYED · RESUPPLY DELIVERED`); }
       emitHud();
@@ -429,7 +505,7 @@ function Battlefield({ selected, onHud, onMessage, apiRef }: { selected: AssetKe
     emitHud(true); raf = requestAnimationFrame(animate);
     const resize = () => { camera.aspect = host.clientWidth / host.clientHeight; camera.updateProjectionMatrix(); renderer.setSize(host.clientWidth, host.clientHeight); };
     window.addEventListener("resize", resize);
-    return () => { cancelAnimationFrame(raf); window.removeEventListener("resize", resize); window.removeEventListener("keydown", onKey); window.removeEventListener("keyup", onKeyUp); renderer.domElement.removeEventListener("pointermove", onMove); renderer.domElement.removeEventListener("pointerdown", onDown); renderer.domElement.removeEventListener("pointerup", onUp); renderer.domElement.removeEventListener("contextmenu", onContext); controls.dispose(); renderer.dispose(); host.removeChild(renderer.domElement); apiRef.current = null; };
+    return () => { cancelAnimationFrame(raf); window.removeEventListener("resize", resize); window.removeEventListener("keydown", onKey); window.removeEventListener("keyup", onKeyUp); renderer.domElement.removeEventListener("pointermove", onMove, true); renderer.domElement.removeEventListener("pointerdown", onDown, true); renderer.domElement.removeEventListener("pointerup", onUp, true); renderer.domElement.removeEventListener("contextmenu", onContext); controls.dispose(); renderer.dispose(); host.removeChild(renderer.domElement); host.removeChild(selectionBox); apiRef.current = null; };
   }, [apiRef]);
   return <div ref={hostRef} className="three-host" aria-label="Interactive 3D battlefield" />;
 }
@@ -456,15 +532,15 @@ export default function Home() {
         <div className="mission-card"><span>OPERATION NIGHTFALL · SECTOR E-7</span><b>Hold the eastern ridge</b><small>Wave {Math.min(hud.wave + (hud.active ? 0 : 1), 8)} of 8 · {hud.kills} confirmed eliminations</small></div>
         <div className="status-feed"><i />{message}</div>
         <div className="camera-tools"><button onClick={() => apiRef.current?.rotate()} aria-label="Rotate camera">↻</button><span>ORBIT</span></div>
-        {briefing && <div className="briefing"><div className="briefing-id">FIELD BRIEFING // 04:38 LOCAL</div><h1>They found the ridge.</h1><p>Your field barracks is already operational. Every wall, turret and squad has its own health. Hostiles will attack nearby defenses. Mount rifle teams or artillery on walls, and click individual riflemen to issue movement orders.</p><div className="brief-grid"><span><kbd>W A S D</kbd><b>Move with inertia</b></span><span><kbd>CLICK TROOP</kbd><b>Select, then move</b></span><span><kbd>CLICK WALL</kbd><b>Mount selected asset</b></span><span><kbd>RIGHT CLICK</kbd><b>Salvage asset</b></span></div><button onClick={() => setBriefing(false)}>ASSUME COMMAND</button></div>}
+        {briefing && <div className="briefing"><div className="briefing-id">FIELD BRIEFING // 04:38 LOCAL</div><h1>They found the ridge.</h1><p>Drag a selection box around any number of soldiers, then right-click to move them in a straight firing line. Click a placed barracks to recruit for 60 credits. Machine-gun teams and multiple soldiers can hold the same wall.</p><div className="brief-grid"><span><kbd>DRAG BOX</kbd><b>Select a squad</b></span><span><kbd>RIGHT CLICK</kbd><b>Move in line formation</b></span><span><kbd>CLICK BARRACKS</kbd><b>Recruit rifleman</b></span><span><kbd>MIDDLE DRAG</kbd><b>Orbit camera</b></span></div><button onClick={() => setBriefing(false)}>ASSUME COMMAND</button></div>}
         {hud.gameOver && <div className={`end-card ${hud.victory ? "won" : "lost"}`}><small>{hud.victory ? "OPERATION COMPLETE" : "SIGNAL LOST"}</small><h2>{hud.victory ? "THE RIDGE HOLDS" : "COMMAND OVERRUN"}</h2><p>{hud.kills} hostiles eliminated across {hud.wave} waves.</p><button onClick={() => apiRef.current?.restart()}>RESTART OPERATION</button></div>}
       </section>
       <aside className="build-panel">
         <div className="panel-title"><small>FORWARD ENGINEERING</small><b>DEPLOYABLE ASSETS</b></div>
         {(Object.keys(ASSETS) as AssetKey[]).map(key => { const a = ASSETS[key]; return <button key={key} className={`asset ${selected === key ? "active" : ""}`} onClick={() => setSelected(key)} style={{ "--asset-color": a.accent } as React.CSSProperties}><span>{a.icon}</span><div><b>{a.name}</b><small>{a.role}</small></div><em>{a.cost}</em></button>; })}
-        <div className="intel"><span>FIELD INTEL</span><p>Place rifle teams or artillery directly onto walls for extra elevation. Click a rifleman, then a grid square—or a wall—to move him.</p></div>
+        <div className="intel"><span>FIELD INTEL</span><p>Box-select soldiers and right-click a destination. They automatically spread into a straight line. Shift + right-click salvages a defense.</p></div>
       </aside>
-      <footer className="controls"><span><kbd>WASD</kbd> GLIDE CAMERA</span><span><kbd>DRAG</kbd> ORBIT</span><span><kbd>CLICK TROOP</kbd> MOVE</span><span><kbd>R</kbd> ROTATE 90°</span><span><kbd>SPACE</kbd> START WAVE</span><span className="online">● LOCAL BUILD</span></footer>
+      <footer className="controls"><span><kbd>DRAG BOX</kbd> SELECT</span><span><kbd>RIGHT CLICK</kbd> FORMATION MOVE</span><span><kbd>MIDDLE DRAG</kbd> ORBIT</span><span><kbd>WASD</kbd> GLIDE CAMERA</span><span><kbd>SPACE</kbd> START WAVE</span><span className="online">● GITHUB PAGES</span></footer>
     </main>
   );
 }

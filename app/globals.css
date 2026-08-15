@@ -13,6 +13,7 @@ button { font:inherit; }
 .wave-button:disabled { background:#273c34; color:#70857b; cursor:not-allowed; box-shadow:none; }
 .battlefield { min-width:0; position:relative; overflow:hidden; background:#07110f; }
 .three-host { position:absolute; inset:0; cursor:crosshair; }.three-host canvas { display:block; width:100%; height:100%; outline:0; }
+.selection-box { display:none; position:absolute; z-index:8; pointer-events:none; border:1px solid #9fff72; background:rgba(118,255,136,.13); box-shadow:0 0 0 1px rgba(0,0,0,.5),inset 0 0 18px rgba(117,255,155,.1); }
 .battlefield:after { content:""; position:absolute; inset:0; pointer-events:none; z-index:1; background:linear-gradient(90deg,rgba(4,10,8,.52),transparent 12%,transparent 82%,rgba(4,10,8,.32)),linear-gradient(0deg,rgba(4,10,8,.72),transparent 27%),repeating-linear-gradient(0deg,rgba(163,255,199,.018) 0,rgba(163,255,199,.018) 1px,transparent 1px,transparent 3px); }
 .mission-card { position:absolute; top:22px; left:23px; z-index:3; padding:13px 17px 14px; border-left:2px solid var(--lime); background:linear-gradient(90deg,rgba(4,13,10,.92),rgba(4,13,10,.65)); min-width:315px; backdrop-filter:blur(8px); box-shadow:0 10px 30px rgba(0,0,0,.22); }
 .mission-card span,.mission-card b,.mission-card small { display:block; }.mission-card span { font:9px var(--font-geist-mono),monospace; color:var(--lime); letter-spacing:.16em; }.mission-card b { font-size:17px; margin:5px 0 3px; letter-spacing:.01em; }.mission-card small { color:#91a79c; font-size:10px; }
