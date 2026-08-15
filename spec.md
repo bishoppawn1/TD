@@ -41,7 +41,7 @@ Protect the command post through all 25 enemy waves.
 - Temple of Dust places the command post in the center of an ancient ruin maze. Staggered openings across concentric high walls and broken corridor baffles force eight invasion routes to bend through distinct approaches.
 - The Breeding World is an alien homeworld with organic ridges, luminous growths, and twelve perimeter spawning pits surrounding a central command post.
 - Every battlefield contains map-specific shallow water: HQ has a frontier stream, Cinder Basin has an oasis, Blackglass has a diagonal fracture, Temple of Dust has two cisterns, and the homeworld has luminous alien pools.
-- Water is impassable to infantry and mobile crewed weapons, and structures cannot be deployed on waterlogged ground. Ground aliens can still wade through it at reduced speed.
+- Water is impassable to infantry, mobile crewed weapons, structures, and every ordinary ground alien. Only dedicated aquatic aliens may enter and wade through water; flying enemies pass above it.
 - Ambient props are deterministic but naturally scattered by terrain rather than repeated in straight lines. HQ uses pines and supply caches, Cinder uses cacti and bones, Blackglass uses crystals and vents, Temple of Dust uses pillars and obelisks, and the homeworld uses organic growths.
 - Portal counts vary by battlefield. The homeworld more than doubles the usual wave population, deploys it at a faster cadence, and permits up to 170 simultaneous hostiles; the temple divides smaller bursts among its eight fronts.
 - Alien portals release synchronized mass surges instead of single-file trickles. Normal maps deploy at least twenty hostiles per gate in each burst, with later waves increasing that amount to thirty.
