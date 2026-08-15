@@ -7,7 +7,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 type AssetKey = "rifle" | "sentry" | "flame" | "railgun" | "howitzer" | "missile" | "wall" | "bastion" | "wire" | "mine" | "barracks";
 type CombatKey = "rifle" | "sentry" | "flame" | "railgun" | "howitzer" | "missile";
 type MarineKind = "rifleman" | "gunner" | "medic";
-type AlienKind = "drone" | "spitter" | "brute" | "razortail" | "stalker";
+type AlienKind = "drone" | "spitter" | "brute" | "razortail" | "stalker" | "strider";
 
 const MAX_WAVES = 25;
 const ALIEN_SPEED_MULTIPLIER = 1.45;
@@ -19,6 +19,7 @@ const ENEMY_STATS: Record<AlienKind, { hp: number; speed: number; damage: number
   brute: { hp: 340, speed: 0.48, damage: 18, reward: 65, attackRange: 1.7, attackCooldown: 1.35, gait: 4.2, barHeight: 2.05 },
   razortail: { hp: 245, speed: 0.68, damage: 14, reward: 56, attackRange: 2.05, attackCooldown: 1.05, gait: 6.2, barHeight: 1.75 },
   stalker: { hp: 64, speed: 1.85, damage: 5, reward: 30, attackRange: 1.25, attackCooldown: 0.48, gait: 18, barHeight: 0.95 },
+  strider: { hp: 118, speed: 0.7, damage: 13, reward: 48, attackRange: 6.4, attackCooldown: 1.65, gait: 5.4, barHeight: 1.8 },
 };
 
 const GRID_W = 24;
@@ -361,10 +362,10 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, onBarracksSel
       const g = new THREE.Group();
       const bodyRig = new THREE.Group(); g.add(bodyRig);
       const legs: THREE.Group[] = [], legPhases: number[] = [], tails: THREE.Group[] = [];
-      const brute = kind === "brute", spitter = kind === "spitter", razortail = kind === "razortail", stalker = kind === "stalker";
-      const shellColor = brute ? 0x673832 : spitter ? 0x28654b : razortail ? 0x57305f : stalker ? 0x27536b : 0x334d42;
-      const skinColor = brute ? 0x2c1c1b : spitter ? 0x172e25 : razortail ? 0x29162f : stalker ? 0x102832 : 0x192a24;
-      const glowColor = spitter ? 0x63ff9f : razortail ? 0xe86bff : stalker ? 0x51dfff : 0xff503f;
+      const brute = kind === "brute", spitter = kind === "spitter", razortail = kind === "razortail", stalker = kind === "stalker", strider = kind === "strider";
+      const shellColor = brute ? 0x673832 : spitter ? 0x28654b : razortail ? 0x57305f : stalker ? 0x27536b : strider ? 0x62572d : 0x334d42;
+      const skinColor = brute ? 0x2c1c1b : spitter ? 0x172e25 : razortail ? 0x29162f : stalker ? 0x102832 : strider ? 0x292614 : 0x192a24;
+      const glowColor = spitter ? 0x63ff9f : razortail ? 0xe86bff : stalker ? 0x51dfff : strider ? 0xffe56d : 0xff503f;
       const shell = new THREE.MeshStandardMaterial({ color: shellColor, roughness: 0.48, metalness: 0.18 });
       const skin = new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.82 });
       const glow = new THREE.MeshBasicMaterial({ color: glowColor });
@@ -417,6 +418,20 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, onBarracksSel
         [-0.3, 0.18, 0.48].forEach((z, i) => { addLeg(-1, z, i * Math.PI * 0.8, 0.5, 0.45, 0.05, 0.56); addLeg(1, z, Math.PI + i * Math.PI * 0.8, 0.5, 0.45, 0.05, 0.56); });
         for (const z of [-0.32, -0.05, 0.22]) addSpine(0, 1.12, z, 0.3, 0x3f9e70);
         const mouthGlow = new THREE.PointLight(0x55ff99, 1.6, 2.6); mouthGlow.position.set(0, 0.61, -0.96); bodyRig.add(mouthGlow); sac.userData.pulse = true;
+      } else if (kind === "strider") {
+        addOrb(bodyRig, 0.32, [0, 1.18, 0.12], [0.72, 0.44, 1.35], shell);
+        addOrb(bodyRig, 0.22, [0, 1.15, -0.42], [0.92, 0.55, 1.08], skin);
+        addPlate([0, 1.38, 0.08], [0.68, 0.2, 1.08], 0x80723a);
+        for (const side of [-1, 1]) {
+          addEye(side * 0.085, 1.18, -0.65, 0.04);
+          addLeg(side, -0.24, side < 0 ? 0 : Math.PI, 0.78, 0.68, 0.026, 1.08);
+          addLeg(side, 0.12, side < 0 ? Math.PI * 0.66 : Math.PI * 1.66, 0.84, 0.72, 0.024, 1.12);
+          addLeg(side, 0.42, side < 0 ? Math.PI * 1.32 : Math.PI * 0.32, 0.75, 0.65, 0.022, 1.04);
+        }
+        beam(bodyRig, new THREE.Vector3(0, 1.16, -0.48), new THREE.Vector3(0, 1.17, -1.12), 0.045, 0x282719);
+        const emitter = new THREE.Mesh(new THREE.SphereGeometry(0.085, 10, 7), glow); emitter.position.set(0, 1.17, -1.16); bodyRig.add(emitter);
+        const emitterLight = new THREE.PointLight(0xffe56d, 1.5, 2.8); emitterLight.position.copy(emitter.position); bodyRig.add(emitterLight);
+        [-0.05, 0.18, 0.38].forEach((z, i) => addSpine(0, 1.58 - i * 0.025, z, 0.18 - i * 0.018, 0xa08d43));
       } else if (kind === "stalker") {
         addOrb(bodyRig, 0.31, [0, 0.34, 0.14], [0.66, 0.42, 1.55], shell);
         addOrb(bodyRig, 0.2, [0, 0.31, -0.45], [0.82, 0.48, 1.12], skin);
@@ -459,7 +474,7 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, onBarracksSel
         for (const side of [-1, 1]) addOrb(bodyRig, 0.25, [side * 0.6, 1.12, -0.2], [1.2, 0.7, 1], shell);
       }
 
-      const classScale = brute ? 1.42 : spitter ? 1.08 : razortail ? 1.18 : stalker ? 0.62 : 0.82;
+      const classScale = brute ? 0.9 : spitter ? 0.68 : razortail ? 0.74 : strider ? 0.72 : stalker ? 0.4 : 0.52;
       g.scale.setScalar(classScale * (0.94 + Math.random() * 0.12));
       g.userData.legs = legs; g.userData.legPhases = legPhases; g.userData.tails = tails; g.userData.bodyRig = bodyRig; g.userData.kind = kind;
       shadowify(g); return g;
@@ -759,6 +774,7 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, onBarracksSel
         ["spitter", wave >= 3 ? 18 + wave * 0.8 : 0],
         ["stalker", wave >= 5 ? 8 + wave * 0.45 : 0],
         ["brute", wave >= 7 ? 7 + wave * 0.55 : 0],
+        ["strider", wave >= 8 ? 7 + wave * 0.42 : 0],
         ["razortail", wave >= 10 ? 6 + wave * 0.5 : 0],
       ];
       let roll = Math.random() * weights.reduce((sum, [, weight]) => sum + weight, 0), kind: AlienKind = "drone";
@@ -779,7 +795,7 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, onBarracksSel
       }
     }
     function hostileStrike(kind: AlienKind, from: THREE.Vector3, to: THREE.Vector3, targetType: "marine" | "structure", targetId: number, damage: number) {
-      const group = new THREE.Group(), startHeight = kind === "brute" ? 1.28 : kind === "razortail" ? 1.05 : kind === "spitter" ? 1.05 : kind === "stalker" ? 0.38 : 0.62;
+      const group = new THREE.Group(), startHeight = kind === "brute" ? 0.85 : kind === "razortail" ? 0.68 : kind === "spitter" ? 0.66 : kind === "strider" ? 0.92 : kind === "stalker" ? 0.25 : 0.38;
       const start = from.clone().add(new THREE.Vector3(0, startHeight, 0)), end = to.clone().add(new THREE.Vector3(0, 0.58, 0));
       let speed = 7.5, arcHeight = 0.08, color = 0xff9857, impactCount = 5;
       if (kind === "drone") {
@@ -798,6 +814,11 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, onBarracksSel
         speed = 4.1; arcHeight = 0.22; color = 0xe66bff; impactCount = 13;
         const barb = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.72, 7), new THREE.MeshStandardMaterial({ color: 0xd58ce0, emissive: 0x4f145d, emissiveIntensity: 1.25, roughness: 0.36, metalness: 0.28 }));
         barb.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), end.clone().sub(start).normalize()); barb.castShadow = true; group.add(barb);
+      } else if (kind === "strider") {
+        speed = 5.8; arcHeight = 0.12; color = 0xffe56d; impactCount = 9;
+        const lance = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.72, 6), new THREE.MeshStandardMaterial({ color: 0xffed8a, emissive: 0x8e741b, emissiveIntensity: 2.4, roughness: 0.18 }));
+        lance.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), end.clone().sub(start).normalize()); group.add(lance);
+        const light = new THREE.PointLight(color, 1.8, 3.2); group.add(light);
       } else {
         speed = 10.5; arcHeight = 0.02; color = 0x58ddff; impactCount = 4;
         const slash = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.38, 5), new THREE.MeshBasicMaterial({ color })); slash.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), end.clone().sub(start).normalize()); group.add(slash);
@@ -863,6 +884,17 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, onBarracksSel
       if (active && spawnLeft > 0) { spawnTimer -= dt; if (spawnTimer <= 0) { spawnEnemy(); spawnLeft--; spawnTimer = Math.max(0.18, 0.82 - wave * 0.022); } }
       for (const e of enemies) {
         e.hitFlash = Math.max(0, e.hitFlash - dt); e.attackCooldown -= dt; e.pathTimer -= dt;
+        let separationX = 0, separationY = 0;
+        for (const other of enemies) {
+          if (other.id === e.id) continue;
+          const apartX = e.x - other.x, apartY = e.y - other.y, apart = Math.hypot(apartX, apartY), spacing = 0.48;
+          if (apart >= spacing) continue;
+          const force = (spacing - apart) / spacing;
+          if (apart < 0.001) { const angle = (e.id * 2.399 + other.id * 0.73) % (Math.PI * 2); separationX += Math.cos(angle) * force; separationY += Math.sin(angle) * force; }
+          else { separationX += apartX / apart * force; separationY += apartY / apart * force; }
+        }
+        const separationLength = Math.hypot(separationX, separationY);
+        if (separationLength > 0.001) { const separationStep = Math.min(0.42 * dt, separationLength * 0.08); e.x = clamp(e.x + separationX / separationLength * separationStep, 0, GRID_W - 1); e.y = clamp(e.y + separationY / separationLength * separationStep, 0, GRID_H - 1); }
         const enemyStats = ENEMY_STATS[e.kind], climbsWalls = WALL_CLIMBERS.has(e.kind);
         const closestMarine = marines.map(m => ({ type: "marine" as const, id: m.id, x: m.x, y: m.y, group: m.group, marine: m, d: Math.hypot(m.x - e.x, m.y - e.y) })).sort((a, b) => a.d - b.d)[0];
         const closestDefense = structures.filter(s => (isPathBlocking(s) && (!climbsWalls || !isWall(s))) || isCombatStructure(s)).map(s => ({ type: "structure" as const, id: s.id, x: s.x, y: s.y, group: s.group, structure: s, d: Math.hypot(s.x - e.x, s.y - e.y) })).sort((a, b) => a.d - b.d)[0];
@@ -967,8 +999,8 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, onBarracksSel
       }
       for (const e of [...enemies]) {
         if (e.hp <= 0) {
-          const deathColor = e.kind === "spitter" ? 0x58ff96 : e.kind === "razortail" ? 0xe66bff : e.kind === "stalker" ? 0x58ddff : 0xff573e;
-          const deathCount = e.kind === "brute" ? 24 : e.kind === "razortail" ? 20 : e.kind === "stalker" ? 9 : 12;
+          const deathColor = e.kind === "spitter" ? 0x58ff96 : e.kind === "razortail" ? 0xe66bff : e.kind === "stalker" ? 0x58ddff : e.kind === "strider" ? 0xffe56d : 0xff573e;
+          const deathCount = e.kind === "brute" ? 24 : e.kind === "razortail" ? 20 : e.kind === "strider" ? 14 : e.kind === "stalker" ? 9 : 12;
           credits += e.reward; kills++; burst(e.group.position.clone().add(new THREE.Vector3(0, 0.4, 0)), deathColor, deathCount); removeHealthBar(e.group); world.remove(e.group); enemies.splice(enemies.indexOf(e), 1); continue;
         }
         if (e.targetType === "base" && Math.hypot(e.x - baseCell.x, e.y - baseCell.y) < 0.22) { integrity = Math.max(0, integrity - e.damage); burst(base.position.clone().add(new THREE.Vector3(0, 1, 0)), 0xff4a31, 14); removeHealthBar(e.group); world.remove(e.group); enemies.splice(enemies.indexOf(e), 1); if (integrity <= 0) { gameOver = true; active = false; message("COMMAND POST OVERRUN · SECTOR LOST"); } }
