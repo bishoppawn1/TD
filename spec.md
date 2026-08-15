@@ -36,9 +36,13 @@ Protect the command post through all 25 enemy waves.
 - Most maps begin with five infantry and eight free structures tailored to their terrain and invasion pattern.
 - HQ Command is the initial map and represents humanity's vast fortified field headquarters. It begins with 48 structures—including layered walls, two barracks, artillery, anti-air, heavy weapons, trenches, mines, wire, and lights—plus a 16-soldier garrison.
 - HQ Command is attacked from five land fronts, schedules 75 percent more aliens per wave, supports up to 170 simultaneous hostiles, launches larger bursts, and replenishes attackers faster than standard maps. Its extensive starting defenses are necessary rather than decorative.
-- Cinder Basin exposes a low defense to encirclement, while Blackglass Divide uses sheer multi-level mesas and deep approach channels.
+- Cinder Basin exposes a low defense to encirclement around a spring-fed oasis, with naturally scattered cacti and skeletal remains replacing the repeated generic rock rows.
+- Blackglass Divide uses seven distinct terraced peaks, smaller volcanic ridges, obsidian crystal clusters, heat vents, and a diagonal water fracture to create many elevated positions and approach channels.
 - Temple of Dust places the command post in the center of an ancient ruin maze. Staggered openings across concentric high walls and broken corridor baffles force eight invasion routes to bend through distinct approaches.
 - The Breeding World is an alien homeworld with organic ridges, luminous growths, and twelve perimeter spawning pits surrounding a central command post.
+- Every battlefield contains map-specific shallow water: HQ has a frontier stream, Cinder Basin has an oasis, Blackglass has a diagonal fracture, Temple of Dust has two cisterns, and the homeworld has luminous alien pools.
+- Infantry, enemies, and mobile weapons can wade through water at reduced speed, but structures cannot be deployed on waterlogged ground.
+- Ambient props are deterministic but naturally scattered by terrain rather than repeated in straight lines. HQ uses pines and supply caches, Cinder uses cacti and bones, Blackglass uses crystals and vents, Temple of Dust uses pillars and obelisks, and the homeworld uses organic growths.
 - Portal counts vary by battlefield. The homeworld more than doubles the usual wave population, deploys it at a faster cadence, and permits up to 170 simultaneous hostiles; the temple divides smaller bursts among its eight fronts.
 - Alien portals release synchronized mass surges instead of single-file trickles. Normal maps deploy at least twenty hostiles per gate in each burst, with later waves increasing that amount to thirty.
 - The battlefield is covered by dynamic fog of war. Friendly infantry, combat defenses, the barracks, and the command post reveal limited areas around themselves.
@@ -48,7 +52,7 @@ Protect the command post through all 25 enemy waves.
 - Enemy bodies use size-aware collision spacing, forming a dense moving swarm without occupying the same physical space.
 - All friendly splash weapons and shock mines use a slightly tighter area-of-effect radius while retaining their direct-hit damage.
 - Enemies choose targets by estimated travel time rather than straight-line distance. The estimate uses the actual route, terrain grade, movement speed, and any wall ascent or descent required.
-- Ascending natural terrain adds substantial vertical climb time to both movement and route estimates, while downhill travel retains its speed advantage.
+- Ascending natural terrain adds explicit vertical climb time to both movement and route estimates, while downhill travel retains a modest speed advantage. Friendly units climb at more than ten times the aliens' vertical rate, so mountains delay soldiers without making repositioning painfully slow.
 - Each alien applies a stable individual preference of up to 17 percent in either direction to those travel-time estimates, spreading a swarm across near-equivalent targets without making obviously bad routes attractive.
 - Friendly infantry and mobile crewed weapons use grid routes around walls and other solid fortifications instead of moving through them.
 - Every wall has visible access stairs on all four sides. A move order onto a wall chooses the shortest safe north, south, east, or west stair approach, animates the climb, and leaves units stationed on top.

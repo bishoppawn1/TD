@@ -26,6 +26,9 @@ const ENEMY_COLLISION_BUCKET_SIZE = 1.12;
 const WALL_STACK_HEIGHT = 0.62;
 const WALL_CLIMB_SPEED = 0.46;
 const WALL_LIFT_SPEED = 3.6;
+const FRIENDLY_TERRAIN_CLIMB_SPEED = 0.85;
+const FRIENDLY_WATER_SPEED_MULTIPLIER = 0.62;
+const ENEMY_WATER_SPEED_MULTIPLIER = 0.76;
 const BASE_VISION_RADIUS = 7.5;
 const MARINE_VISION_RADIUS = 5.5;
 const STRUCTURE_VISION_RADIUS = 4.8;
@@ -112,6 +115,7 @@ type SelectedUnit = { id: number; kind: UpgradableKey; name: string; level: numb
 type BarracksInfo = { id: number };
 type BattlefieldApi = { start: () => void; restart: () => void; rotate: () => void; upgradeSelected: () => void; recruit: (kind: MarineKind) => void };
 type MapKey = "ridge" | "basin" | "divide" | "ruins" | "homeworld";
+type DecorKind = "supply" | "pine" | "cactus" | "bones" | "crystal" | "vent" | "pillar" | "obelisk" | "growth";
 type MapConfig = {
   key: MapKey;
   operation: string;
@@ -134,7 +138,10 @@ type MapConfig = {
   waveMultiplier?: number;
   burstScale?: number;
   spawnIntervalMultiplier?: number;
-  decorAt?: (x: number, y: number) => "pillar" | "obelisk" | "growth" | null;
+  waterColor: number;
+  waterGlow: number;
+  waterAt: (x: number, y: number) => boolean;
+  decorAt?: (x: number, y: number) => DecorKind | null;
   heightAt: (x: number, y: number) => number;
 };
 
@@ -142,6 +149,10 @@ const keyOf = (x: number, y: number) => `${x},${y}`;
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const aoeRadius = (radius: number) => radius * AOE_RADIUS_MULTIPLIER;
 const steppedHeight = (height: number) => Math.max(0.04, Math.round(height / 0.16) * 0.16);
+const terrainNoise = (x: number, y: number, seed: number) => {
+  const raw = Math.sin(x * 12.9898 + y * 78.233 + seed * 37.719) * 43758.5453;
+  return raw - Math.floor(raw);
+};
 
 const MAPS: Record<MapKey, MapConfig> = {
   ridge: {
@@ -175,6 +186,13 @@ const MAPS: Record<MapKey, MapConfig> = {
       { kind: "rocketeer", x: 16, y: 32 }, { kind: "rocketeer", x: 16, y: 36 },
     ],
     activeEnemyCap: 75, waveMultiplier: 0.7, burstScale: 0.5, spawnIntervalMultiplier: 1.15,
+    waterColor: 0x176a78, waterGlow: 0x073d4b,
+    waterAt: (x, y) => x >= 27 && Math.abs(y - (24 + (43 - x) * 0.28)) <= 1,
+    decorAt: (x, y) => {
+      if (Math.hypot(x - 10, y - 35) < 9) return null;
+      const scatter = terrainNoise(x, y, 11);
+      return scatter > 0.988 ? "supply" : scatter < 0.018 && x < 31 ? "pine" : null;
+    },
     heightAt: (x, y) => {
       const rolling = Math.max(0, Math.sin(x * 0.31) + Math.cos(y * 0.37) - 0.7) * 0.12;
       const broadRise = Math.max(0, 1 - Math.hypot(x - 28, y - 17) / 13) * 0.34;
@@ -184,12 +202,19 @@ const MAPS: Record<MapKey, MapConfig> = {
   },
   basin: {
     key: "basin", operation: "SUNSCOUR", sector: "K-12", name: "Cinder Basin", objective: "Defend the basin floor", terrain: "OPEN · ENCIRCLED",
-    description: "Your command post sits low in a broad ash basin. Long sightlines help artillery, but portals wrap around both flanks.",
+    description: "A cactus-studded ash basin surrounds a spring-fed oasis. Long sightlines help artillery, but portals wrap around both flanks.",
     background: 0x160b08, ground: 0x1d100c, fog: 0x090301, hue: 0.065, saturation: 0.34,
     baseCell: { x: 22, y: 37 }, spawnCells: [{ x: 0, y: 4 }, { x: 43, y: 5 }, { x: 43, y: 35 }, { x: 5, y: 0 }],
     waveCount: 11,
     startingStructures: [{ kind: "barracks", x: 22, y: 34 }, { kind: "rifle", x: 18, y: 34 }, { kind: "wall", x: 21, y: 36 }, { kind: "howitzer", x: 26, y: 34 }, { kind: "wire", x: 23, y: 32 }, { kind: "railgun", x: 28, y: 30 }, { kind: "light", x: 22, y: 30 }, { kind: "bastion", x: 18, y: 32 }],
     startingMarines: [{ kind: "rifleman", x: 20, y: 32 }, { kind: "medic", x: 23, y: 34 }, { kind: "rifleman", x: 24, y: 30 }, { kind: "gunner", x: 20, y: 30 }, { kind: "rocketeer", x: 26, y: 30 }],
+    waterColor: 0x198a91, waterGlow: 0x075c64,
+    waterAt: (x, y) => Math.hypot(x - 11, y - 18) <= 4.3 || (x <= 11 && Math.abs(y - 18) <= 1),
+    decorAt: (x, y) => {
+      if (Math.hypot(x - 11, y - 18) < 6 || Math.hypot(x - 22, y - 34) < 7) return null;
+      const scatter = terrainNoise(x, y, 23);
+      return scatter > 0.958 ? "cactus" : scatter < 0.014 ? "bones" : null;
+    },
     heightAt: (x, y) => {
       const distance = Math.hypot(x - 21.5, y - 21.5);
       const rim = Math.max(0, (distance - 9) / 15) * 1.05;
@@ -199,20 +224,33 @@ const MAPS: Record<MapKey, MapConfig> = {
   },
   divide: {
     key: "divide", operation: "BLACKGLASS", sector: "R-3", name: "Blackglass Divide", objective: "Control the fractured mesas", terrain: "CHOKEPOINTS · EXTREME HEIGHT",
-    description: "Sheer, terraced volcanic mesas split the approach into deep channels. Climbers can cross the heights, but the ascent costs them time.",
+    description: "Seven terraced peaks, obsidian crystal fields, and a molten-water fracture split every approach into dangerous channels.",
     background: 0x090811, ground: 0x100f18, fog: 0x030207, hue: 0.69, saturation: 0.18,
     baseCell: { x: 4, y: 22 }, spawnCells: [{ x: 43, y: 3 }, { x: 43, y: 40 }, { x: 22, y: 0 }, { x: 22, y: 43 }],
     waveCount: 16,
     startingStructures: [{ kind: "barracks", x: 7, y: 22 }, { kind: "rifle", x: 9, y: 18 }, { kind: "wall", x: 9, y: 24 }, { kind: "howitzer", x: 11, y: 28 }, { kind: "wire", x: 11, y: 20 }, { kind: "flame", x: 11, y: 22 }, { kind: "bastion", x: 9, y: 26 }, { kind: "light", x: 13, y: 24 }],
     startingMarines: [{ kind: "rifleman", x: 7, y: 19 }, { kind: "medic", x: 7, y: 26 }, { kind: "rifleman", x: 7, y: 24 }, { kind: "gunner", x: 9, y: 20 }, { kind: "rocketeer", x: 11, y: 26 }],
+    waterColor: 0x243d62, waterGlow: 0x101f4a,
+    waterAt: (x, y) => Math.abs((y - 21) - (x - 22) * 0.24) <= 0.72,
+    decorAt: (x, y) => {
+      if (Math.hypot(x - 4, y - 22) < 7) return null;
+      const scatter = terrainNoise(x, y, 37);
+      return scatter > 0.974 ? "crystal" : scatter < 0.012 ? "vent" : null;
+    },
     heightAt: (x, y) => {
-      const terrace = (distance: number) => distance < 4.2 ? 4.32 : distance < 6.1 ? 3.2 : distance < 8.2 ? 1.76 : distance < 10 ? 0.64 : 0;
-      const northMesa = terrace(Math.hypot((x - 14) * 0.92, (y - 11) * 1.08));
-      const southMesa = terrace(Math.hypot((x - 30) * 0.9, (y - 32) * 1.05));
+      const terrace = (cx: number, cy: number, rx: number, ry: number, peak: number) => {
+        const distance = Math.hypot((x - cx) / rx, (y - cy) / ry);
+        return distance < 0.38 ? peak : distance < 0.58 ? peak * 0.74 : distance < 0.78 ? peak * 0.42 : distance < 1 ? peak * 0.16 : 0;
+      };
+      const mountains = Math.max(
+        terrace(13, 10, 9, 8, 4.48), terrace(30, 33, 10, 9, 4.16), terrace(34, 8, 6.5, 6, 3.68),
+        terrace(23, 18, 5.5, 7, 3.2), terrace(14, 35, 6.5, 5.5, 2.88), terrace(39, 22, 4.5, 6.5, 2.56),
+        terrace(24, 41, 5.5, 3.8, 2.24),
+      );
       const fractureDistance = Math.abs((y - 20) - (x - 22) * 0.28);
       const fracture = fractureDistance < 0.72 ? 0.56 : fractureDistance < 1.35 ? 0.24 : 0;
       const brokenGround = Math.max(0, Math.sin(x * 0.82) * Math.cos(y * 0.67)) * 0.22;
-      return steppedHeight(0.08 + Math.max(northMesa, southMesa) + brokenGround - fracture);
+      return steppedHeight(0.08 + mountains + brokenGround - fracture);
     },
   },
   ruins: {
@@ -224,6 +262,8 @@ const MAPS: Record<MapKey, MapConfig> = {
     startingStructures: [{ kind: "barracks", x: 20, y: 20 }, { kind: "rifle", x: 24, y: 20 }, { kind: "wall", x: 19, y: 22 }, { kind: "howitzer", x: 25, y: 24 }, { kind: "wire", x: 22, y: 18 }, { kind: "flak", x: 22, y: 25 }, { kind: "light", x: 22, y: 16 }, { kind: "bastion", x: 18, y: 24 }],
     startingMarines: [{ kind: "rifleman", x: 21, y: 20 }, { kind: "medic", x: 23, y: 23 }, { kind: "rifleman", x: 24, y: 22 }, { kind: "gunner", x: 20, y: 24 }, { kind: "rocketeer", x: 25, y: 21 }],
     burstScale: 0.42,
+    waterColor: 0x287789, waterGlow: 0x103e4d,
+    waterAt: (x, y) => Math.hypot(x - 22, y - 6) <= 3.2 || Math.hypot(x - 22, y - 37) <= 3.2,
     decorAt: (x, y) => ((x === 13 || x === 30) && (y === 13 || y === 30)) || ((x === 10 || x === 33) && y % 8 === 4) ? "pillar" : (x + y * 3) % 41 === 0 ? "obelisk" : null,
     heightAt: (x, y) => {
       const openAt = (value: number, gates: number[]) => gates.some(gate => Math.abs(value - gate) <= 1);
@@ -255,6 +295,8 @@ const MAPS: Record<MapKey, MapConfig> = {
     startingStructures: [{ kind: "barracks", x: 20, y: 20 }, { kind: "rifle", x: 24, y: 20 }, { kind: "wall", x: 19, y: 22 }, { kind: "missile", x: 25, y: 24 }, { kind: "wire", x: 22, y: 18 }, { kind: "flak", x: 22, y: 25 }, { kind: "light", x: 22, y: 16 }, { kind: "bastion", x: 18, y: 24 }],
     startingMarines: [{ kind: "rifleman", x: 21, y: 20 }, { kind: "medic", x: 23, y: 23 }, { kind: "rifleman", x: 24, y: 22 }, { kind: "gunner", x: 20, y: 24 }, { kind: "rocketeer", x: 25, y: 21 }],
     activeEnemyCap: 170, waveMultiplier: 2.15, burstScale: 0.55, spawnIntervalMultiplier: 0.58,
+    waterColor: 0x68265f, waterGlow: 0x431052,
+    waterAt: (x, y) => Math.hypot(x - 7, y - 28) <= 4.4 || Math.hypot(x - 37, y - 16) <= 4.4,
     decorAt: (x, y) => Math.hypot(x - 22, y - 22) > 7 && (x * 7 + y * 13) % 23 === 0 ? "growth" : null,
     heightAt: (x, y) => {
       const centralCalm = clamp(Math.hypot(x - 22, y - 22) / 9, 0, 1);
@@ -317,8 +359,16 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
 
     const world = new THREE.Group();
     scene.add(world);
-    const heights: number[][] = Array.from({ length: GRID_H }, (_, y) => Array.from({ length: GRID_W }, (_, x) => map.heightAt(x, y)));
-    const worldPos = (x: number, y: number, lift = 0) => new THREE.Vector3((x - (GRID_W - 1) / 2) * TILE, heights[clamp(Math.round(y), 0, GRID_H - 1)][clamp(Math.round(x), 0, GRID_W - 1)] + lift, (y - (GRID_H - 1) / 2) * TILE);
+    const waterCells = new Set<string>();
+    for (let y = 0; y < GRID_H; y++) for (let x = 0; x < GRID_W; x++) if (map.waterAt(x, y)) waterCells.add(keyOf(x, y));
+    const isWaterCell = (x: number, y: number) => waterCells.has(keyOf(clamp(Math.round(x), 0, GRID_W - 1), clamp(Math.round(y), 0, GRID_H - 1)));
+    const heights: number[][] = Array.from({ length: GRID_H }, (_, y) => Array.from({ length: GRID_W }, (_, x) => isWaterCell(x, y) ? 0.02 : map.heightAt(x, y)));
+    const terrainHeightAt = (x: number, y: number) => {
+      const x0 = clamp(Math.floor(x), 0, GRID_W - 1), x1 = clamp(Math.ceil(x), 0, GRID_W - 1), y0 = clamp(Math.floor(y), 0, GRID_H - 1), y1 = clamp(Math.ceil(y), 0, GRID_H - 1);
+      const tx = clamp(x - x0, 0, 1), ty = clamp(y - y0, 0, 1);
+      return THREE.MathUtils.lerp(THREE.MathUtils.lerp(heights[y0][x0], heights[y0][x1], tx), THREE.MathUtils.lerp(heights[y1][x0], heights[y1][x1], tx), ty);
+    };
+    const worldPos = (x: number, y: number, lift = 0) => new THREE.Vector3((x - (GRID_W - 1) / 2) * TILE, terrainHeightAt(x, y) + lift, (y - (GRID_H - 1) / 2) * TILE);
     const shadowify = (obj: THREE.Object3D) => obj.traverse(o => { if (o instanceof THREE.Mesh) { o.castShadow = true; o.receiveShadow = true; } });
     const box = (parent: THREE.Object3D, size: [number, number, number], pos: [number, number, number], color: number, rough = 0.8) => {
       const m = new THREE.Mesh(new THREE.BoxGeometry(...size), new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: rough < 0.5 ? 0.55 : 0.05 }));
@@ -335,25 +385,58 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     };
 
     const tileMeshes: THREE.Mesh[] = [];
+    const waterRipples: Array<{ mesh: THREE.Mesh; phase: number }> = [];
     const fogTiles: Array<{ x: number; y: number; mesh: THREE.Mesh; material: THREE.MeshBasicMaterial }> = [];
     for (let y = 0; y < GRID_H; y++) for (let x = 0; x < GRID_W; x++) {
       const h = heights[y][x];
-      const color = new THREE.Color().setHSL(map.hue + ((x * 7 + y * 3) % 5) * 0.006, map.saturation, 0.20 + h * 0.035);
-      const material = new THREE.MeshStandardMaterial({ color, roughness: 0.98, metalness: 0, emissive: 0x000000 });
+      const water = isWaterCell(x, y);
+      const color = water ? new THREE.Color(map.waterColor).offsetHSL(0, 0, ((x + y) % 3 - 1) * 0.025) : new THREE.Color().setHSL(map.hue + ((x * 7 + y * 3) % 5) * 0.006, map.saturation, 0.20 + h * 0.035);
+      const material = new THREE.MeshStandardMaterial({ color, roughness: water ? 0.18 : 0.98, metalness: water ? 0.34 : 0, emissive: water ? map.waterGlow : 0x000000, emissiveIntensity: water ? 0.8 : 1 });
       const tile = new THREE.Mesh(new THREE.BoxGeometry(TILE - 0.045, 0.55 + h, TILE - 0.045), material);
-      const p = worldPos(x, y); tile.position.set(p.x, (h - 0.55) / 2, p.z); tile.receiveShadow = true; tile.userData = { x, y, base: color.clone() };
+      const p = worldPos(x, y); tile.position.set(p.x, (h - 0.55) / 2, p.z); tile.receiveShadow = true; tile.userData = { x, y, base: color.clone(), water };
       world.add(tile); tileMeshes.push(tile);
+      if (water && terrainNoise(x, y, 71) > 0.58) {
+        const rippleMaterial = new THREE.MeshBasicMaterial({ color: new THREE.Color(map.waterColor).offsetHSL(0.02, 0.12, 0.25), transparent: true, opacity: 0.25, side: THREE.DoubleSide, depthWrite: false });
+        const ripple = new THREE.Mesh(new THREE.RingGeometry(0.16, 0.2, 18), rippleMaterial);
+        ripple.rotation.x = -Math.PI / 2; ripple.scale.y = 0.56; ripple.position.copy(p).add(new THREE.Vector3(0, 0.04, 0)); ripple.renderOrder = 2; world.add(ripple);
+        waterRipples.push({ mesh: ripple, phase: terrainNoise(x, y, 89) * Math.PI * 2 });
+      }
       const fogMaterial = new THREE.MeshBasicMaterial({ color: map.fog, transparent: true, opacity: 0.88, depthWrite: false, side: THREE.DoubleSide });
       const fogTile = new THREE.Mesh(new THREE.PlaneGeometry(TILE - 0.025, TILE - 0.025), fogMaterial);
       fogTile.rotation.x = -Math.PI / 2; fogTile.position.copy(p).add(new THREE.Vector3(0, 0.045, 0)); fogTile.renderOrder = 8; world.add(fogTile); fogTiles.push({ x, y, mesh: fogTile, material: fogMaterial });
-      if ((x * 13 + y * 19) % 17 === 0) {
-        const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.12 + ((x + y) % 3) * 0.05, 0), new THREE.MeshStandardMaterial({ color: 0x526159, roughness: 1 }));
-        rock.scale.setScalar(0.72); rock.position.copy(p).add(new THREE.Vector3(0.3, 0.09, -0.24)); rock.rotation.set(x, y, x + y); rock.castShadow = true; world.add(rock);
-      }
-      const decor = map.decorAt?.(x, y);
+      const decor = water ? null : map.decorAt?.(x, y);
       if (decor) {
         const landmark = new THREE.Group(); landmark.position.copy(p); world.add(landmark);
-        if (decor === "pillar") {
+        if (decor === "supply") {
+          box(landmark, [0.72, 0.45, 0.58], [0, 0.23, 0], 0x53604b, 0.7);
+          box(landmark, [0.77, 0.07, 0.63], [0, 0.49, 0], 0x81906e, 0.58);
+          box(landmark, [0.08, 0.47, 0.61], [0, 0.24, 0], 0xb9a56e, 0.72);
+        } else if (decor === "pine") {
+          cyl(landmark, [0.08, 0.11, 0.9, 8], [0, 0.45, 0], 0x4a3426);
+          for (let tier = 0; tier < 3; tier++) {
+            const needles = new THREE.Mesh(new THREE.ConeGeometry(0.62 - tier * 0.12, 0.92, 8), new THREE.MeshStandardMaterial({ color: tier % 2 ? 0x1f523f : 0x28634b, roughness: 0.95 }));
+            needles.position.y = 0.75 + tier * 0.42; landmark.add(needles);
+          }
+        } else if (decor === "cactus") {
+          cyl(landmark, [0.17, 0.22, 1.55, 10], [0, 0.78, 0], 0x3d7b43);
+          const leftElbow = new THREE.Vector3(-0.42, 0.72, 0), leftTip = new THREE.Vector3(-0.42, 1.18, 0);
+          const rightElbow = new THREE.Vector3(0.36, 0.98, 0), rightTip = new THREE.Vector3(0.36, 1.34, 0);
+          beam(landmark, new THREE.Vector3(-0.08, 0.72, 0), leftElbow, 0.11, 0x44884b); beam(landmark, leftElbow, leftTip, 0.11, 0x44884b);
+          beam(landmark, new THREE.Vector3(0.08, 0.98, 0), rightElbow, 0.1, 0x37753f); beam(landmark, rightElbow, rightTip, 0.1, 0x37753f);
+        } else if (decor === "bones") {
+          beam(landmark, new THREE.Vector3(-0.55, 0.09, 0), new THREE.Vector3(0.55, 0.12, 0.05), 0.055, 0xd3c6a2);
+          for (let rib = -2; rib <= 2; rib++) beam(landmark, new THREE.Vector3(rib * 0.17, 0.1, 0), new THREE.Vector3(rib * 0.17, 0.34 - Math.abs(rib) * 0.04, 0.28), 0.038, 0xb9ac8d);
+          const skull = new THREE.Mesh(new THREE.DodecahedronGeometry(0.17, 0), new THREE.MeshStandardMaterial({ color: 0xc8ba97, roughness: 0.98 })); skull.position.set(0.67, 0.15, 0.04); skull.scale.set(1.2, 0.8, 0.9); landmark.add(skull);
+        } else if (decor === "crystal") {
+          for (let shard = 0; shard < 4; shard++) {
+            const angle = shard * 1.7 + terrainNoise(x, y, shard) * 0.4, height = 0.65 + shard * 0.19;
+            const crystal = new THREE.Mesh(new THREE.ConeGeometry(0.16, height, 5), new THREE.MeshStandardMaterial({ color: shard % 2 ? 0x704f9c : 0x3e315f, emissive: 0x17102c, emissiveIntensity: 1.1, metalness: 0.52, roughness: 0.28 }));
+            crystal.position.set(Math.cos(angle) * 0.24, height / 2, Math.sin(angle) * 0.24); crystal.rotation.z = Math.cos(angle) * 0.18; landmark.add(crystal);
+          }
+        } else if (decor === "vent") {
+          const rimStone = new THREE.Mesh(new THREE.TorusGeometry(0.38, 0.12, 8, 18), new THREE.MeshStandardMaterial({ color: 0x26242b, roughness: 0.94 })); rimStone.rotation.x = Math.PI / 2; rimStone.position.y = 0.08; landmark.add(rimStone);
+          const heat = new THREE.Mesh(new THREE.CircleGeometry(0.28, 18), new THREE.MeshBasicMaterial({ color: 0xff6b36, transparent: true, opacity: 0.72, side: THREE.DoubleSide })); heat.rotation.x = -Math.PI / 2; heat.position.y = 0.085; landmark.add(heat);
+        } else if (decor === "pillar") {
           cyl(landmark, [0.38, 0.5, 0.25, 8], [0, 0.13, 0], 0x75684e);
           cyl(landmark, [0.22, 0.27, 2.75, 8], [0, 1.55, 0], 0x9a8965);
           box(landmark, [0.7, 0.22, 0.7], [0, 2.95, 0], 0x79694e);
@@ -960,6 +1043,12 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     const wallTopLift = (wall: Structure) => (wall.stackLevel + 1) * WALL_STACK_HEIGHT;
     const blockedForEnemy = (kind: AlienKind) => new Set(structures.filter(s => !FLYING_ENEMIES.has(kind) && isPathBlocking(s) && (!WALL_CLIMBERS.has(kind) || !isWall(s))).map(s => keyOf(Math.round(s.x), Math.round(s.y))));
     const terrainSpeedMultiplier = (from: Cell, to: Cell) => clamp(1 - (heights[to.y][to.x] - heights[from.y][from.x]) * 1.45, 0.28, 1.65);
+    const friendlyStepTime = (from: Cell, to: Cell, speed: number) => {
+      const distance = Math.hypot(to.x - from.x, to.y - from.y), climb = Math.max(0, heights[to.y][to.x] - heights[from.y][from.x]);
+      const downhillBoost = clamp(1 + Math.max(0, heights[from.y][from.x] - heights[to.y][to.x]) * 0.3, 1, 1.35);
+      const waterRate = isWaterCell(from.x, from.y) || isWaterCell(to.x, to.y) ? FRIENDLY_WATER_SPEED_MULTIPLIER : 1;
+      return distance / Math.max(0.01, speed * downhillBoost * waterRate) + climb / FRIENDLY_TERRAIN_CLIMB_SPEED;
+    };
     let visionSources: Array<{ x: number; y: number; radius: number }> = [], fogTimer = 0;
     function rebuildVision() {
       visionSources = [{ x: baseCell.x, y: baseCell.y, radius: BASE_VISION_RADIUS }];
@@ -1021,7 +1110,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       .filter(cell => cell.x >= 0 && cell.y >= 0 && cell.x < GRID_W && cell.y < GRID_H);
     function groundRoute(from: Cell, to: Cell, ban = friendlyBlocked()) {
       if (ban.has(keyOf(Math.round(to.x), Math.round(to.y)))) return [];
-      return findPathTo(from.x, from.y, { x: Math.round(to.x), y: Math.round(to.y) }, undefined, ban);
+      return findPathTo(from.x, from.y, { x: Math.round(to.x), y: Math.round(to.y) }, undefined, ban, (stepFrom, stepTo) => friendlyStepTime(stepFrom, stepTo, 1.65));
     }
     function planFriendlyMove(unit: Marine | Structure, destination: Cell, wall?: Structure, wallOffset: Cell = { x: 0, y: 0 }, destinationLift = 0) {
       const ban = friendlyBlocked(), currentWall = structures.find(s => s.id === unit.mountedOn && isWall(s));
@@ -1060,7 +1149,12 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         if (unit.pathIndex >= unit.movePath.length) { unit.movePath = []; unit.pathIndex = 0; unit.mountedOn = unit.mountTarget; unit.mountTarget = undefined; }
         return unit.movePath.length > 0;
       }
-      const travelDistance = Math.hypot(distance, liftDistance), step = Math.min(travelDistance, (distance <= 0.025 ? WALL_LIFT_SPEED : speed) * dt), ratio = step / travelDistance;
+      const previous = unit.movePath[Math.max(0, unit.pathIndex - 1)] ?? { x: unit.x, y: unit.y, lift: unit.lift };
+      const previousCell = { x: clamp(Math.round(previous.x), 0, GRID_W - 1), y: clamp(Math.round(previous.y), 0, GRID_H - 1) };
+      const waypointCell = { x: clamp(Math.round(waypoint.x), 0, GRID_W - 1), y: clamp(Math.round(waypoint.y), 0, GRID_H - 1) };
+      const segmentDistance = Math.max(0.01, Math.hypot(waypoint.x - previous.x, waypoint.y - previous.y));
+      const segmentTime = friendlyStepTime(previousCell, waypointCell, speed), terrainAdjustedSpeed = segmentDistance / Math.max(0.01, segmentTime);
+      const travelDistance = Math.hypot(distance, liftDistance), step = Math.min(travelDistance, (distance <= 0.025 ? WALL_LIFT_SPEED : terrainAdjustedSpeed) * dt), ratio = step / travelDistance;
       unit.x += dx * ratio; unit.y += dy * ratio; unit.lift += (waypoint.lift - unit.lift) * ratio;
       if (distance > 0.025) turnToward(unit.group, Math.atan2(-dx, -dy), turnSpeed, dt);
       if ("vx" in unit) { unit.vx = distance > 0.025 ? dx / distance * speed : 0; unit.vy = distance > 0.025 ? dy / distance * speed : 0; }
@@ -1167,6 +1261,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       if (gameOver) return;
       if (active) return message("CONSTRUCTION LOCKED · BUILDINGS DEPLOY BETWEEN WAVES ONLY");
       if (credits < asset.cost) return message("INSUFFICIENT COMMAND CREDITS");
+      if (isWaterCell(x, y)) return message("WATERLOGGED GROUND · CONSTRUCTION REQUIRES DRY LAND");
       const wall = topWallAt(x, y), stackingWall = !!wall && (kind === "wall" || kind === "bastion");
       const canMount = !!wall && (kind in TURRET_STATS || kind === "light");
       const occupied = structures.some(s => Math.hypot(s.x - x, s.y - y) < 0.72 && !s.mountedOn && !(stackingWall && isWall(s)));
@@ -1458,7 +1553,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     }
     function onMove(e: PointerEvent) {
       if (selecting) { const r = host.getBoundingClientRect(), x1 = Math.min(downX, e.clientX) - r.left, y1 = Math.min(downY, e.clientY) - r.top; selectionBox.style.display = "block"; selectionBox.style.left = `${x1}px`; selectionBox.style.top = `${y1}px`; selectionBox.style.width = `${Math.abs(e.clientX - downX)}px`; selectionBox.style.height = `${Math.abs(e.clientY - downY)}px`; return; }
-      const tile = pick(e); if (hovered && hovered !== tile) (hovered.material as THREE.MeshStandardMaterial).emissive.setHex(0x000000);
+      const tile = pick(e); if (hovered && hovered !== tile) (hovered.material as THREE.MeshStandardMaterial).emissive.setHex(hovered.userData.water ? map.waterGlow : 0x000000);
       hovered = tile || null; if (hovered) (hovered.material as THREE.MeshStandardMaterial).emissive.setHex(0x16452e);
     }
     function onDown(e: PointerEvent) { if (e.button === 2) { rightDownX = e.clientX; rightDownY = e.clientY; } if (e.button === 0) { downX = e.clientX; downY = e.clientY; selecting = true; controls.enabled = false; e.stopImmediatePropagation(); } }
@@ -1521,6 +1616,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
 
     function update(dt: number) {
       elapsed += dt; spawnBeacons.forEach(beacon => { beacon.portal.rotation.z += dt * 0.7; beacon.inner.rotation.z -= dt * 0.42; beacon.light.intensity = 2.6 + Math.sin(elapsed * 3.2 + beacon.phase) * 0.7; });
+      waterRipples.forEach(({ mesh, phase }) => { const pulse = 0.82 + (Math.sin(elapsed * 1.7 + phase) + 1) * 0.2; mesh.scale.set(pulse, pulse * 0.56, pulse); (mesh.material as THREE.MeshBasicMaterial).opacity = 0.14 + (Math.sin(elapsed * 1.7 + phase) + 1) * 0.08; });
       incomingDamageCache.clear();
       if (!active && !gameOver && wave > 0 && wave < map.waveCount && buildTimer > 0) {
         buildTimer = Math.max(0, buildTimer - dt);
@@ -1548,7 +1644,8 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       const enemyStepTime = (enemy: Enemy, from: Cell, to: Cell) => {
         if (FLYING_ENEMIES.has(enemy.kind)) return Math.hypot(to.x - from.x, to.y - from.y) / Math.max(0.01, enemy.speed);
         const terrainRate = terrainSpeedMultiplier(from, to), routeTerrainRate = 1 + (terrainRate - 1) * ENEMY_TERRAIN_ROUTE_SLOPE_WEIGHT;
-        const groundTime = Math.hypot(to.x - from.x, to.y - from.y) / Math.max(0.01, enemy.speed * routeTerrainRate);
+        const waterRate = isWaterCell(from.x, from.y) || isWaterCell(to.x, to.y) ? ENEMY_WATER_SPEED_MULTIPLIER : 1;
+        const groundTime = Math.hypot(to.x - from.x, to.y - from.y) / Math.max(0.01, enemy.speed * routeTerrainRate * waterRate);
         const terrainClimbTime = Math.max(0, heights[to.y][to.x] - heights[from.y][from.x]) / ENEMY_TERRAIN_ROUTE_CLIMB_SPEED;
         const climbTime = WALL_CLIMBERS.has(enemy.kind) ? Math.abs(wallLiftAt(to) - wallLiftAt(from)) / WALL_CLIMB_SPEED : 0;
         return groundTime + terrainClimbTime + climbTime;
@@ -1627,7 +1724,8 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
           if (targetCell) {
             const dx = targetCell.x - e.x, dy = targetCell.y - e.y, dist = Math.hypot(dx, dy);
             const segmentStart = e.path[Math.min(e.index, e.path.length - 1)] ?? targetCell, segmentLength = Math.max(0.01, Math.hypot(targetCell.x - segmentStart.x, targetCell.y - segmentStart.y));
-            const groundRate = e.speed * terrainSpeedMultiplier(segmentStart, targetCell), terrainClimbDistance = flying ? 0 : Math.max(0, heights[targetCell.y][targetCell.x] - heights[segmentStart.y][segmentStart.x]), wallClimbDistance = climbsWalls ? Math.abs(wallLiftAt(targetCell) - wallLiftAt(segmentStart)) : 0;
+            const waterRate = !flying && (isWaterCell(segmentStart.x, segmentStart.y) || isWaterCell(targetCell.x, targetCell.y)) ? ENEMY_WATER_SPEED_MULTIPLIER : 1;
+            const groundRate = e.speed * terrainSpeedMultiplier(segmentStart, targetCell) * waterRate, terrainClimbDistance = flying ? 0 : Math.max(0, heights[targetCell.y][targetCell.x] - heights[segmentStart.y][segmentStart.x]), wallClimbDistance = climbsWalls ? Math.abs(wallLiftAt(targetCell) - wallLiftAt(segmentStart)) : 0;
             movementRate = flying ? e.speed : segmentLength / (segmentLength / Math.max(0.01, groundRate) + terrainClimbDistance / ENEMY_TERRAIN_CLIMB_SPEED + wallClimbDistance / WALL_CLIMB_SPEED) * (wire ? RAZOR_WIRE_SLOW_MULTIPLIER : 1);
             if (dist < 0.025) e.index++; else { const step = Math.min(dist, movementRate * dt); e.x += dx / dist * step; e.y += dy / dist * step; e.group.rotation.y = Math.atan2(-dx, -dy); isMoving = true; }
           }
@@ -1799,7 +1897,7 @@ export default function Home() {
       <aside className={`build-panel ${hud.active || hud.gameOver ? "locked" : ""}`}>
         <div className="panel-title"><small>{hud.active ? "CONSTRUCTION LOCKED · WAVE ACTIVE" : hud.gameOver ? "OPERATION ENDED" : hud.buildSeconds === null ? "FORWARD ENGINEERING · STAGING" : `FORWARD ENGINEERING · ${formatBuildTime(hud.buildSeconds)} LEFT`}</small><b>DEPLOYABLE ASSETS</b></div>
         {(Object.keys(ASSETS) as AssetKey[]).map(key => { const a = ASSETS[key]; return <button key={key} disabled={hud.active || hud.gameOver} className={`asset ${selected === key ? "active" : ""}`} onClick={() => setSelected(key)} style={{ "--asset-color": a.accent } as React.CSSProperties}><span>{a.icon}</span><div><b>{a.name}</b><small>{a.role}</small></div><em>{a.cost}</em></button>; })}
-        <div className="intel"><span>FIELD INTEL</span><p>Buildings may be placed only before a wave or during the 30-second build window after it. Field Barracks can still recruit infantry at any time. Winged Skyrazors fly over terrain and ground hazards, so counter them with Aegis flak. Sentinel lights and weapons may mount on walls. Shift + right-click salvages.</p></div>
+        <div className="intel"><span>FIELD INTEL</span><p>Shallow water slows ground movement and rejects construction. Friendly troops climb natural terrain far faster than aliens. Buildings deploy only before a wave or during the 30-second build window; barracks recruitment remains available at any time. Winged Skyrazors ignore terrain, so counter them with Aegis flak. Shift + right-click salvages.</p></div>
       </aside>
       <footer className="controls"><span><kbd>DRAG BOX</kbd> SELECT UNITS</span><span><kbd>RIGHT CLICK</kbd> FORMATION MOVE</span><span><kbd>MIDDLE DRAG</kbd> ORBIT</span><span><kbd>WASD</kbd> GLIDE CAMERA</span><span><kbd>SPACE</kbd> START WAVE</span><span className="online">● GITHUB PAGES</span></footer>
     </main>
