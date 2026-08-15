@@ -505,7 +505,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     function makeAlien(kind: AlienKind) {
       const g = new THREE.Group();
       const bodyRig = new THREE.Group(); g.add(bodyRig);
-      const legs: THREE.Group[] = [], legPhases: number[] = [], tails: THREE.Group[] = [];
+      const legs: THREE.Group[] = [], legPhases: number[] = [], tails: THREE.Group[] = [], wings: THREE.Group[] = [];
       const brute = kind === "brute", spitter = kind === "spitter", broodmother = kind === "broodmother", razortail = kind === "razortail", stalker = kind === "stalker", strider = kind === "strider";
       const shellColor = brute ? 0x673832 : broodmother ? 0x5d3548 : spitter ? 0x28654b : razortail ? 0x57305f : stalker ? 0x27536b : strider ? 0x62572d : 0x334d42;
       const skinColor = brute ? 0x2c1c1b : broodmother ? 0x271824 : spitter ? 0x172e25 : razortail ? 0x29162f : stalker ? 0x102832 : strider ? 0x292614 : 0x192a24;
@@ -540,6 +540,17 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         const direction = tip.clone().sub(joint), blade = new THREE.Mesh(new THREE.ConeGeometry(thickness * 1.7, direction.length() * 0.9, 6), new THREE.MeshStandardMaterial({ color: 0x1b201d, roughness: 0.48, metalness: 0.22 }));
         blade.position.copy(joint).lerp(tip, 0.68); blade.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize()); blade.rotation.z += side * 0.08; g.add(blade);
       };
+      const addAntenna = (side: number, start: THREE.Vector3, joint: THREE.Vector3, tip: THREE.Vector3, thickness = 0.018) => {
+        beam(bodyRig, start, joint, thickness, shellColor); beam(bodyRig, joint, tip, thickness * 0.7, glowColor);
+        const feeler = new THREE.Mesh(new THREE.SphereGeometry(thickness * 1.8, 6, 4), glow); feeler.position.copy(tip); bodyRig.add(feeler);
+      };
+      const addWingPair = (position: [number, number, number], width: number, length: number, color: number) => {
+        const wingMaterial = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.16, roughness: 0.22, transparent: true, opacity: 0.42, side: THREE.DoubleSide, depthWrite: false });
+        for (const side of [-1, 1]) {
+          const pivot = new THREE.Group(); pivot.position.set(position[0] + side * 0.16, position[1], position[2]); pivot.rotation.z = side * 0.12; pivot.userData.side = side; pivot.userData.restAngle = pivot.rotation.z; bodyRig.add(pivot);
+          const wing = new THREE.Mesh(new THREE.CircleGeometry(0.5, 10), wingMaterial); wing.scale.set(width, length, 1); wing.position.set(side * width * 0.42, 0, length * 0.28); wing.rotation.x = -Math.PI / 2; pivot.add(wing); wings.push(pivot);
+        }
+      };
 
       if (kind === "drone") {
         addOrb(bodyRig, 0.42, [0, 0.42, 0.18], [0.9, 0.56, 1.35], shell);
@@ -548,9 +559,11 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         addPlate([0, 0.59, 0.28], [0.82, 0.32, 1.22]); addPlate([0, 0.5, -0.42], [0.72, 0.26, 0.66], 0x465c4e);
         for (const side of [-1, 1]) {
           addEye(side * 0.105, 0.38, -0.85, 0.045);
+          addAntenna(side, new THREE.Vector3(side * 0.09, 0.38, -0.82), new THREE.Vector3(side * 0.24, 0.54, -1.06), new THREE.Vector3(side * 0.4, 0.43, -1.3));
           const mandible = new THREE.Mesh(new THREE.ConeGeometry(0.065, 0.38, 6), skin); mandible.position.set(side * 0.13, 0.26, -0.91); mandible.rotation.set(-Math.PI / 2, 0, side * 0.2); bodyRig.add(mandible);
           addScythe(side, new THREE.Vector3(side * 0.2, 0.42, -0.34), new THREE.Vector3(side * 0.62, 0.29, -0.63), new THREE.Vector3(side * 0.82, 0.08, -1.04), 0.065);
         }
+        addWingPair([0, 0.58, 0.18], 0.54, 0.78, 0x8fc9af);
         [-0.25, 0.08, 0.38].forEach((z, i) => { addLeg(-1, z, i * Math.PI * 0.72, 0.42, 0.34, 0.045, 0.38); addLeg(1, z, Math.PI + i * Math.PI * 0.72, 0.42, 0.34, 0.045, 0.38); });
         [-0.05, 0.22, 0.48].forEach((z, i) => addSpine(0, 0.77 - i * 0.035, z, 0.22 - i * 0.025));
       } else if (kind === "spitter") {
@@ -558,7 +571,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         addOrb(bodyRig, 0.4, [0, 0.72, -0.28], [1.12, 0.82, 1.05], shell);
         addOrb(bodyRig, 0.27, [0, 0.67, -0.72], [1.22, 0.68, 1.05], skin);
         addPlate([0, 0.92, -0.22], [1.0, 0.34, 0.92], 0x347b59); addPlate([0, 0.86, 0.38], [0.72, 0.25, 1.04], 0x2e684d);
-        for (const side of [-1, 1]) { addEye(side * 0.12, 0.71, -0.93, 0.055); addEye(side * 0.2, 0.67, -0.86, 0.035); addScythe(side, new THREE.Vector3(side * 0.24, 0.65, -0.38), new THREE.Vector3(side * 0.7, 0.44, -0.65), new THREE.Vector3(side * 0.9, 0.12, -1.04), 0.07); }
+        for (const side of [-1, 1]) { addEye(side * 0.12, 0.71, -0.93, 0.055); addEye(side * 0.2, 0.67, -0.86, 0.035); addAntenna(side, new THREE.Vector3(side * 0.12, 0.72, -0.88), new THREE.Vector3(side * 0.3, 0.9, -1.08), new THREE.Vector3(side * 0.5, 0.72, -1.34), 0.022); addScythe(side, new THREE.Vector3(side * 0.24, 0.65, -0.38), new THREE.Vector3(side * 0.7, 0.44, -0.65), new THREE.Vector3(side * 0.9, 0.12, -1.04), 0.07); }
         [-0.3, 0.18, 0.48].forEach((z, i) => { addLeg(-1, z, i * Math.PI * 0.8, 0.5, 0.45, 0.05, 0.56); addLeg(1, z, Math.PI + i * Math.PI * 0.8, 0.5, 0.45, 0.05, 0.56); });
         for (const z of [-0.32, -0.05, 0.22]) addSpine(0, 1.12, z, 0.3, 0x3f9e70);
         const mouthGlow = new THREE.PointLight(0x55ff99, 1.6, 2.6); mouthGlow.position.set(0, 0.61, -0.96); bodyRig.add(mouthGlow); sac.userData.pulse = true;
@@ -569,8 +582,10 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         addPlate([0, 1.28, 0.34], [1.18, 0.38, 1.4], 0x784159); addPlate([0, 1.15, -0.46], [1.02, 0.34, 0.88], 0x6f3a51);
         for (const side of [-1, 1]) {
           addEye(side * 0.14, 0.82, -1.2, 0.06); addEye(side * 0.24, 0.78, -1.1, 0.038);
+          addAntenna(side, new THREE.Vector3(side * 0.14, 0.84, -1.14), new THREE.Vector3(side * 0.34, 1.08, -1.38), new THREE.Vector3(side * 0.62, 0.88, -1.68), 0.028);
           addScythe(side, new THREE.Vector3(side * 0.3, 0.86, -0.42), new THREE.Vector3(side * 0.86, 0.58, -0.78), new THREE.Vector3(side * 1.08, 0.13, -1.28), 0.09);
         }
+        addWingPair([0, 1.25, 0.08], 1.02, 1.3, 0xd895b8);
         [-0.42, 0.04, 0.46].forEach((z, i) => { addLeg(-1, z, i * Math.PI * 0.72, 0.62, 0.54, 0.075, 0.7); addLeg(1, z, Math.PI + i * Math.PI * 0.72, 0.62, 0.54, 0.075, 0.7); });
         [-0.34, -0.04, 0.27, 0.55].forEach((z, i) => addSpine(0, 1.55 - i * 0.04, z, 0.34 - i * 0.035, 0x9f5574));
         for (const side of [-1, 1]) { const egg = addOrb(bodyRig, 0.14, [side * 0.42, 0.92, 0.58], [0.85, 1.12, 0.85], glow); egg.rotation.z = side * 0.18; }
@@ -581,10 +596,12 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         addPlate([0, 1.38, 0.08], [0.68, 0.2, 1.08], 0x80723a);
         for (const side of [-1, 1]) {
           addEye(side * 0.085, 1.18, -0.65, 0.04);
+          addAntenna(side, new THREE.Vector3(side * 0.08, 1.2, -0.62), new THREE.Vector3(side * 0.2, 1.38, -0.84), new THREE.Vector3(side * 0.35, 1.25, -1.14), 0.014);
           addLeg(side, -0.24, side < 0 ? 0 : Math.PI, 0.78, 0.68, 0.026, 1.08);
           addLeg(side, 0.12, side < 0 ? Math.PI * 0.66 : Math.PI * 1.66, 0.84, 0.72, 0.024, 1.12);
           addLeg(side, 0.42, side < 0 ? Math.PI * 1.32 : Math.PI * 0.32, 0.75, 0.65, 0.022, 1.04);
         }
+        addWingPair([0, 1.32, 0.12], 0.76, 1.12, 0xe8d989);
         beam(bodyRig, new THREE.Vector3(0, 1.16, -0.48), new THREE.Vector3(0, 1.17, -1.12), 0.045, 0x282719);
         const emitter = new THREE.Mesh(new THREE.SphereGeometry(0.085, 10, 7), glow); emitter.position.set(0, 1.17, -1.16); bodyRig.add(emitter);
         const emitterLight = new THREE.PointLight(0xffe56d, 1.5, 2.8); emitterLight.position.copy(emitter.position); bodyRig.add(emitterLight);
@@ -595,6 +612,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         addPlate([0, 0.48, 0.08], [0.58, 0.21, 1.18], 0x397a92);
         for (const side of [-1, 1]) {
           addEye(side * 0.07, 0.34, -0.66, 0.035);
+          addAntenna(side, new THREE.Vector3(side * 0.07, 0.35, -0.64), new THREE.Vector3(side * 0.2, 0.5, -0.84), new THREE.Vector3(side * 0.42, 0.35, -1.1), 0.012);
           addScythe(side, new THREE.Vector3(side * 0.13, 0.34, -0.28), new THREE.Vector3(side * 0.46, 0.22, -0.62), new THREE.Vector3(side * 0.7, 0.04, -1.0), 0.035);
         }
         [-0.18, 0.04, 0.25, 0.42].forEach((z, i) => { addLeg(-1, z, i * Math.PI * 0.58, 0.48, 0.46, 0.025, 0.3); addLeg(1, z, Math.PI + i * Math.PI * 0.58, 0.48, 0.46, 0.025, 0.3); });
@@ -606,6 +624,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         addPlate([0, 1.02, 0.18], [1.16, 0.42, 1.38], 0x72407c); addPlate([0, 0.89, -0.5], [0.94, 0.34, 0.82], 0x64336e);
         for (const side of [-1, 1]) {
           addEye(side * 0.13, 0.61, -1.16, 0.052);
+          addAntenna(side, new THREE.Vector3(side * 0.13, 0.62, -1.1), new THREE.Vector3(side * 0.32, 0.78, -1.32), new THREE.Vector3(side * 0.58, 0.58, -1.56), 0.022);
           addScythe(side, new THREE.Vector3(side * 0.3, 0.68, -0.54), new THREE.Vector3(side * 0.82, 0.46, -0.88), new THREE.Vector3(side * 1.05, 0.12, -1.38), 0.09);
         }
         [-0.38, 0.08, 0.45].forEach((z, i) => { addLeg(-1, z, i * Math.PI * 0.72, 0.57, 0.46, 0.075, 0.63); addLeg(1, z, Math.PI + i * Math.PI * 0.72, 0.57, 0.46, 0.075, 0.63); });
@@ -623,6 +642,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         addPlate([0, 1.34, 0.22], [1.38, 0.58, 1.46], 0x79443a); addPlate([0, 1.17, -0.58], [1.18, 0.46, 0.92], 0x865044); addPlate([0, 1.03, -1.06], [0.92, 0.36, 0.62], 0x6d382f);
         for (const side of [-1, 1]) {
           addEye(side * 0.17, 0.83, -1.43, 0.065);
+          addAntenna(side, new THREE.Vector3(side * 0.17, 0.86, -1.35), new THREE.Vector3(side * 0.42, 1.12, -1.52), new THREE.Vector3(side * 0.7, 0.94, -1.76), 0.032);
           const tusk = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.7, 7), new THREE.MeshStandardMaterial({ color: 0xc6b78e, roughness: 0.78 })); tusk.position.set(side * 0.33, 0.7, -1.47); tusk.rotation.set(-Math.PI / 2, 0, side * 0.28); bodyRig.add(tusk);
           addScythe(side, new THREE.Vector3(side * 0.4, 0.98, -0.62), new THREE.Vector3(side * 1.0, 0.67, -1.02), new THREE.Vector3(side * 1.28, 0.16, -1.72), 0.13);
         }
@@ -633,7 +653,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
 
       const classScale = brute ? 0.9 : broodmother ? 0.82 : spitter ? 0.68 : razortail ? 0.74 : strider ? 0.72 : stalker ? 0.4 : 0.52;
       g.scale.setScalar(classScale * (0.94 + Math.random() * 0.12));
-      g.userData.legs = legs; g.userData.legPhases = legPhases; g.userData.tails = tails; g.userData.bodyRig = bodyRig; g.userData.kind = kind;
+      g.userData.legs = legs; g.userData.legPhases = legPhases; g.userData.tails = tails; g.userData.wings = wings; g.userData.bodyRig = bodyRig; g.userData.kind = kind;
       g.traverse(o => { if (o instanceof THREE.Mesh) { o.castShadow = false; o.receiveShadow = false; } }); return g;
     }
     function makeBase() {
@@ -1272,6 +1292,11 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         }
         const tails = e.group.userData.tails as THREE.Group[] | undefined;
         if (tails) tails.forEach((tail, i) => { tail.rotation.y = Math.sin(gait * 0.42 + i * 0.72) * (isMoving ? 0.24 : 0.1); tail.rotation.x = Math.sin(gait * 0.34 + i * 0.85) * (isMoving ? 0.11 : 0.045); });
+        const wings = e.group.userData.wings as THREE.Group[] | undefined;
+        if (wings) wings.forEach((wing, i) => {
+          const side = wing.userData.side as number, restAngle = wing.userData.restAngle as number;
+          wing.rotation.z = restAngle + side * Math.sin(elapsed * (isMoving ? 26 : 5) + i * Math.PI) * (isMoving ? 0.48 : 0.08);
+        });
         const climbingWall = climbsWalls ? structures.filter(isWall).filter(wall => Math.hypot(wall.x - e.x, wall.y - e.y) < 1.05).sort((a, b) => Math.hypot(a.x - e.x, a.y - e.y) - Math.hypot(b.x - e.x, b.y - e.y) || b.stackLevel - a.stackLevel)[0] : undefined;
         const climbDistance = climbingWall ? Math.hypot(climbingWall.x - e.x, climbingWall.y - e.y) : Infinity;
         const climbLift = climbingWall ? wallTopLift(climbingWall) * clamp(1 - climbDistance / 1.05, 0, 1) : 0;
