@@ -39,21 +39,30 @@ Protect the command post through all eight enemy waves.
 
 ## Economy
 
-- A new operation begins with 900 command credits.
+- A new operation begins with 750 command credits.
 - Destroyed enemies award credits according to their class.
 - Completing a wave grants a resupply bonus that grows with the wave number.
 - A placed asset can be salvaged for 60 percent of its original cost.
+- Combat structures can be upgraded twice by spending additional command credits.
 - The interface must clearly communicate costs, current credits, invalid placements, rewards, and salvage returns.
 
 ## Deployable Assets
 
 ### Rifle Team — 150 credits
 
-A rapid-fire, short-to-medium-range emplacement designed to eliminate groups of light enemies. It is the player's dependable general-purpose defense.
+A rapid-fire, short-to-medium-range emplacement designed to eliminate groups of light enemies. It is the player's dependable general-purpose defense. The crew can redeploy it, but it moves much more slowly than an individual rifleman.
+
+### GAU-19 Sentry — 250 credits
+
+A static, fast-tracking autocannon turret with twin barrels. It delivers powerful bursts against priority targets and has modest impact splash, but it cannot redeploy after placement.
 
 ### M777 Howitzer — 350 credits
 
-A slow-firing long-range artillery piece. Its shells deal heavy damage in an area, making it effective against dense groups and durable targets. High-ground placement is especially valuable.
+A slow-firing long-range artillery piece. Its shells deal heavy damage in an area, making it effective against dense groups and durable targets. High-ground placement is especially valuable. Its crew can reposition it at a very slow towing pace.
+
+### Javelin Battery — 480 credits
+
+A static four-tube missile launcher with the longest base range and widest blast radius of any defense. Its high damage is balanced by a slow reload and substantial purchase cost.
 
 ### Hesco Wall — 70 credits
 
@@ -65,7 +74,16 @@ A single-use proximity explosive. It detonates when an enemy comes close and dea
 
 ### Field Barracks — 425 credits
 
-A support structure that periodically deploys temporary riflemen. Each rifleman attacks nearby enemies for a limited lifetime, and each barracks maintains only a small local squad.
+A support structure where the player can recruit riflemen for 60 credits after a short training cooldown.
+
+## Unit Upgrades
+
+- Clicking a single combat structure selects it and opens its upgrade panel.
+- Every combat structure begins at level one and can reach level three.
+- Each upgrade increases damage, range, fire rate, maximum armor, and current survivability.
+- Upgrade costs scale with the structure's original purchase price and current level.
+- Upgraded structures gain visible energy rings; maximum-level structures also gain a stronger light treatment.
+- The panel shows the selected unit's current level, damage, range, armor, and exact next upgrade cost.
 
 ## Enemy Classes
 
@@ -94,11 +112,12 @@ Enemy health and movement speed scale upward as the operation advances. Wave siz
 
 ## Controls
 
-- **Left click:** Place the selected asset on a tile.
-- **Left drag:** Orbit the camera.
+- **Left click:** Select a rifleman or combat structure; otherwise place the selected asset on a tile.
+- **Left drag:** Box-select riflemen and combat structures.
+- **Right click with units selected:** Move the selected units in a line formation.
 - **Right drag:** Pan the camera.
 - **Mouse wheel:** Zoom in or out.
-- **Right click:** Salvage an asset.
+- **Shift + right click:** Salvage an asset.
 - **R:** Rotate the camera 90 degrees.
 - **Space:** Start the next wave.
 

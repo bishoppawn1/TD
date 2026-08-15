@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
-type AssetKey = "rifle" | "howitzer" | "wall" | "mine" | "barracks";
+type AssetKey = "rifle" | "sentry" | "howitzer" | "missile" | "wall" | "mine" | "barracks";
+type CombatKey = "rifle" | "sentry" | "howitzer" | "missile";
 type AlienKind = "drone" | "spitter" | "brute";
 
 const GRID_W = 24;
@@ -12,29 +13,40 @@ const GRID_H = 18;
 const TILE = 1.36;
 const ASSETS: Record<AssetKey, { name: string; role: string; cost: number; range: number; icon: string; accent: string }> = {
   rifle: { name: "M240 Gun Team", role: "Sustained fire · Anti-swarm", cost: 150, range: 4.7, icon: "⌖", accent: "#9fe870" },
+  sentry: { name: "GAU-19 Sentry", role: "Fast tracking · Heavy burst", cost: 250, range: 5.6, icon: "◉", accent: "#62e8ff" },
   howitzer: { name: "M777 Howitzer", role: "Heavy shell · Area damage", cost: 350, range: 7.4, icon: "◎", accent: "#ffb45d" },
+  missile: { name: "Javelin Battery", role: "Long range · Wide blast", cost: 480, range: 8.8, icon: "✦", accent: "#ff7f91" },
   wall: { name: "Hesco Wall", role: "600 armor · Supports units", cost: 70, range: 0, icon: "▦", accent: "#d1b98e" },
   mine: { name: "Shock Mine", role: "Proximity · One use", cost: 100, range: 1.35, icon: "⌁", accent: "#ff655f" },
   barracks: { name: "Field Barracks", role: "Click placed barracks · Recruit ¤60", cost: 425, range: 0, icon: "⌂", accent: "#67c8ff" },
 };
 
+const TURRET_STATS: Record<CombatKey, { damage: number; cooldown: number; splash: number; color: number; heavy: boolean; turnSpeed: number }> = {
+  rifle: { damage: 5.8, cooldown: 0.15, splash: 0, color: 0xd6ff81, heavy: false, turnSpeed: 8 },
+  sentry: { damage: 18, cooldown: 0.31, splash: 0.25, color: 0x61e8ff, heavy: false, turnSpeed: 11 },
+  howitzer: { damage: 105, cooldown: 2.35, splash: 1.25, color: 0xffa64d, heavy: true, turnSpeed: 3.5 },
+  missile: { damage: 165, cooldown: 3.2, splash: 1.75, color: 0xff667d, heavy: true, turnSpeed: 2.8 },
+};
+
 type Hud = { credits: number; integrity: number; wave: number; enemies: number; kills: number; active: boolean; gameOver: boolean; victory: boolean };
 type Cell = { x: number; y: number };
-type Structure = { id: number; kind: AssetKey; x: number; y: number; hp: number; maxHp: number; mountedOn?: number; group: THREE.Group; cooldown: number; spawnTimer: number };
+type Structure = { id: number; kind: AssetKey; level: number; x: number; y: number; targetX: number; targetY: number; hp: number; maxHp: number; mountedOn?: number; group: THREE.Group; cooldown: number; spawnTimer: number };
 type Enemy = { id: number; kind: AlienKind; x: number; y: number; hp: number; maxHp: number; speed: number; damage: number; reward: number; path: Cell[]; index: number; group: THREE.Group; hitFlash: number; attackCooldown: number; pathTimer: number; targetId: number | null; targetType: "marine" | "structure" | "base" };
 type Marine = { id: number; x: number; y: number; targetX: number; targetY: number; vx: number; vy: number; hp: number; maxHp: number; cooldown: number; mountedOn?: number; group: THREE.Group };
 type Bullet = { mesh: THREE.Mesh; from: THREE.Vector3; to: THREE.Vector3; t: number; speed: number; target: number; damage: number; splash: number; color: number };
 type Particle = { mesh: THREE.Mesh; velocity: THREE.Vector3; life: number; maxLife: number };
+type SelectedUnit = { id: number; kind: CombatKey; name: string; level: number; maxLevel: number; upgradeCost: number | null; damage: number; range: number; maxHp: number };
+type BattlefieldApi = { start: () => void; restart: () => void; rotate: () => void; upgradeSelected: () => void };
 
 const keyOf = (x: number, y: number) => `${x},${y}`;
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
-function Battlefield({ selected, onHud, onMessage, apiRef }: { selected: AssetKey; onHud: (h: Hud) => void; onMessage: (s: string) => void; apiRef: React.MutableRefObject<{ start: () => void; restart: () => void; rotate: () => void } | null> }) {
+function Battlefield({ selected, onHud, onMessage, onUnitSelected, apiRef }: { selected: AssetKey; onHud: (h: Hud) => void; onMessage: (s: string) => void; onUnitSelected: (unit: SelectedUnit | null) => void; apiRef: React.MutableRefObject<BattlefieldApi | null> }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const selectedRef = useRef(selected);
-  const callbacks = useRef({ onHud, onMessage });
+  const callbacks = useRef({ onHud, onMessage, onUnitSelected });
   useEffect(() => { selectedRef.current = selected; }, [selected]);
-  useEffect(() => { callbacks.current = { onHud, onMessage }; }, [onHud, onMessage]);
+  useEffect(() => { callbacks.current = { onHud, onMessage, onUnitSelected }; }, [onHud, onMessage, onUnitSelected]);
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -173,6 +185,23 @@ function Battlefield({ selected, onHud, onMessage, apiRef }: { selected: AssetKe
       const muzzle = new THREE.Object3D(); muzzle.position.set(0, 0.64, -1.31); g.add(muzzle); g.userData.muzzle = muzzle;
       return g;
     }
+    function makeSentry() {
+      const g = new THREE.Group();
+      cyl(g, [0.64, 0.72, 0.2, 16], [0, 0.12, 0], 0x313f3c);
+      cyl(g, [0.4, 0.48, 0.38, 14], [0, 0.38, 0], 0x52645e);
+      box(g, [0.88, 0.42, 0.72], [0, 0.67, -0.05], 0x385651, 0.34);
+      box(g, [0.72, 0.18, 0.55], [0, 0.91, 0], 0x5c7470, 0.3);
+      for (const x of [-0.18, 0.18]) {
+        beam(g, new THREE.Vector3(x, 0.75, -0.33), new THREE.Vector3(x, 0.77, -1.08), 0.045, 0x14201f);
+        cyl(g, [0.08, 0.08, 0.18, 8], [x, 0.77, -1.13], 0x1b2927, [Math.PI / 2, 0, 0]);
+      }
+      box(g, [0.18, 0.16, 0.28], [0, 0.71, -0.62], 0x182422);
+      cyl(g, [0.04, 0.04, 0.48, 8], [0, 1.18, 0.02], 0x546b65);
+      const sensor = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 7), new THREE.MeshStandardMaterial({ color: 0x66dff2, emissive: 0x174f59, emissiveIntensity: 1.2, roughness: 0.25 })); sensor.position.set(0, 1.43, 0.02); g.add(sensor);
+      const light = new THREE.PointLight(0x55e8ff, 0.85, 2.2); light.position.copy(sensor.position); g.add(light);
+      const muzzle = new THREE.Object3D(); muzzle.position.set(0, 0.77, -1.24); g.add(muzzle); g.userData.muzzle = muzzle;
+      return g;
+    }
     function makeHowitzer() {
       const g = new THREE.Group();
       box(g, [0.72, 0.16, 1.1], [0, 0.22, 0.12], 0x4e5d49);
@@ -192,6 +221,22 @@ function Battlefield({ selected, onHud, onMessage, apiRef }: { selected: AssetKe
         box(g, [0.32, 0.12, 0.28], [x * 1.72, 0.09, 1.23], 0x303a35);
       }
       const muzzle = new THREE.Object3D(); muzzle.position.copy(muzzlePoint).add(new THREE.Vector3(0, 0.05, -0.13)); g.add(muzzle); g.userData.muzzle = muzzle;
+      return g;
+    }
+    function makeMissileBattery() {
+      const g = new THREE.Group();
+      cyl(g, [0.72, 0.8, 0.2, 16], [0, 0.12, 0], 0x303c3a);
+      box(g, [1.15, 0.25, 0.9], [0, 0.34, 0.08], 0x485852);
+      cyl(g, [0.26, 0.3, 0.35, 12], [0, 0.55, 0.05], 0x566861);
+      const rack = box(g, [1.1, 0.16, 0.82], [0, 0.78, -0.12], 0x394944); rack.rotation.x = -0.28;
+      for (const x of [-0.38, -0.13, 0.13, 0.38]) {
+        const start = new THREE.Vector3(x, 0.7, 0.08), end = new THREE.Vector3(x, 1.08, -0.82), direction = end.clone().sub(start).normalize();
+        beam(g, start, end, 0.09, 0x56645f);
+        const nose = new THREE.Mesh(new THREE.ConeGeometry(0.095, 0.28, 8), new THREE.MeshStandardMaterial({ color: 0xd9d3b6, roughness: 0.55 })); nose.position.copy(end).addScaledVector(direction, 0.13); nose.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction); g.add(nose);
+        for (const side of [-1, 1]) box(g, [0.05, 0.16, 0.12], [x + side * 0.09, 0.66, 0.12], 0x313d39);
+      }
+      const sight = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 7), new THREE.MeshStandardMaterial({ color: 0xff7f91, emissive: 0x6a1825, emissiveIntensity: 1.4, roughness: 0.3 })); sight.position.set(0.56, 0.73, -0.16); g.add(sight);
+      const muzzle = new THREE.Object3D(); muzzle.position.set(0, 1.18, -0.96); g.add(muzzle); g.userData.muzzle = muzzle;
       return g;
     }
     function makeWall() {
@@ -300,7 +345,7 @@ function Battlefield({ selected, onHud, onMessage, apiRef }: { selected: AssetKe
     const portal = new THREE.Mesh(new THREE.TorusGeometry(0.72, 0.08, 10, 30), new THREE.MeshStandardMaterial({ color: 0x6f1827, emissive: 0x7f0d26, emissiveIntensity: 2 })); portal.rotation.x = Math.PI / 2; portal.position.y = 0.18; spawnBeacon.add(portal);
     const portalLight = new THREE.PointLight(0xff234c, 3, 7); portalLight.position.y = 0.35; spawnBeacon.add(portalLight); spawnBeacon.position.copy(worldPos(spawnCell.x, spawnCell.y)); world.add(spawnBeacon);
 
-    const STRUCTURE_HP: Record<AssetKey, number> = { rifle: 190, howitzer: 300, wall: 600, mine: 45, barracks: 500 };
+    const STRUCTURE_HP: Record<AssetKey, number> = { rifle: 190, sentry: 280, howitzer: 300, missile: 340, wall: 600, mine: 45, barracks: 500 };
     function attachHealthBar(group: THREE.Group, y = 1.75) {
       const bar = new THREE.Group();
       const back = new THREE.Mesh(new THREE.PlaneGeometry(1.18, 0.12), new THREE.MeshBasicMaterial({ color: 0x190d0c, depthTest: false, transparent: true, opacity: 0.92 })); back.renderOrder = 30; bar.add(back);
@@ -321,7 +366,10 @@ function Battlefield({ selected, onHud, onMessage, apiRef }: { selected: AssetKe
     let spawnLeft = 0, spawnTimer = 0, nextId = 1, elapsed = 0, lastHud = -1;
     let structures: Structure[] = [], enemies: Enemy[] = [], marines: Marine[] = [], bullets: Bullet[] = [], particles: Particle[] = [];
     const selectedMarines = new Set<number>();
-    const blocked = () => new Set(structures.filter(s => s.kind !== "mine" && !s.mountedOn).map(s => keyOf(s.x, s.y)));
+    const selectedEmplacements = new Set<number>();
+    const isMobileEmplacement = (s: Structure) => s.kind === "rifle" || s.kind === "howitzer";
+    const isCombatStructure = (s: Structure): s is Structure & { kind: CombatKey } => s.kind in TURRET_STATS;
+    const blocked = () => new Set(structures.filter(s => s.kind !== "mine" && !s.mountedOn).map(s => keyOf(Math.round(s.x), Math.round(s.y))));
     function findPathTo(sx: number, sy: number, target: Cell, extra?: Cell): Cell[] {
       const ban = blocked(); if (extra) ban.add(keyOf(extra.x, extra.y));
       const start = { x: clamp(Math.round(sx), 0, GRID_W - 1), y: clamp(Math.round(sy), 0, GRID_H - 1) };
@@ -344,10 +392,41 @@ function Battlefield({ selected, onHud, onMessage, apiRef }: { selected: AssetKe
       callbacks.current.onHud({ credits, integrity, wave, enemies: enemies.length + spawnLeft, kills, active, gameOver, victory });
     }
     function message(text: string) { callbacks.current.onMessage(text); }
+    function getUpgradeCost(s: Structure) {
+      if (s.level >= 3) return null;
+      return Math.round((ASSETS[s.kind].cost * (s.level === 1 ? 0.68 : 0.94)) / 5) * 5;
+    }
+    function getStructureInfo(s: Structure & { kind: CombatKey }): SelectedUnit {
+      const stats = TURRET_STATS[s.kind], damageBoost = 1 + (s.level - 1) * 0.42;
+      return { id: s.id, kind: s.kind, name: ASSETS[s.kind].name, level: s.level, maxLevel: 3, upgradeCost: getUpgradeCost(s), damage: Math.round(stats.damage * damageBoost * 10) / 10, range: Math.round((ASSETS[s.kind].range + (s.level - 1) * 0.65) * 10) / 10, maxHp: s.maxHp };
+    }
+    function publishStructureSelection() {
+      const chosen = structures.find(s => selectedEmplacements.has(s.id));
+      callbacks.current.onUnitSelected(chosen && isCombatStructure(chosen) && selectedEmplacements.size === 1 && selectedMarines.size === 0 ? getStructureInfo(chosen) : null);
+    }
+    function addUpgradeVisual(s: Structure) {
+      const color = s.level === 2 ? 0x62e8ff : 0xffd36a;
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(s.kind === "howitzer" || s.kind === "missile" ? 0.78 : 0.62, 0.035, 7, 28), new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.3, roughness: 0.28 }));
+      ring.rotation.x = Math.PI / 2; ring.position.y = 0.3 + s.level * 0.08; s.group.add(ring);
+      if (s.level === 3) { const light = new THREE.PointLight(color, 1.1, 2.8); light.position.y = 1.1; s.group.add(light); }
+    }
+    function upgradeSelected() {
+      const s = structures.find(item => selectedEmplacements.has(item.id) && isCombatStructure(item));
+      if (!s || selectedEmplacements.size !== 1 || selectedMarines.size) return message("SELECT ONE DEFENSIVE UNIT TO UPGRADE");
+      const cost = getUpgradeCost(s); if (cost === null) return message(`${ASSETS[s.kind].name.toUpperCase()} IS AT MAXIMUM LEVEL`);
+      if (credits < cost) return message(`UPGRADE REQUIRES ${cost} COMMAND CREDITS`);
+      credits -= cost; const oldMax = s.maxHp; s.level++; s.maxHp = Math.round(STRUCTURE_HP[s.kind] * (1 + (s.level - 1) * 0.35)); s.hp = Math.min(s.maxHp, s.hp + (s.maxHp - oldMax) + Math.round(oldMax * 0.2));
+      setHealthVisual(s.group, s.hp, s.maxHp); addUpgradeVisual(s); publishStructureSelection(); emitHud(true);
+      burst(s.group.position.clone().add(new THREE.Vector3(0, 0.8, 0)), s.level === 3 ? 0xffd36a : 0x62e8ff, 14); message(`${ASSETS[s.kind].name.toUpperCase()} UPGRADED TO LEVEL ${s.level}`);
+    }
     function addStructure(kind: AssetKey, x: number, y: number, free = false, mountedOn?: number) {
-      const group = kind === "rifle" ? makeRifleTeam() : kind === "howitzer" ? makeHowitzer() : kind === "wall" ? makeWall() : kind === "mine" ? makeMine() : makeBarracks();
+      const group = kind === "rifle" ? makeRifleTeam() : kind === "sentry" ? makeSentry() : kind === "howitzer" ? makeHowitzer() : kind === "missile" ? makeMissileBattery() : kind === "wall" ? makeWall() : kind === "mine" ? makeMine() : makeBarracks();
       const mountCount = mountedOn ? structures.filter(s => s.mountedOn === mountedOn).length : 0; group.position.copy(worldPos(x + (mountedOn ? (mountCount - 1) * 0.26 : 0), y, mountedOn ? 0.62 : 0)); group.rotation.y = kind === "wall" ? Math.PI / 2 : -0.35; group.scale.multiplyScalar(mountedOn ? 0.58 : 0.72); attachHealthBar(group, kind === "wall" ? 1.25 : kind === "barracks" ? 2 : 1.65); world.add(group);
-      const maxHp = STRUCTURE_HP[kind]; structures.push({ id: nextId++, kind, x, y, hp: maxHp, maxHp, mountedOn, group, cooldown: Math.random(), spawnTimer: 0 });
+      if (kind in TURRET_STATS) {
+        const radius = kind === "howitzer" || kind === "missile" ? 1.04 : 0.9;
+        const ring = new THREE.Mesh(new THREE.RingGeometry(radius * 0.82, radius, 28), new THREE.MeshBasicMaterial({ color: 0x7dff92, transparent: true, opacity: 0.95, side: THREE.DoubleSide })); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.035; ring.visible = false; group.add(ring); group.userData.selectionRing = ring;
+      }
+      const maxHp = STRUCTURE_HP[kind]; structures.push({ id: nextId++, kind, level: 1, x, y, targetX: x, targetY: y, hp: maxHp, maxHp, mountedOn, group, cooldown: Math.random(), spawnTimer: 0 });
       if (!free) credits -= ASSETS[kind].cost;
     }
     addStructure("barracks", 3, 14, true); addStructure("rifle", 6, 14, true); addStructure("wall", 4, 15, true); addStructure("howitzer", 8, 15, true); spawnMarine(3, 13); spawnMarine(4, 14);
@@ -358,7 +437,7 @@ function Battlefield({ selected, onHud, onMessage, apiRef }: { selected: AssetKe
       if (credits < asset.cost) return message("INSUFFICIENT COMMAND CREDITS");
       const wall = structures.find(s => s.kind === "wall" && s.x === x && s.y === y);
       const canMount = !!wall && (kind === "rifle" || kind === "howitzer");
-      if ((x === baseCell.x && y === baseCell.y) || (x === spawnCell.x && y === spawnCell.y) || (structures.some(s => s.x === x && s.y === y) && !canMount)) return message(wall ? "WALL POSITION ALREADY OCCUPIED" : "DEPLOYMENT ZONE OCCUPIED");
+      if ((x === baseCell.x && y === baseCell.y) || (x === spawnCell.x && y === spawnCell.y) || (structures.some(s => Math.hypot(s.x - x, s.y - y) < 0.72) && !canMount)) return message(wall ? "WALL POSITION ALREADY OCCUPIED" : "DEPLOYMENT ZONE OCCUPIED");
       if (wall && !canMount) return message("ONLY RIFLE TEAMS OR ARTILLERY CAN MOUNT WALLS");
       if (kind !== "mine" && !canMount && !findPath(spawnCell.x, spawnCell.y, { x, y }).length) return message("FORTIFICATION WOULD SEAL THE EVACUATION CORRIDOR");
       addStructure(kind, x, y, false, canMount ? wall?.id : undefined);
@@ -368,16 +447,18 @@ function Battlefield({ selected, onHud, onMessage, apiRef }: { selected: AssetKe
     function destroyStructure(s: Structure, salvaged = false) {
       if (!structures.includes(s)) return;
       if (s.kind === "wall") {
-        structures.filter(other => other.mountedOn === s.id).forEach(other => { burst(other.group.position, 0xff794f, 10); removeHealthBar(other.group); world.remove(other.group); structures.splice(structures.indexOf(other), 1); });
+        structures.filter(other => other.mountedOn === s.id).forEach(other => { selectedEmplacements.delete(other.id); burst(other.group.position, 0xff794f, 10); removeHealthBar(other.group); world.remove(other.group); structures.splice(structures.indexOf(other), 1); });
         marines.filter(m => m.mountedOn === s.id).forEach(m => { m.mountedOn = undefined; m.hp = Math.max(0, m.hp - 35); setHealthVisual(m.group, m.hp, m.maxHp); m.targetX = clamp(m.x + 1, 0, GRID_W - 1); m.targetY = m.y; });
       }
+      selectedEmplacements.delete(s.id);
+      publishStructureSelection();
       if (salvaged) credits += Math.floor(ASSETS[s.kind].cost * 0.6);
       burst(s.group.position.clone().add(new THREE.Vector3(0, 0.5, 0)), salvaged ? 0x9dff8b : 0xff553f, salvaged ? 5 : 15);
       removeHealthBar(s.group); world.remove(s.group); structures.splice(structures.indexOf(s), 1);
       enemies.forEach(e => { e.pathTimer = 0; e.index = 0; });
     }
     function removeStructureAt(x: number, y: number) {
-      const s = structures.filter(item => item.x === x && item.y === y).sort((a, b) => Number(!!b.mountedOn) - Number(!!a.mountedOn))[0]; if (!s) return;
+      const s = structures.filter(item => Math.hypot(item.x - x, item.y - y) < 0.72).sort((a, b) => Number(!!b.mountedOn) - Number(!!a.mountedOn))[0]; if (!s) return;
       destroyStructure(s, true);
       message(`${ASSETS[s.kind].name.toUpperCase()} SALVAGED · +${Math.floor(ASSETS[s.kind].cost * 0.6)} CREDITS`); emitHud(true);
     }
@@ -389,20 +470,31 @@ function Battlefield({ selected, onHud, onMessage, apiRef }: { selected: AssetKe
     }
     function refreshSelection() {
       marines.forEach(m => { const ring = m.group.userData.selectionRing as THREE.Mesh; if (ring) ring.visible = selectedMarines.has(m.id); });
+      structures.filter(isCombatStructure).forEach(s => { const ring = s.group.userData.selectionRing as THREE.Mesh; if (ring) ring.visible = selectedEmplacements.has(s.id); });
     }
-    function selectMarineAt(x: number, y: number, additive = false) {
-      const clicked = marines.filter(m => Math.hypot(m.x - x, m.y - y) < 0.62).sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y))[0];
-      if (!clicked) { if (!additive) { selectedMarines.clear(); refreshSelection(); } return false; }
-      if (!additive) selectedMarines.clear(); if (additive && selectedMarines.has(clicked.id)) selectedMarines.delete(clicked.id); else selectedMarines.add(clicked.id); refreshSelection();
-      message(`${selectedMarines.size} SOLDIER${selectedMarines.size === 1 ? "" : "S"} SELECTED · RIGHT-CLICK TO MOVE`); return true;
+    function selectUnitAt(x: number, y: number, additive = false) {
+      const candidates = [
+        ...marines.map(m => ({ id: m.id, x: m.x, y: m.y, type: "marine" as const })),
+        ...structures.filter(isCombatStructure).map(s => ({ id: s.id, x: s.x, y: s.y, type: "emplacement" as const })),
+      ].filter(unit => Math.hypot(unit.x - x, unit.y - y) < 0.72).sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y));
+      const clicked = candidates[0];
+      if (!clicked) { if (!additive) { selectedMarines.clear(); selectedEmplacements.clear(); refreshSelection(); publishStructureSelection(); } return false; }
+      if (!additive) { selectedMarines.clear(); selectedEmplacements.clear(); }
+      const selection = clicked.type === "marine" ? selectedMarines : selectedEmplacements;
+      if (additive && selection.has(clicked.id)) selection.delete(clicked.id); else selection.add(clicked.id); refreshSelection(); publishStructureSelection();
+      const count = selectedMarines.size + selectedEmplacements.size, selectedStructure = structures.find(s => s.id === clicked.id);
+      message(clicked.type === "emplacement" && count === 1 && selectedStructure ? `${ASSETS[selectedStructure.kind].name.toUpperCase()} SELECTED · UPGRADE PANEL ONLINE` : `${count} UNIT${count === 1 ? "" : "S"} SELECTED · RIGHT-CLICK TO MOVE`); return true;
     }
     function commandFormation(x: number, y: number) {
-      const squad = marines.filter(m => selectedMarines.has(m.id)); if (!squad.length) return false;
-      const cx = squad.reduce((sum, m) => sum + m.x, 0) / squad.length, cy = squad.reduce((sum, m) => sum + m.y, 0) / squad.length;
+      const squad = [
+        ...marines.filter(m => selectedMarines.has(m.id)).map(unit => ({ type: "marine" as const, unit })),
+        ...structures.filter(s => selectedEmplacements.has(s.id) && isMobileEmplacement(s)).map(unit => ({ type: "emplacement" as const, unit })),
+      ]; if (!squad.length) return false;
+      const cx = squad.reduce((sum, member) => sum + member.unit.x, 0) / squad.length, cy = squad.reduce((sum, member) => sum + member.unit.y, 0) / squad.length;
       const dx = x - cx, dy = y - cy, len = Math.hypot(dx, dy) || 1, px = -dy / len, py = dx / len; const spacing = 0.72;
       const wall = structures.find(s => s.kind === "wall" && s.x === x && s.y === y);
-      squad.forEach((m, i) => { const offset = (i - (squad.length - 1) / 2) * spacing; m.targetX = clamp(x + px * offset, 0, GRID_W - 1); m.targetY = clamp(y + py * offset, 0, GRID_H - 1); m.mountedOn = wall?.id; });
-      message(`${squad.length}-SOLDIER LINE FORMATION ${wall ? "ORDERED TO WALL" : "MOVING"}`); return true;
+      squad.forEach((member, i) => { const offset = (i - (squad.length - 1) / 2) * spacing; member.unit.targetX = clamp(x + px * offset, 0, GRID_W - 1); member.unit.targetY = clamp(y + py * offset, 0, GRID_H - 1); member.unit.mountedOn = wall?.id; });
+      message(`${squad.length}-UNIT LINE FORMATION ${wall ? "ORDERED TO WALL" : "MOVING"} · CREWED WEAPONS MOVE SLOWLY`); return true;
     }
     function recruitAt(x: number, y: number) {
       const barracks = structures.find(s => s.kind === "barracks" && s.x === x && s.y === y); if (!barracks) return false;
@@ -439,14 +531,14 @@ function Battlefield({ selected, onHud, onMessage, apiRef }: { selected: AssetKe
     function damageEnemy(e: Enemy, amount: number) { e.hp = clamp(e.hp - Math.max(0, amount), 0, e.maxHp); e.hitFlash = 0.09; setHealthVisual(e.group, e.hp, e.maxHp); }
     function restart() {
       [...structures, ...enemies, ...marines].forEach(o => { removeHealthBar(o.group); world.remove(o.group); }); bullets.forEach(b => world.remove(b.mesh)); particles.forEach(p => world.remove(p.mesh));
-      structures = []; enemies = []; marines = []; bullets = []; particles = []; selectedMarines.clear(); credits = 750; integrity = 100; wave = 0; kills = 0; active = false; gameOver = false; victory = false; spawnLeft = 0;
+      structures = []; enemies = []; marines = []; bullets = []; particles = []; selectedMarines.clear(); selectedEmplacements.clear(); callbacks.current.onUnitSelected(null); credits = 750; integrity = 100; wave = 0; kills = 0; active = false; gameOver = false; victory = false; spawnLeft = 0;
       addStructure("barracks", 3, 14, true); addStructure("rifle", 6, 14, true); addStructure("wall", 4, 15, true); addStructure("howitzer", 8, 15, true); spawnMarine(3, 13); spawnMarine(4, 14); message("COMMAND SYSTEMS RESET · AWAITING DEPLOYMENT"); emitHud(true);
     }
     function rotate() {
       const offset = camera.position.clone().sub(controls.target); const a = Math.PI / 2;
       camera.position.set(controls.target.x + offset.x * Math.cos(a) - offset.z * Math.sin(a), camera.position.y, controls.target.z + offset.x * Math.sin(a) + offset.z * Math.cos(a)); controls.update();
     }
-    apiRef.current = { start: startWave, restart, rotate };
+    apiRef.current = { start: startWave, restart, rotate, upgradeSelected };
 
     const raycaster = new THREE.Raycaster(), pointer = new THREE.Vector2(), cameraVelocity = new THREE.Vector3(); const heldKeys = new Set<string>(); let hovered: THREE.Mesh | null = null, downX = 0, downY = 0, rightDownX = 0, rightDownY = 0, selecting = false;
     const selectionBox = document.createElement("div"); selectionBox.className = "selection-box"; host.appendChild(selectionBox);
@@ -463,13 +555,14 @@ function Battlefield({ selected, onHud, onMessage, apiRef }: { selected: AssetKe
     function onUp(e: PointerEvent) {
       if (e.button !== 0) return; e.stopImmediatePropagation(); const drag = Math.hypot(e.clientX - downX, e.clientY - downY); selecting = false; controls.enabled = true; selectionBox.style.display = "none";
       if (drag > 5) {
-        const minX = Math.min(downX, e.clientX), maxX = Math.max(downX, e.clientX), minY = Math.min(downY, e.clientY), maxY = Math.max(downY, e.clientY), r = renderer.domElement.getBoundingClientRect(); if (!e.shiftKey) selectedMarines.clear();
-        marines.forEach(m => { const p = m.group.getWorldPosition(new THREE.Vector3()).project(camera), sx = r.left + (p.x + 1) * r.width / 2, sy = r.top + (-p.y + 1) * r.height / 2; if (sx >= minX && sx <= maxX && sy >= minY && sy <= maxY) selectedMarines.add(m.id); }); refreshSelection(); message(`${selectedMarines.size} SOLDIERS BOX-SELECTED · RIGHT-CLICK TO FORM A LINE`); return;
+        const minX = Math.min(downX, e.clientX), maxX = Math.max(downX, e.clientX), minY = Math.min(downY, e.clientY), maxY = Math.max(downY, e.clientY), r = renderer.domElement.getBoundingClientRect(); if (!e.shiftKey) { selectedMarines.clear(); selectedEmplacements.clear(); }
+        marines.forEach(m => { const p = m.group.getWorldPosition(new THREE.Vector3()).project(camera), sx = r.left + (p.x + 1) * r.width / 2, sy = r.top + (-p.y + 1) * r.height / 2; if (sx >= minX && sx <= maxX && sy >= minY && sy <= maxY) selectedMarines.add(m.id); });
+        structures.filter(isCombatStructure).forEach(s => { const p = s.group.getWorldPosition(new THREE.Vector3()).project(camera), sx = r.left + (p.x + 1) * r.width / 2, sy = r.top + (-p.y + 1) * r.height / 2; if (sx >= minX && sx <= maxX && sy >= minY && sy <= maxY) selectedEmplacements.add(s.id); }); refreshSelection(); publishStructureSelection(); const count = selectedMarines.size + selectedEmplacements.size; message(`${count} UNIT${count === 1 ? "" : "S"} BOX-SELECTED · RIGHT-CLICK TO FORM A LINE`); return;
       }
-      const tile = pick(e); if (!tile) return; const x = tile.userData.x, y = tile.userData.y; if (recruitAt(x, y)) return; if (selectMarineAt(x, y, e.shiftKey)) return; if (!selectedMarines.size) tryPlace(x, y);
+      const tile = pick(e); if (!tile) return; const x = tile.userData.x, y = tile.userData.y; if (recruitAt(x, y)) return; if (selectUnitAt(x, y, e.shiftKey)) return; if (!selectedMarines.size && !selectedEmplacements.size) tryPlace(x, y);
     }
-    function onContext(e: MouseEvent) { e.preventDefault(); if (Math.hypot(e.clientX - rightDownX, e.clientY - rightDownY) > 6) return; const tile = pick(e as PointerEvent); if (!tile) return; if (e.shiftKey) removeStructureAt(tile.userData.x, tile.userData.y); else if (!commandFormation(tile.userData.x, tile.userData.y)) message("SELECT SOLDIERS WITH A CLICK OR DRAG BOX FIRST"); }
-    function onKey(e: KeyboardEvent) { heldKeys.add(e.key.toLowerCase()); if (e.key.toLowerCase() === "r") rotate(); if (e.key === "Escape") { selectedMarines.clear(); refreshSelection(); } if (e.code === "Space") { e.preventDefault(); startWave(); } }
+    function onContext(e: MouseEvent) { e.preventDefault(); if (Math.hypot(e.clientX - rightDownX, e.clientY - rightDownY) > 6) return; const tile = pick(e as PointerEvent); if (!tile) return; if (e.shiftKey) removeStructureAt(tile.userData.x, tile.userData.y); else if (!commandFormation(tile.userData.x, tile.userData.y)) message("SELECT RIFLEMEN OR CREWED WEAPONS WITH A CLICK OR DRAG BOX FIRST"); }
+    function onKey(e: KeyboardEvent) { heldKeys.add(e.key.toLowerCase()); if (e.key.toLowerCase() === "r") rotate(); if (e.key === "Escape") { selectedMarines.clear(); selectedEmplacements.clear(); refreshSelection(); publishStructureSelection(); } if (e.code === "Space") { e.preventDefault(); startWave(); } }
     function onKeyUp(e: KeyboardEvent) { heldKeys.delete(e.key.toLowerCase()); }
     renderer.domElement.addEventListener("pointermove", onMove, true); renderer.domElement.addEventListener("pointerdown", onDown, true); renderer.domElement.addEventListener("pointerup", onUp, true); renderer.domElement.addEventListener("contextmenu", onContext); window.addEventListener("keydown", onKey); window.addEventListener("keyup", onKeyUp);
 
@@ -488,7 +581,7 @@ function Battlefield({ selected, onHud, onMessage, apiRef }: { selected: AssetKe
       for (const e of enemies) {
         e.hitFlash = Math.max(0, e.hitFlash - dt); e.attackCooldown -= dt; e.pathTimer -= dt;
         const closestMarine = marines.map(m => ({ type: "marine" as const, id: m.id, x: m.x, y: m.y, group: m.group, marine: m, d: Math.hypot(m.x - e.x, m.y - e.y) })).sort((a, b) => a.d - b.d)[0];
-        const closestEmplacement = structures.filter(s => s.kind === "rifle" || s.kind === "howitzer").map(s => ({ type: "structure" as const, id: s.id, x: s.x, y: s.y, group: s.group, structure: s, d: Math.hypot(s.x - e.x, s.y - e.y) })).sort((a, b) => a.d - b.d)[0];
+        const closestEmplacement = structures.filter(isCombatStructure).map(s => ({ type: "structure" as const, id: s.id, x: s.x, y: s.y, group: s.group, structure: s, d: Math.hypot(s.x - e.x, s.y - e.y) })).sort((a, b) => a.d - b.d)[0];
         const combatTarget = closestMarine && closestEmplacement ? (closestMarine.d <= closestEmplacement.d ? closestMarine : closestEmplacement) : closestMarine || closestEmplacement;
         const targetType = combatTarget?.type ?? "base", targetId = combatTarget?.id ?? null, tx = combatTarget?.x ?? baseCell.x, ty = combatTarget?.y ?? baseCell.y;
         const targetChanged = e.targetType !== targetType || e.targetId !== targetId; e.targetType = targetType; e.targetId = targetId;
@@ -525,15 +618,27 @@ function Battlefield({ selected, onHud, onMessage, apiRef }: { selected: AssetKe
         const p = worldPos(e.x, e.y); e.group.position.lerp(p, Math.min(1, dt * 12)); e.group.position.y += Math.sin(elapsed * 9 + e.id) * (e.kind === "brute" ? 0.005 : 0.01); syncHealthBar(e.group);
       }
       for (const s of structures) {
-        s.cooldown -= dt; syncHealthBar(s.group);
+        s.cooldown -= dt;
         if (s.kind === "barracks") {
           s.spawnTimer = Math.max(0, s.spawnTimer - dt);
         }
-        if (s.kind !== "rifle" && s.kind !== "howitzer") continue;
-        const range = ASSETS[s.kind].range + heights[s.y][s.x] * 0.9; const target = enemies.filter(e => e.hp > 0 && Math.hypot(e.x - s.x, e.y - s.y) <= range).sort((a, b) => b.index - a.index)[0];
+        if (isMobileEmplacement(s)) {
+          const dx = s.targetX - s.x, dy = s.targetY - s.y, moveDist = Math.hypot(dx, dy);
+          if (moveDist > 0.025) {
+            const speed = s.kind === "howitzer" ? 0.26 : 0.42, step = Math.min(moveDist, speed * dt);
+            s.x += dx / moveDist * step; s.y += dy / moveDist * step; turnToward(s.group, Math.atan2(-dx, -dy), s.kind === "howitzer" ? 2.2 : 3.2, dt);
+          } else { s.x = s.targetX; s.y = s.targetY; }
+          const settledOnWall = !!s.mountedOn && moveDist < 0.08;
+          s.group.position.lerp(worldPos(s.x, s.y, settledOnWall ? 0.62 : 0), Math.min(1, dt * 10));
+        }
+        syncHealthBar(s.group);
+        if (!isCombatStructure(s)) continue;
+        const terrainX = clamp(Math.round(s.x), 0, GRID_W - 1), terrainY = clamp(Math.round(s.y), 0, GRID_H - 1);
+        const stats = TURRET_STATS[s.kind], levelDamage = 1 + (s.level - 1) * 0.42, levelSpeed = 1 + (s.level - 1) * 0.18;
+        const range = ASSETS[s.kind].range + (s.level - 1) * 0.65 + heights[terrainY][terrainX] * 0.9; const target = enemies.filter(e => e.hp > 0 && Math.hypot(e.x - s.x, e.y - s.y) <= range).sort((a, b) => b.index - a.index)[0];
         if (target) {
-          turnToward(s.group, Math.atan2(-(target.x - s.x), -(target.y - s.y)), s.kind === "howitzer" ? 3.5 : 8, dt);
-          if (s.cooldown <= 0) { const muzzle = s.group.userData.muzzle as THREE.Object3D | undefined; const from = muzzle ? muzzle.getWorldPosition(new THREE.Vector3()) : s.group.position.clone().add(new THREE.Vector3(0, 1.05, 0)); fire(from, target, s.kind === "howitzer" ? 105 : 5.8, s.kind === "howitzer" ? 1.25 : 0, s.kind === "howitzer" ? 0xffa64d : 0xd6ff81, s.kind === "howitzer"); s.cooldown = s.kind === "howitzer" ? 2.35 : 0.15; }
+          turnToward(s.group, Math.atan2(-(target.x - s.x), -(target.y - s.y)), stats.turnSpeed, dt);
+          if (s.cooldown <= 0) { const muzzle = s.group.userData.muzzle as THREE.Object3D | undefined; const from = muzzle ? muzzle.getWorldPosition(new THREE.Vector3()) : s.group.position.clone().add(new THREE.Vector3(0, 1.05, 0)); fire(from, target, stats.damage * levelDamage, stats.splash, stats.color, stats.heavy); s.cooldown = stats.cooldown / levelSpeed; }
         }
       }
       for (const m of marines) {
@@ -578,9 +683,10 @@ function Battlefield({ selected, onHud, onMessage, apiRef }: { selected: AssetKe
 export default function Home() {
   const [selected, setSelected] = useState<AssetKey>("rifle");
   const [hud, setHud] = useState<Hud>({ credits: 750, integrity: 100, wave: 0, enemies: 0, kills: 0, active: false, gameOver: false, victory: false });
+  const [selectedUnit, setSelectedUnit] = useState<SelectedUnit | null>(null);
   const [message, setMessage] = useState("OPERATION NIGHTFALL · BUILD YOUR PERIMETER");
   const [briefing, setBriefing] = useState(true);
-  const apiRef = useRef<{ start: () => void; restart: () => void; rotate: () => void } | null>(null);
+  const apiRef = useRef<BattlefieldApi | null>(null);
   const messageTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showMessage = (text: string) => { setMessage(text); if (messageTimer.current) clearTimeout(messageTimer.current); messageTimer.current = setTimeout(() => setMessage("COMMAND LINK STABLE · RIGHT-CLICK TO SALVAGE"), 4200); };
   return (
@@ -593,19 +699,25 @@ export default function Home() {
         <button className="wave-button" disabled={hud.active || hud.gameOver} onClick={() => apiRef.current?.start()}>{hud.active ? `WAVE ${String(hud.wave).padStart(2, "0")} ACTIVE` : hud.gameOver ? "OPERATION ENDED" : `DEPLOY WAVE ${String(hud.wave + 1).padStart(2, "0")}`}</button>
       </header>
       <section className="battlefield">
-        <Battlefield selected={selected} onHud={setHud} onMessage={showMessage} apiRef={apiRef} />
+        <Battlefield selected={selected} onHud={setHud} onMessage={showMessage} onUnitSelected={setSelectedUnit} apiRef={apiRef} />
         <div className="mission-card"><span>OPERATION NIGHTFALL · SECTOR E-7</span><b>Hold the eastern ridge</b><small>Wave {Math.min(hud.wave + (hud.active ? 0 : 1), 8)} of 8 · {hud.kills} confirmed eliminations</small></div>
         <div className="status-feed"><i />{message}</div>
+        {selectedUnit && <div className="upgrade-card" style={{ "--upgrade-color": ASSETS[selectedUnit.kind].accent } as React.CSSProperties}>
+          <small>SELECTED DEFENSE</small><div className="upgrade-heading"><b>{selectedUnit.name}</b><em>LV {selectedUnit.level}/{selectedUnit.maxLevel}</em></div>
+          <div className="upgrade-stats"><span><small>DAMAGE</small><b>{selectedUnit.damage}</b></span><span><small>RANGE</small><b>{selectedUnit.range}</b></span><span><small>ARMOR</small><b>{selectedUnit.maxHp}</b></span></div>
+          <button disabled={selectedUnit.upgradeCost === null || hud.credits < selectedUnit.upgradeCost} onClick={() => apiRef.current?.upgradeSelected()}>{selectedUnit.upgradeCost === null ? "MAXIMUM LEVEL" : `UPGRADE TO LV ${selectedUnit.level + 1} · ¤ ${selectedUnit.upgradeCost}`}</button>
+          <p>Upgrade increases damage, range, fire rate, and armor.</p>
+        </div>}
         <div className="camera-tools"><button onClick={() => apiRef.current?.rotate()} aria-label="Rotate camera">↻</button><span>ORBIT</span></div>
-        {briefing && <div className="briefing"><div className="briefing-id">FIELD BRIEFING // 04:38 LOCAL</div><h1>They found the ridge.</h1><p>Drag a selection box around any number of soldiers, then right-click to move them in a straight firing line. Click a placed barracks to recruit for 60 credits. Machine-gun teams and multiple soldiers can hold the same wall.</p><div className="brief-grid"><span><kbd>DRAG BOX</kbd><b>Select a squad</b></span><span><kbd>RIGHT CLICK</kbd><b>Move in line formation</b></span><span><kbd>CLICK BARRACKS</kbd><b>Recruit rifleman</b></span><span><kbd>MIDDLE DRAG</kbd><b>Orbit camera</b></span></div><button onClick={() => setBriefing(false)}>ASSUME COMMAND</button></div>}
+        {briefing && <div className="briefing"><div className="briefing-id">FIELD BRIEFING // 04:38 LOCAL</div><h1>They found the ridge.</h1><p>Drag a selection box around mobile forces, then right-click to move them in formation. Click any defensive unit to inspect and upgrade it. Gun teams and howitzers can redeploy slowly; sentries and missile batteries remain fixed.</p><div className="brief-grid"><span><kbd>DRAG BOX</kbd><b>Select combat units</b></span><span><kbd>RIGHT CLICK</kbd><b>Move in line formation</b></span><span><kbd>CLICK DEFENSE</kbd><b>Open upgrade panel</b></span><span><kbd>MIDDLE DRAG</kbd><b>Orbit camera</b></span></div><button onClick={() => setBriefing(false)}>ASSUME COMMAND</button></div>}
         {hud.gameOver && <div className={`end-card ${hud.victory ? "won" : "lost"}`}><small>{hud.victory ? "OPERATION COMPLETE" : "SIGNAL LOST"}</small><h2>{hud.victory ? "THE RIDGE HOLDS" : "COMMAND OVERRUN"}</h2><p>{hud.kills} hostiles eliminated across {hud.wave} waves.</p><button onClick={() => apiRef.current?.restart()}>RESTART OPERATION</button></div>}
       </section>
       <aside className="build-panel">
         <div className="panel-title"><small>FORWARD ENGINEERING</small><b>DEPLOYABLE ASSETS</b></div>
         {(Object.keys(ASSETS) as AssetKey[]).map(key => { const a = ASSETS[key]; return <button key={key} className={`asset ${selected === key ? "active" : ""}`} onClick={() => setSelected(key)} style={{ "--asset-color": a.accent } as React.CSSProperties}><span>{a.icon}</span><div><b>{a.name}</b><small>{a.role}</small></div><em>{a.cost}</em></button>; })}
-        <div className="intel"><span>FIELD INTEL</span><p>Box-select soldiers and right-click a destination. They automatically spread into a straight line. Shift + right-click salvages a defense.</p></div>
+        <div className="intel"><span>FIELD INTEL</span><p>Click one defense to upgrade its damage, range, fire rate, and armor. Crewed weapons can move slowly; sentries and missile batteries are fixed. Shift + right-click salvages.</p></div>
       </aside>
-      <footer className="controls"><span><kbd>DRAG BOX</kbd> SELECT</span><span><kbd>RIGHT CLICK</kbd> FORMATION MOVE</span><span><kbd>MIDDLE DRAG</kbd> ORBIT</span><span><kbd>WASD</kbd> GLIDE CAMERA</span><span><kbd>SPACE</kbd> START WAVE</span><span className="online">● GITHUB PAGES</span></footer>
+      <footer className="controls"><span><kbd>DRAG BOX</kbd> SELECT UNITS</span><span><kbd>RIGHT CLICK</kbd> FORMATION MOVE</span><span><kbd>MIDDLE DRAG</kbd> ORBIT</span><span><kbd>WASD</kbd> GLIDE CAMERA</span><span><kbd>SPACE</kbd> START WAVE</span><span className="online">● GITHUB PAGES</span></footer>
     </main>
   );
 }
