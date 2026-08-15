@@ -73,11 +73,11 @@ A static precision tower that tracks visible targets and deals damage immediatel
 
 ### M777 Howitzer — 350 credits
 
-A slow-firing long-range artillery piece. Its shells deal heavy damage in an area, making it effective against dense groups and durable targets. High-ground placement is especially valuable. Its crew can reposition it at a very slow towing pace.
+A slow-firing long-range artillery piece. Its shells deal heavy damage in an area, making it effective against dense groups and durable targets. Batteries coordinate against projected incoming blast damage, spreading shells across targets and clusters that are not already expected to be destroyed. High-ground placement is especially valuable. Its crew can reposition it at a very slow towing pace.
 
 ### Javelin Battery — 480 credits
 
-A static four-tube missile launcher with the longest base range and widest blast radius of any defense. Its high damage is balanced by a slow reload and substantial purchase cost.
+A static four-tube missile launcher with the longest base range and widest blast radius of any defense. It shares the Howitzer's coordinated targeting, avoiding targets and clusters already covered by lethal incoming fire. Its high damage is balanced by a slow reload and substantial purchase cost.
 
 ### Sentinel Light Tower — 135 credits
 

@@ -34,20 +34,20 @@ const GRID_W = 24;
 const GRID_H = 18;
 const TILE = 1.36;
 const ASSETS: Record<AssetKey, { name: string; role: string; cost: number; range: number; icon: string; accent: string }> = {
-  rifle: { name: "M240 Gun Team", role: "Sustained fire · Anti-swarm", cost: 225, range: 4.7, icon: "⌖", accent: "#9fe870" },
-  sentry: { name: "GAU-19 Sentry", role: "Fast tracking · Heavy burst", cost: 375, range: 5.6, icon: "◉", accent: "#62e8ff" },
-  flame: { name: "Inferno Turret", role: "Short range · Burning splash", cost: 315, range: 3.25, icon: "♨", accent: "#ff875c" },
-  laser: { name: "Helios Laser Tower", role: "Instant beam · Precision damage", cost: 540, range: 7.2, icon: "◇", accent: "#ff4ff5" },
-  railgun: { name: "M-90 Rail Turret", role: "Long range · Armor piercing", cost: 615, range: 9.6, icon: "↯", accent: "#b889ff" },
-  howitzer: { name: "M777 Howitzer", role: "Heavy shell · Area damage", cost: 525, range: 7.4, icon: "◎", accent: "#ffb45d" },
-  missile: { name: "Javelin Battery", role: "Long range · Wide blast", cost: 720, range: 8.8, icon: "✦", accent: "#ff7f91" },
-  light: { name: "Sentinel Light Tower", role: "Wide vision · Sweeping searchlights", cost: 205, range: 0, icon: "☼", accent: "#fff1a3" },
-  wall: { name: "Hesco Wall", role: "600 armor · Supports units", cost: 105, range: 0, icon: "▦", accent: "#d1b98e" },
-  bastion: { name: "Bastion Wall", role: "1,050 armor · Reinforced cover", cost: 190, range: 0, icon: "▰", accent: "#aab8bd" },
-  trench: { name: "Infantry Trench", role: "4 infantry · 40% damage reduction", cost: 130, range: 0, icon: "⌓", accent: "#b89568" },
-  wire: { name: "Razor Wire", role: "Slows and wounds hostiles", cost: 60, range: 0, icon: "〰", accent: "#e4cc9e" },
-  mine: { name: "Shock Mine", role: "Proximity · One use", cost: 150, range: 1.35, icon: "⌁", accent: "#ff655f" },
-  barracks: { name: "Field Barracks", role: "Trains specialized infantry", cost: 640, range: 0, icon: "⌂", accent: "#67c8ff" },
+  rifle: { name: "M240 Gun Team", role: "Sustained fire · Anti-swarm", cost: 150, range: 4.7, icon: "⌖", accent: "#9fe870" },
+  sentry: { name: "GAU-19 Sentry", role: "Fast tracking · Heavy burst", cost: 250, range: 5.6, icon: "◉", accent: "#62e8ff" },
+  flame: { name: "Inferno Turret", role: "Short range · Burning splash", cost: 210, range: 3.25, icon: "♨", accent: "#ff875c" },
+  laser: { name: "Helios Laser Tower", role: "Instant beam · Precision damage", cost: 360, range: 7.2, icon: "◇", accent: "#ff4ff5" },
+  railgun: { name: "M-90 Rail Turret", role: "Long range · Armor piercing", cost: 410, range: 9.6, icon: "↯", accent: "#b889ff" },
+  howitzer: { name: "M777 Howitzer", role: "Heavy shell · Area damage", cost: 350, range: 7.4, icon: "◎", accent: "#ffb45d" },
+  missile: { name: "Javelin Battery", role: "Long range · Wide blast", cost: 480, range: 8.8, icon: "✦", accent: "#ff7f91" },
+  light: { name: "Sentinel Light Tower", role: "Wide vision · Sweeping searchlights", cost: 135, range: 0, icon: "☼", accent: "#fff1a3" },
+  wall: { name: "Hesco Wall", role: "600 armor · Supports units", cost: 70, range: 0, icon: "▦", accent: "#d1b98e" },
+  bastion: { name: "Bastion Wall", role: "1,050 armor · Reinforced cover", cost: 125, range: 0, icon: "▰", accent: "#aab8bd" },
+  trench: { name: "Infantry Trench", role: "4 infantry · 40% damage reduction", cost: 85, range: 0, icon: "⌓", accent: "#b89568" },
+  wire: { name: "Razor Wire", role: "Slows and wounds hostiles", cost: 40, range: 0, icon: "〰", accent: "#e4cc9e" },
+  mine: { name: "Shock Mine", role: "Proximity · One use", cost: 100, range: 1.35, icon: "⌁", accent: "#ff655f" },
+  barracks: { name: "Field Barracks", role: "Trains specialized infantry", cost: 425, range: 0, icon: "⌂", accent: "#67c8ff" },
 };
 
 const TURRET_STATS: Record<CombatKey, { damage: number; cooldown: number; splash: number; arcHeight: number; color: number; heavy: boolean; turnSpeed: number; beam?: boolean }> = {
@@ -61,10 +61,10 @@ const TURRET_STATS: Record<CombatKey, { damage: number; cooldown: number; splash
 };
 
 const MARINE_STATS: Record<MarineKind, { name: string; role: string; cost: number; train: number; hp: number; speed: number; damage: number; cooldown: number; range: number; color: string; projectileColor: number; splash?: number; arcHeight?: number; heavy?: boolean }> = {
-  rifleman: { name: "Rifleman", role: "Mobile all-round infantry", cost: 90, train: 3.5, hp: 100, speed: 1.65, damage: 9, cooldown: 0.55, range: 3.25, color: "#a8f76b", projectileColor: 0xbaff77 },
-  gunner: { name: "Heavy Gunner", role: "Armored sustained fire", cost: 175, train: 5.5, hp: 165, speed: 1.2, damage: 18, cooldown: 0.34, range: 3.7, color: "#ffbe62", projectileColor: 0xffbe62 },
-  medic: { name: "Combat Medic", role: "Heals nearby infantry", cost: 135, train: 4.5, hp: 85, speed: 1.75, damage: 5, cooldown: 0.72, range: 2.9, color: "#63e9ff", projectileColor: 0x63e9ff },
-  rocketeer: { name: "Rocketeer", role: "Long-range anti-swarm rockets", cost: 235, train: 6.5, hp: 95, speed: 1.08, damage: 62, cooldown: 2.15, range: 5.2, color: "#ff8a5b", projectileColor: 0xff7048, splash: 1.05, arcHeight: 0.65, heavy: true },
+  rifleman: { name: "Rifleman", role: "Mobile all-round infantry", cost: 60, train: 3.5, hp: 100, speed: 1.65, damage: 9, cooldown: 0.55, range: 3.25, color: "#a8f76b", projectileColor: 0xbaff77 },
+  gunner: { name: "Heavy Gunner", role: "Armored sustained fire", cost: 115, train: 5.5, hp: 165, speed: 1.2, damage: 18, cooldown: 0.34, range: 3.7, color: "#ffbe62", projectileColor: 0xffbe62 },
+  medic: { name: "Combat Medic", role: "Heals nearby infantry", cost: 90, train: 4.5, hp: 85, speed: 1.75, damage: 5, cooldown: 0.72, range: 2.9, color: "#63e9ff", projectileColor: 0x63e9ff },
+  rocketeer: { name: "Rocketeer", role: "Long-range anti-swarm rockets", cost: 155, train: 6.5, hp: 95, speed: 1.08, damage: 62, cooldown: 2.15, range: 5.2, color: "#ff8a5b", projectileColor: 0xff7048, splash: 1.05, arcHeight: 0.65, heavy: true },
 };
 
 type Hud = { credits: number; integrity: number; wave: number; enemies: number; kills: number; active: boolean; gameOver: boolean; victory: boolean };
@@ -73,7 +73,7 @@ type MoveWaypoint = Cell & { lift: number };
 type Structure = { id: number; kind: AssetKey; level: number; x: number; y: number; targetX: number; targetY: number; hp: number; maxHp: number; mountedOn?: number; mountTarget?: number; movePath: MoveWaypoint[]; pathIndex: number; lift: number; stackLevel: number; group: THREE.Group; cooldown: number; spawnTimer: number };
 type Enemy = { id: number; kind: AlienKind; x: number; y: number; hp: number; maxHp: number; speed: number; damage: number; reward: number; path: Cell[]; index: number; group: THREE.Group; hitFlash: number; attackCooldown: number; pathTimer: number; targetId: number | null; targetType: "marine" | "structure" | "base" };
 type Marine = { id: number; kind: MarineKind; x: number; y: number; targetX: number; targetY: number; vx: number; vy: number; hp: number; maxHp: number; cooldown: number; supportCooldown: number; mountedOn?: number; mountTarget?: number; trenchId?: number; movePath: MoveWaypoint[]; pathIndex: number; lift: number; group: THREE.Group };
-type Bullet = { mesh: THREE.Object3D; from: THREE.Vector3; to: THREE.Vector3; t: number; speed: number; target: number; damage: number; splash: number; arcHeight: number; color: number };
+type Bullet = { mesh: THREE.Object3D; from: THREE.Vector3; to: THREE.Vector3; impactX: number; impactY: number; t: number; speed: number; target: number; damage: number; splash: number; arcHeight: number; color: number };
 type HostileProjectile = { group: THREE.Group; kind: AlienKind; from: THREE.Vector3; to: THREE.Vector3; t: number; speed: number; arcHeight: number; targetId: number; targetType: "marine" | "structure"; damage: number; color: number; impactCount: number };
 type Particle = { mesh: THREE.Mesh; velocity: THREE.Vector3; life: number; maxLife: number };
 type SelectedUnit = { id: number; kind: CombatKey; name: string; level: number; maxLevel: number; upgradeCost: number | null; damage: number; range: number; maxHp: number };
@@ -1052,7 +1052,32 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         projectile.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), to.clone().sub(from).normalize()); mesh = projectile;
       } else mesh = new THREE.Mesh(new THREE.SphereGeometry(heavy ? 0.11 : 0.045, 7, 5), new THREE.MeshBasicMaterial({ color }));
       mesh.position.copy(from); world.add(mesh);
-      bullets.push({ mesh, from: from.clone(), to, t: 0, speed: heavy ? 1.35 : 4.8, target: target.id, damage, splash, arcHeight, color });
+      bullets.push({ mesh, from: from.clone(), to, impactX: target.x, impactY: target.y, t: 0, speed: heavy ? 1.35 : 4.8, target: target.id, damage, splash, arcHeight, color });
+    }
+    function incomingDamageAt(enemy: Enemy) {
+      return bullets.reduce((total, shot) => {
+        if (!shot.splash) return total + (shot.target === enemy.id ? shot.damage : 0);
+        const trackedTarget = enemies.find(candidate => candidate.id === shot.target && candidate.hp > 0);
+        const impactX = trackedTarget?.x ?? shot.impactX, impactY = trackedTarget?.y ?? shot.impactY;
+        const distance = Math.hypot(enemy.x - impactX, enemy.y - impactY);
+        return distance <= shot.splash ? total + shot.damage * (1 - distance / (shot.splash * 1.8)) : total;
+      }, 0);
+    }
+    function chooseArtilleryTarget(candidates: Enemy[], damage: number, splash: number) {
+      const remainingHp = new Map(candidates.map(enemy => [enemy.id, Math.max(0, enemy.hp - incomingDamageAt(enemy))]));
+      const viableTargets = candidates.filter(enemy => (remainingHp.get(enemy.id) ?? 0) > 0);
+      let bestTarget: Enemy | undefined, bestScore = -Infinity;
+      for (const target of viableTargets) {
+        const usefulBlastDamage = candidates.reduce((total, enemy) => {
+          const distance = Math.hypot(enemy.x - target.x, enemy.y - target.y);
+          if (distance > splash) return total;
+          const blastDamage = damage * (1 - distance / (splash * 1.8));
+          return total + Math.min(remainingHp.get(enemy.id) ?? 0, blastDamage);
+        }, 0);
+        const score = usefulBlastDamage + target.index * 0.001;
+        if (score > bestScore) { bestTarget = target; bestScore = score; }
+      }
+      return bestTarget;
     }
     function laserStrike(from: THREE.Vector3, target: Enemy, damage: number, color: number) {
       const to = target.group.position.clone().add(new THREE.Vector3(0, 0.48, 0)), direction = to.clone().sub(from), length = direction.length(), midpoint = from.clone().add(to).multiplyScalar(0.5);
@@ -1232,7 +1257,9 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         if (isMoving) continue;
         const terrainX = clamp(Math.round(s.x), 0, GRID_W - 1), terrainY = clamp(Math.round(s.y), 0, GRID_H - 1);
         const stats = TURRET_STATS[s.kind], levelDamage = 1 + (s.level - 1) * 0.42, levelSpeed = 1 + (s.level - 1) * 0.18;
-        const range = ASSETS[s.kind].range + (s.level - 1) * 0.65 + heights[terrainY][terrainX] * 0.9; const target = enemies.filter(e => e.hp > 0 && isRevealed(e.x, e.y) && Math.hypot(e.x - s.x, e.y - s.y) <= range).sort((a, b) => b.index - a.index)[0];
+        const range = ASSETS[s.kind].range + (s.level - 1) * 0.65 + heights[terrainY][terrainX] * 0.9;
+        const candidates = enemies.filter(e => e.hp > 0 && isRevealed(e.x, e.y) && Math.hypot(e.x - s.x, e.y - s.y) <= range);
+        const target = s.kind === "howitzer" || s.kind === "missile" ? chooseArtilleryTarget(candidates, stats.damage * levelDamage, stats.splash) : candidates.sort((a, b) => b.index - a.index)[0];
         if (target) {
           turnToward(s.group, Math.atan2(-(target.x - s.x), -(target.y - s.y)), stats.turnSpeed, dt);
           if (s.cooldown <= 0) { const muzzle = s.group.userData.muzzle as THREE.Object3D | undefined; const from = muzzle ? muzzle.getWorldPosition(new THREE.Vector3()) : s.group.position.clone().add(new THREE.Vector3(0, 1.05, 0)); if (stats.beam) laserStrike(from, target, stats.damage * levelDamage, stats.color); else fire(from, target, stats.damage * levelDamage, stats.splash, stats.color, stats.heavy, stats.arcHeight); s.cooldown = stats.cooldown / levelSpeed; }
@@ -1273,7 +1300,15 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       }
       for (const b of [...bullets]) {
         b.t += dt * b.speed; const arc = b.arcHeight ? Math.sin(Math.min(1, b.t) * Math.PI) * b.arcHeight : 0; b.mesh.position.lerpVectors(b.from, b.to, Math.min(1, b.t)); b.mesh.position.y += arc;
-        if (b.t >= 1) { const target = enemies.find(e => e.id === b.target); if (target) { if (b.splash) enemies.forEach(e => { const d = Math.hypot(e.x - target.x, e.y - target.y); if (d <= b.splash) damageEnemy(e, b.damage * (1 - d / (b.splash * 1.8))); }); else damageEnemy(target, b.damage); burst(b.to, b.color, b.splash ? 18 : 4); } world.remove(b.mesh); bullets.splice(bullets.indexOf(b), 1); }
+        if (b.t >= 1) {
+          const target = enemies.find(e => e.id === b.target && e.hp > 0);
+          if (b.splash) {
+            const impactX = target?.x ?? b.impactX, impactY = target?.y ?? b.impactY;
+            enemies.forEach(e => { const d = Math.hypot(e.x - impactX, e.y - impactY); if (d <= b.splash) damageEnemy(e, b.damage * (1 - d / (b.splash * 1.8))); });
+            burst(target?.group.position.clone().add(new THREE.Vector3(0, 0.42, 0)) ?? b.to, b.color, 18);
+          } else if (target) { damageEnemy(target, b.damage); burst(b.to, b.color, 4); }
+          world.remove(b.mesh); bullets.splice(bullets.indexOf(b), 1);
+        }
       }
       for (const e of [...enemies]) {
         if (e.hp <= 0) {
