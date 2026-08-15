@@ -24,8 +24,12 @@ const PROJECTILE_POOL_LIMIT = 80;
 const ENEMY_COLLISION_BUCKET_SIZE = 1.12;
 const WALL_STACK_HEIGHT = 0.62;
 const WALL_CLIMB_SPEED = 0.46;
-const LIGHT_VISION_BASE = 7.2;
-const LIGHT_VISION_PER_LEVEL = 1.8;
+const BASE_VISION_RADIUS = 7.5;
+const MARINE_VISION_RADIUS = 5.5;
+const STRUCTURE_VISION_RADIUS = 4.8;
+const COMBAT_VISION_RADIUS = 6.4;
+const LIGHT_VISION_BASE = 11;
+const LIGHT_VISION_PER_LEVEL = 2.75;
 const ENEMY_TERRAIN_CLIMB_SPEED = 0.08;
 const ENEMY_TERRAIN_ROUTE_CLIMB_SPEED = 0.65;
 const ENEMY_TERRAIN_ROUTE_SLOPE_WEIGHT = 0.25;
@@ -909,12 +913,13 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     const terrainSpeedMultiplier = (from: Cell, to: Cell) => clamp(1 - (heights[to.y][to.x] - heights[from.y][from.x]) * 1.45, 0.28, 1.65);
     let visionSources: Array<{ x: number; y: number; radius: number }> = [], fogTimer = 0;
     function rebuildVision() {
-      visionSources = [{ x: baseCell.x, y: baseCell.y, radius: 4.2 }];
-      marines.forEach(m => visionSources.push({ x: m.x, y: m.y, radius: 3.15 }));
+      visionSources = [{ x: baseCell.x, y: baseCell.y, radius: BASE_VISION_RADIUS }];
+      marines.forEach(m => visionSources.push({ x: m.x, y: m.y, radius: MARINE_VISION_RADIUS }));
       structures.forEach(s => {
         if (s.kind === "light") visionSources.push({ x: s.x, y: s.y, radius: LIGHT_VISION_BASE + (s.level - 1) * LIGHT_VISION_PER_LEVEL });
-        else if (isCombatStructure(s)) visionSources.push({ x: s.x, y: s.y, radius: 3.7 + (s.level - 1) * 0.35 });
-        else if (s.kind === "barracks") visionSources.push({ x: s.x, y: s.y, radius: 3.2 });
+        else if (isCombatStructure(s)) visionSources.push({ x: s.x, y: s.y, radius: COMBAT_VISION_RADIUS + (s.level - 1) * 0.6 });
+        else if (s.kind === "barracks") visionSources.push({ x: s.x, y: s.y, radius: 5.8 });
+        else visionSources.push({ x: s.x, y: s.y, radius: STRUCTURE_VISION_RADIUS });
       });
     }
     function visibilityStrength(x: number, y: number) {
