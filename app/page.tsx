@@ -1155,7 +1155,7 @@ export default function Home() {
       <aside className="build-panel">
         <div className="panel-title"><small>FORWARD ENGINEERING</small><b>DEPLOYABLE ASSETS</b></div>
         {(Object.keys(ASSETS) as AssetKey[]).map(key => { const a = ASSETS[key]; return <button key={key} className={`asset ${selected === key ? "active" : ""}`} onClick={() => setSelected(key)} style={{ "--asset-color": a.accent } as React.CSSProperties}><span>{a.icon}</span><div><b>{a.name}</b><small>{a.role}</small></div><em>{a.cost}</em></button>; })}
-        <div className="intel"><span>FIELD INTEL</span><p>Weapons only engage revealed hostiles. Friendly units expose nearby ground; Sentinel light towers reveal much larger areas. Helios towers strike visible targets with an instant laser beam. Shift + right-click salvages.</p></div>
+        <div className="intel"><span>FIELD INTEL</span><p>Weapons only engage revealed hostiles. Sentinel light towers expose wide areas and Helios towers strike visible targets instantly. Walls can be stacked; stalkers and razortails climb them. Shift + right-click salvages.</p></div>
       </aside>
       <footer className="controls"><span><kbd>DRAG BOX</kbd> SELECT UNITS</span><span><kbd>RIGHT CLICK</kbd> FORMATION MOVE</span><span><kbd>MIDDLE DRAG</kbd> ORBIT</span><span><kbd>WASD</kbd> GLIDE CAMERA</span><span><kbd>SPACE</kbd> START WAVE</span><span className="online">● GITHUB PAGES</span></footer>
     </main>
