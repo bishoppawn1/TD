@@ -977,6 +977,20 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
     function syncHealthBar(group: THREE.Group) {
       const bar = group.userData.healthBar as THREE.Group | undefined; if (!bar) return; bar.position.copy(group.position).add(new THREE.Vector3(0, group.userData.healthOffset as number, 0)); bar.quaternion.copy(camera.quaternion);
     }
+    function disposeObjectResources(root: THREE.Object3D, disposeGeometry = true) {
+      const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>(), textures = new Set<THREE.Texture>();
+      root.traverse(node => {
+        if (disposeGeometry && node instanceof THREE.Mesh) geometries.add(node.geometry);
+        if (!(node instanceof THREE.Mesh || node instanceof THREE.Sprite)) return;
+        const nodeMaterials = Array.isArray(node.material) ? node.material : [node.material];
+        nodeMaterials.forEach(material => {
+          materials.add(material);
+          Object.values(material as unknown as Record<string, unknown>).forEach(value => { if (value instanceof THREE.Texture) textures.add(value); });
+        });
+      });
+      textures.forEach(texture => texture.dispose()); materials.forEach(material => material.dispose()); if (disposeGeometry) geometries.forEach(geometry => geometry.dispose());
+    }
+    function discardWorldObject(root: THREE.Object3D) { world.remove(root); disposeObjectResources(root); }
     function removeHealthBar(group: THREE.Group) {
       const bar = group.userData.healthBar as THREE.Group | undefined; if (bar) world.remove(bar); (group.userData.tierTexture as THREE.CanvasTexture | undefined)?.dispose(); (group.userData.stackTexture as THREE.CanvasTexture | undefined)?.dispose(); (group.userData.stackBadge as THREE.Sprite | undefined)?.material.dispose(); group.userData.healthBar = undefined; group.userData.healthFill = undefined; group.userData.tierBadge = undefined; group.userData.tierTexture = undefined; group.userData.tierCanvas = undefined; group.userData.stackBadge = undefined; group.userData.stackTexture = undefined; group.userData.stackCanvas = undefined;
     }
@@ -1049,7 +1063,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
         hostileProjectiles.forEach(shot => { if (shot.targetType === "marine" && absorbedIds.has(shot.targetId)) shot.targetId = representative.id; });
         enemies.forEach(enemy => { if (enemy.targetType === "marine" && enemy.targetId !== null && absorbedIds.has(enemy.targetId)) { enemy.targetId = representative.id; enemy.pathTimer = 0; } });
         for (const marine of absorbed) {
-          selectedMarines.delete(marine.id); removeHealthBar(marine.group); world.remove(marine.group); marines.splice(marines.indexOf(marine), 1);
+          selectedMarines.delete(marine.id); removeHealthBar(marine.group); discardWorldObject(marine.group); marines.splice(marines.indexOf(marine), 1);
         }
         syncMarineStackState(representative); changed = true;
       }
@@ -1078,7 +1092,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
     function releaseProjectile(projectile: THREE.Object3D, pool: ProjectilePool) {
       world.remove(projectile); projectile.visible = false;
       const poolItems = pool === "rocket" ? rocketProjectilePool : pool === "heavy" ? heavyProjectilePool : lightProjectilePool;
-      if (poolItems.length < PROJECTILE_POOL_LIMIT) poolItems.push(projectile as never);
+      if (poolItems.length < PROJECTILE_POOL_LIMIT) poolItems.push(projectile as never); else disposeObjectResources(projectile, false);
     }
     const isMobileEmplacement = (s: Structure) => s.kind === "rifle" || s.kind === "howitzer";
     const isCombatStructure = (s: Structure): s is Structure & { kind: CombatKey } => s.kind in TURRET_STATS;
@@ -1335,18 +1349,18 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       const collapsingWalls = isWall(s) ? structures.filter(other => isWall(other) && other.x === s.x && other.y === s.y && other.stackLevel >= s.stackLevel) : [];
       const collapsingWallIds = new Set(collapsingWalls.map(wall => wall.id));
       if (isWall(s)) {
-        structures.filter(other => other.mountedOn !== undefined && collapsingWallIds.has(other.mountedOn)).forEach(other => { selectedEmplacements.delete(other.id); burst(other.group.position, 0xff794f, 10); removeHealthBar(other.group); world.remove(other.group); structures.splice(structures.indexOf(other), 1); });
+        structures.filter(other => other.mountedOn !== undefined && collapsingWallIds.has(other.mountedOn)).forEach(other => { selectedEmplacements.delete(other.id); burst(other.group.position, 0xff794f, 10); removeHealthBar(other.group); discardWorldObject(other.group); structures.splice(structures.indexOf(other), 1); });
         structures.filter(other => other.mountTarget !== undefined && collapsingWallIds.has(other.mountTarget)).forEach(other => { other.mountTarget = undefined; other.movePath = []; other.pathIndex = 0; other.targetX = other.x; other.targetY = other.y; });
         marines.filter(m => m.mountedOn !== undefined && collapsingWallIds.has(m.mountedOn)).forEach(m => { m.mountedOn = undefined; m.lift = 0; damageMarine(m, 35); m.targetX = clamp(m.x + 1, 0, GRID_W - 1); m.targetY = m.y; m.movePath = []; m.pathIndex = 0; });
         marines.filter(m => m.mountTarget !== undefined && collapsingWallIds.has(m.mountTarget)).forEach(m => { m.mountTarget = undefined; m.movePath = []; m.pathIndex = 0; m.targetX = m.x; m.targetY = m.y; });
-        collapsingWalls.filter(wall => wall !== s).forEach(wall => { burst(wall.group.position, 0xff794f, 7); removeHealthBar(wall.group); world.remove(wall.group); structures.splice(structures.indexOf(wall), 1); });
+        collapsingWalls.filter(wall => wall !== s).forEach(wall => { burst(wall.group.position, 0xff794f, 7); removeHealthBar(wall.group); discardWorldObject(wall.group); structures.splice(structures.indexOf(wall), 1); });
       }
       selectedEmplacements.delete(s.id);
       if (selectedBarracksId === s.id) { selectedBarracksId = null; publishBarracksSelection(); }
       publishStructureSelection();
       if (salvaged && !testerMode) credits += Math.floor(ASSETS[s.kind].cost * 0.6);
       burst(s.group.position.clone().add(new THREE.Vector3(0, 0.5, 0)), salvaged ? 0x9dff8b : 0xff553f, salvaged ? 5 : 15);
-      removeHealthBar(s.group); world.remove(s.group); structures.splice(structures.indexOf(s), 1);
+      removeHealthBar(s.group); discardWorldObject(s.group); structures.splice(structures.indexOf(s), 1);
       if (s.kind === "trench") refreshTrenchConnections();
       invalidateEnemyRoutes();
     }
@@ -1601,7 +1615,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       e.retaliateAgainstId = sourceStructureId; e.pathTimer = 0;
     }
     function restart() {
-      [...structures, ...enemies, ...marines].forEach(o => { removeHealthBar(o.group); world.remove(o.group); }); bullets.forEach(b => world.remove(b.mesh)); hostileProjectiles.forEach(p => world.remove(p.group)); particles.forEach(p => world.remove(p.mesh));
+      [...structures, ...enemies, ...marines].forEach(o => { removeHealthBar(o.group); discardWorldObject(o.group); }); bullets.forEach(b => releaseProjectile(b.mesh, b.pool)); hostileProjectiles.forEach(p => discardWorldObject(p.group)); particles.forEach(p => discardWorldObject(p.mesh));
       structures = []; enemies = []; marines = []; bullets = []; hostileProjectiles = []; particles = []; enemyRouteCache.clear(); routeRevision++; selectedMarines.clear(); selectedEmplacements.clear(); selectedBarracksId = null; callbacks.current.onUnitSelected(null); callbacks.current.onBarracksSelected(null); credits = testerMode ? Infinity : 750; integrity = 100; wave = 0; kills = 0; active = false; buildTimer = 0; gameOver = false; victory = false; spawnLeft = 0; spawnTimer = 0; assaultFront = 0;
       deployStartingForces(); message(testerMode ? "UNIT TEST RANGE RESET · UNLIMITED ASSETS ONLINE" : "COMMAND SYSTEMS RESET · AWAITING DEPLOYMENT"); emitHud(true);
     }
@@ -1874,7 +1888,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
           } else {
             const target = marines.find(m => m.id === shot.targetId); if (target) { const damage = shot.damage * (isEntrenched(target) ? TRENCH_DAMAGE_MULTIPLIER : 1); damageMarine(target, damage); }
           }
-          burst(shot.to, shot.color, shot.impactCount); world.remove(shot.group); hostileProjectiles.splice(hostileProjectiles.indexOf(shot), 1);
+          burst(shot.to, shot.color, shot.impactCount); discardWorldObject(shot.group); hostileProjectiles.splice(hostileProjectiles.indexOf(shot), 1);
         }
       }
       for (const b of [...bullets]) {
@@ -1892,12 +1906,12 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
         if (e.hp <= 0) {
           const deathColor = e.kind === "flyer" ? 0x79e8ff : e.kind === "broodmother" ? 0xff73aa : e.kind === "spitter" ? 0x58ff96 : e.kind === "razortail" ? 0xe66bff : e.kind === "stalker" ? 0x58ddff : e.kind === "strider" ? 0xffe56d : e.kind === "prowler" ? 0xffb36a : 0xff573e;
           const deathCount = e.kind === "brute" ? 24 : e.kind === "broodmother" ? 22 : e.kind === "razortail" ? 20 : e.kind === "flyer" ? 15 : e.kind === "strider" ? 14 : e.kind === "prowler" ? 13 : e.kind === "stalker" ? 9 : 12;
-          if (!testerMode) credits += e.reward; kills++; burst(e.group.position.clone().add(new THREE.Vector3(0, 0.4, 0)), deathColor, deathCount); removeHealthBar(e.group); world.remove(e.group); enemies.splice(enemies.indexOf(e), 1); continue;
+          if (!testerMode) credits += e.reward; kills++; burst(e.group.position.clone().add(new THREE.Vector3(0, 0.4, 0)), deathColor, deathCount); removeHealthBar(e.group); discardWorldObject(e.group); enemies.splice(enemies.indexOf(e), 1); continue;
         }
-        if (e.targetType === "base" && Math.hypot(e.x - baseCell.x, e.y - baseCell.y) < 0.22) { integrity = Math.max(0, integrity - e.damage); burst(base.position.clone().add(new THREE.Vector3(0, 1, 0)), 0xff4a31, 14); removeHealthBar(e.group); world.remove(e.group); enemies.splice(enemies.indexOf(e), 1); if (integrity <= 0) { gameOver = true; active = false; message("COMMAND POST OVERRUN · SECTOR LOST"); } }
+        if (e.targetType === "base" && Math.hypot(e.x - baseCell.x, e.y - baseCell.y) < 0.22) { integrity = Math.max(0, integrity - e.damage); burst(base.position.clone().add(new THREE.Vector3(0, 1, 0)), 0xff4a31, 14); removeHealthBar(e.group); discardWorldObject(e.group); enemies.splice(enemies.indexOf(e), 1); if (integrity <= 0) { gameOver = true; active = false; message("COMMAND POST OVERRUN · SECTOR LOST"); } }
       }
-      for (const m of [...marines]) if (!m.memberHp.length) { selectedMarines.delete(m.id); burst(m.group.position.clone().add(new THREE.Vector3(0, 0.5, 0)), 0xff5f47, 9); removeHealthBar(m.group); world.remove(m.group); marines.splice(marines.indexOf(m), 1); message(`${MARINE_STATS[m.kind].name.toUpperCase()} KILLED IN ACTION`); }
-      for (const p of [...particles]) { p.life -= dt; p.velocity.y -= dt * 2.6; p.mesh.position.addScaledVector(p.velocity, dt); (p.mesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, p.life / p.maxLife); if (p.life <= 0) { world.remove(p.mesh); particles.splice(particles.indexOf(p), 1); } }
+      for (const m of [...marines]) if (!m.memberHp.length) { selectedMarines.delete(m.id); burst(m.group.position.clone().add(new THREE.Vector3(0, 0.5, 0)), 0xff5f47, 9); removeHealthBar(m.group); discardWorldObject(m.group); marines.splice(marines.indexOf(m), 1); message(`${MARINE_STATS[m.kind].name.toUpperCase()} KILLED IN ACTION`); }
+      for (const p of [...particles]) { p.life -= dt; p.velocity.y -= dt * 2.6; p.mesh.position.addScaledVector(p.velocity, dt); (p.mesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, p.life / p.maxLife); if (p.life <= 0) { discardWorldObject(p.mesh); particles.splice(particles.indexOf(p), 1); } }
       if (active && spawnLeft === 0 && enemies.length === 0) {
         active = false;
         if (testerMode) { buildTimer = 0; message(`UNIT TEST WAVE ${String(wave).padStart(2, "0")} COMPLETE · RANGE READY TO RERUN`); }
