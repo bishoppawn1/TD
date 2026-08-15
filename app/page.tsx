@@ -14,6 +14,8 @@ const MAX_WAVES = 25;
 const ALIEN_SPEED_MULTIPLIER = 1.8;
 const ENEMY_SWARM_MULTIPLIER = 5;
 const MAX_ACTIVE_ENEMIES = 90;
+const MIN_ALIENS_PER_GATE_BURST = 10;
+const MAX_ALIENS_PER_GATE_BURST = 18;
 const TARGET_FRAME_RATE = 45;
 const ENEMY_SEPARATION_DISTANCE = 0.48;
 const WALL_STACK_HEIGHT = 0.62;
@@ -1064,7 +1066,12 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       if (credits < stats.cost) return message(`${stats.name.toUpperCase()} REQUIRES ${stats.cost} COMMAND CREDITS`);
       credits -= stats.cost; const n = marines.length; spawnMarine(kind, clamp(barracks.x + 0.6 + (n % 3) * 0.28, 0, GRID_W - 1), clamp(barracks.y - 0.7 + (n % 2) * 0.45, 0, GRID_H - 1)); publishBarracksSelection(); message(`${stats.name.toUpperCase()} DEPLOYED INSTANTLY · DRAG A BOX TO ADD THEM TO A SQUAD`); emitHud(true);
     }
-    const assaultOffsets: Cell[] = [{ x: 0, y: 0 }, { x: 0.24, y: 0.18 }, { x: -0.24, y: 0.18 }, { x: 0.18, y: -0.24 }];
+    const assaultOffsets: Cell[] = [
+      { x: 0, y: 0 }, { x: 0.28, y: 0.16 }, { x: -0.28, y: 0.16 }, { x: 0.18, y: -0.27 }, { x: -0.18, y: -0.27 },
+      { x: 0.52, y: 0.34 }, { x: -0.52, y: 0.34 }, { x: 0.48, y: -0.34 }, { x: -0.48, y: -0.34 }, { x: 0, y: 0.5 },
+      { x: 0.72, y: 0 }, { x: -0.72, y: 0 }, { x: 0.3, y: 0.62 }, { x: -0.3, y: 0.62 }, { x: 0, y: -0.62 },
+      { x: 0.68, y: 0.58 }, { x: -0.68, y: 0.58 }, { x: 0.66, y: -0.56 },
+    ];
     function spawnEnemy(spawnCell: Cell, formationIndex = 0) {
       const weights: Array<[AlienKind, number]> = [
         ["drone", Math.max(30, 82 - wave * 2)],
@@ -1083,14 +1090,18 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       enemies.push({ id: nextId++, kind, x: spawnX, y: spawnY, hp, maxHp: hp, speed: stats.speed * ALIEN_SPEED_MULTIPLIER * (1 + wave * 0.008), damage: stats.damage * (1 + wave * 0.022), reward: stats.reward, path: [], index: 0, group, hitFlash: 0, attackCooldown: Math.random() * 0.35, pathTimer: 0, targetBiasSeed: Math.random(), targetId: null, targetType: "base" });
     }
     function spawnAssaultGroup() {
-      const groupSize = Math.min(spawnLeft, MAX_ACTIVE_ENEMIES - enemies.length, Math.min(8, 4 + Math.floor(wave / 4)));
+      const aliensPerGate = Math.min(MAX_ALIENS_PER_GATE_BURST, MIN_ALIENS_PER_GATE_BURST + Math.floor((wave - 1) / 3) * 2);
+      const groupSize = Math.min(spawnLeft, MAX_ACTIVE_ENEMIES - enemies.length, aliensPerGate * spawnCells.length);
       if (groupSize <= 0) return;
+      const gateCounts = Array.from({ length: spawnCells.length }, () => 0);
       for (let i = 0; i < groupSize; i++) {
         const frontIndex = (assaultFront + i) % spawnCells.length, formationIndex = Math.floor(i / spawnCells.length);
-        spawnEnemy(spawnCells[frontIndex], formationIndex);
+        spawnEnemy(spawnCells[frontIndex], formationIndex); gateCounts[frontIndex]++;
       }
       spawnLeft -= groupSize; assaultFront = (assaultFront + 1 + Math.floor(Math.random() * 2)) % spawnCells.length;
-      const activeFronts = Math.min(spawnCells.length, groupSize); message(`CONTACT · ${groupSize}-ALIEN ASSAULT GROUP ACROSS ${activeFronts} FRONTS`);
+      const smallestGateBurst = Math.min(...gateCounts.filter(count => count > 0)), largestGateBurst = Math.max(...gateCounts);
+      const gateBurstLabel = smallestGateBurst === largestGateBurst ? `${smallestGateBurst} PER GATE` : `${smallestGateBurst}–${largestGateBurst} PER GATE`;
+      message(`CONTACT · ${groupSize}-ALIEN MASS SURGE · ${gateBurstLabel}`);
     }
     function startWave() {
       if (active || gameOver) return;
@@ -1242,7 +1253,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       const cameraStep = cameraVelocity.clone().multiplyScalar(dt); camera.position.add(cameraStep); controls.target.add(cameraStep); controls.target.x = clamp(controls.target.x, -21, 21); controls.target.z = clamp(controls.target.z, -16, 16);
       if (active && spawnLeft > 0 && enemies.length < MAX_ACTIVE_ENEMIES) {
         spawnTimer -= dt;
-        if (spawnTimer <= 0) { spawnAssaultGroup(); spawnTimer = (Math.max(1.15, 2.45 - wave * 0.045) + Math.random() * 0.55) / ENEMY_SWARM_MULTIPLIER; }
+        if (spawnTimer <= 0) { spawnAssaultGroup(); spawnTimer = Math.max(1.8, 3.15 - wave * 0.045) + Math.random() * 0.55; }
       }
       updateFogOfWar(dt);
       const enemyBuckets = new Map<string, Enemy[]>();

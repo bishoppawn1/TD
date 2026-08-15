@@ -36,6 +36,7 @@ Protect the command post through all 25 enemy waves.
 - Every map begins with five infantry and eight free structures: Ridge favors a balanced sentry screen, Basin starts with long-range fire support, and Divide receives close-range chokepoint defenses.
 - Razorback Ridge is the balanced high-ground map, Cinder Basin exposes a low central defense to encirclement, and Blackglass Divide uses sheer multi-level mesas and deep approach channels.
 - Every battlefield has three alien portals that pressure distinct approaches to the command post.
+- Alien portals release synchronized mass surges instead of single-file trickles: opening waves deploy at least ten hostiles per gate in each burst, and later waves increase the per-gate burst size.
 - The battlefield is covered by dynamic fog of war. Friendly infantry, combat defenses, the barracks, and the command post reveal limited areas around themselves.
 - Hostiles outside all friendly vision radii are hidden and cannot be targeted by weapons until they enter a revealed area.
 - Sentinel light towers project sweeping searchlights and reveal a substantially wider area than ordinary units. They can be mounted on top of Hesco or Bastion walls.
