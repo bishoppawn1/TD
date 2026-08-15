@@ -30,7 +30,7 @@ Protect the command post through all 25 enemy waves.
 
 ## Battlefield
 
-- The battlefield is a 24-by-18 tile 3D grid with varied elevation.
+- Every battlefield uses a 32-by-24 construction grid with varied elevation, providing 768 playable cells and substantially longer approaches than the original theater dimensions.
 - The player selects a battlefield during the opening briefing and can return to the selector between waves.
 - Each map changes terrain elevation, ground palette, command-post position, invasion-portal positions, and the opening friendly deployment.
 - Every map begins with five infantry and eight free structures: Ridge favors a balanced sentry screen, Basin starts with long-range fire support, and Divide receives close-range chokepoint defenses.
@@ -89,13 +89,17 @@ A non-attacking reconnaissance structure with rotating searchlights. It reveals 
 
 A non-attacking fortification used to alter enemy paths and create kill zones. Walls can be stacked vertically without a height limit and include access stairs for friendly units ordered onto the top section.
 
+### Infantry Trench — 85 credits
+
+A recessed earthwork that protects up to four infantry with 40 percent incoming-damage reduction. Cardinally adjacent trenches automatically remove their shared sandbag wall and form one continuous duckboard-lined passage.
+
 ### Shock Mine — 100 credits
 
 A single-use proximity explosive. It detonates when an enemy comes close and deals area damage. Mines do not block enemy movement.
 
 ### Field Barracks — 425 credits
 
-A support structure where the player can recruit riflemen, heavy gunners, combat medics, and rocketeers after a short training cooldown.
+A support structure where the player can instantly recruit riflemen, heavy gunners, combat medics, and rocketeers. There is no training timer or recruitment cooldown; command credits are the only limit.
 
 ## Friendly Units
 
