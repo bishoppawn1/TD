@@ -26,17 +26,19 @@ Protect the command post through all 25 enemy waves.
 4. Watch defenses engage the swarm and adjust the layout between or during attacks.
 5. Earn credits from eliminations and wave-completion resupply.
 6. Repair the strategy by adding, repositioning through salvage, or replacing defenses.
-7. Survive all eight waves.
+7. Survive all 25 waves.
 
 ## Battlefield
 
-- Every battlefield uses a 32-by-24 construction grid with varied elevation, providing 768 playable cells and substantially longer approaches than the original theater dimensions.
+- Every battlefield uses a square 44-by-44 construction grid with varied elevation, providing 1,936 playable cells and long, wide approaches.
 - The player selects a battlefield during the opening briefing and can return to the selector between waves.
 - Each map changes terrain elevation, ground palette, command-post position, invasion-portal positions, and the opening friendly deployment.
-- Every map begins with five infantry and eight free structures: Ridge favors a balanced sentry screen, Basin starts with long-range fire support, and Divide receives close-range chokepoint defenses.
-- Razorback Ridge is the balanced high-ground map, Cinder Basin exposes a low central defense to encirclement, and Blackglass Divide uses sheer multi-level mesas and deep approach channels.
-- Every battlefield has three alien portals that pressure distinct approaches to the command post.
-- Alien portals release synchronized mass surges instead of single-file trickles: opening waves deploy at least twenty hostiles per gate in each burst, and later waves increase the per-gate burst size to thirty.
+- Every map begins with five infantry and eight free structures tailored to its terrain and invasion pattern.
+- Razorback Expanse is a vast open frontier with long sightlines; Cinder Basin exposes a low defense to encirclement; and Blackglass Divide uses sheer multi-level mesas and deep approach channels.
+- Temple of Dust places the command post in the center of ancient ruins. High stone barriers, thin elevated walls, pillars, and obelisks divide eight invasion routes arriving from every side.
+- The Breeding World is an alien homeworld with organic ridges, luminous growths, and twelve perimeter spawning pits surrounding a central command post.
+- Portal counts vary by battlefield. The homeworld more than doubles the usual wave population, deploys it at a faster cadence, and permits up to 170 simultaneous hostiles; the temple divides smaller bursts among its eight fronts.
+- Alien portals release synchronized mass surges instead of single-file trickles. Normal maps deploy at least twenty hostiles per gate in each burst, with later waves increasing that amount to thirty.
 - The battlefield is covered by dynamic fog of war. Friendly infantry, combat defenses, the barracks, and the command post reveal limited areas around themselves.
 - Hostiles outside all friendly vision radii are hidden and cannot be targeted by weapons until they enter a revealed area.
 - Sentinel light towers project sweeping searchlights and reveal a substantially wider area than ordinary units. They can be mounted on top of Hesco or Bastion walls.

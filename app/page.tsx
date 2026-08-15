@@ -48,8 +48,8 @@ const ENEMY_STATS: Record<AlienKind, { hp: number; speed: number; damage: number
   prowler: { hp: 155, speed: 1.08, damage: 11, reward: 52, attackRange: 1.55, attackCooldown: 0.68, gait: 10.2, barHeight: 1.15 },
 };
 
-const GRID_W = 32;
-const GRID_H = 24;
+const GRID_W = 44;
+const GRID_H = 44;
 const TILE = 1.36;
 const ASSETS: Record<AssetKey, { name: string; role: string; cost: number; range: number; icon: string; accent: string }> = {
   rifle: { name: "M240 Gun Team", role: "Sustained fire · Anti-swarm", cost: 150, range: 4.7, icon: "⌖", accent: "#9fe870" },
@@ -99,7 +99,7 @@ type Particle = { mesh: THREE.Mesh; velocity: THREE.Vector3; life: number; maxLi
 type SelectedUnit = { id: number; kind: UpgradableKey; name: string; level: number; maxLevel: number; upgradeCost: number | null; damage: number; range: number; maxHp: number; support: boolean };
 type BarracksInfo = { id: number };
 type BattlefieldApi = { start: () => void; restart: () => void; rotate: () => void; upgradeSelected: () => void; recruit: (kind: MarineKind) => void };
-type MapKey = "ridge" | "basin" | "divide";
+type MapKey = "ridge" | "basin" | "divide" | "ruins" | "homeworld";
 type MapConfig = {
   key: MapKey;
   operation: string;
@@ -117,6 +117,11 @@ type MapConfig = {
   spawnCells: Cell[];
   startingStructures: Array<{ kind: AssetKey; x: number; y: number }>;
   startingMarines: Array<{ kind: MarineKind; x: number; y: number }>;
+  activeEnemyCap?: number;
+  waveMultiplier?: number;
+  burstScale?: number;
+  spawnIntervalMultiplier?: number;
+  decorAt?: (x: number, y: number) => "pillar" | "obelisk" | "growth" | null;
   heightAt: (x: number, y: number) => number;
 };
 
@@ -126,29 +131,29 @@ const steppedHeight = (height: number) => Math.max(0.04, Math.round(height / 0.1
 
 const MAPS: Record<MapKey, MapConfig> = {
   ridge: {
-    key: "ridge", operation: "NIGHTFALL", sector: "E-7", name: "Razorback Ridge", objective: "Hold the eastern ridge", terrain: "BALANCED · HIGH GROUND",
-    description: "A familiar ridgeline with defensible elevations, open southern lanes, and pressure from three separated portals.",
+    key: "ridge", operation: "NIGHTFALL", sector: "E-7", name: "Razorback Expanse", objective: "Hold the open frontier", terrain: "VAST · OPEN GROUND",
+    description: "A huge open frontier with long sightlines, gentle rises, and room to build a defense in depth before the swarm crosses the plain.",
     background: 0x07120f, ground: 0x0b1713, fog: 0x010705, hue: 0.29, saturation: 0.24,
-    baseCell: { x: 2, y: 22 }, spawnCells: [{ x: 31, y: 1 }, { x: 31, y: 22 }, { x: 15, y: 0 }],
-    startingStructures: [{ kind: "barracks", x: 4, y: 19 }, { kind: "rifle", x: 8, y: 19 }, { kind: "wall", x: 5, y: 20 }, { kind: "howitzer", x: 11, y: 20 }, { kind: "wire", x: 8, y: 22 }, { kind: "sentry", x: 9, y: 18 }, { kind: "light", x: 7, y: 16 }, { kind: "trench", x: 5, y: 16 }],
-    startingMarines: [{ kind: "rifleman", x: 4, y: 18 }, { kind: "medic", x: 5, y: 19 }, { kind: "rifleman", x: 5, y: 18 }, { kind: "gunner", x: 7, y: 18 }, { kind: "rocketeer", x: 9, y: 19 }],
+    baseCell: { x: 5, y: 37 }, spawnCells: [{ x: 43, y: 4 }, { x: 43, y: 39 }, { x: 23, y: 0 }, { x: 0, y: 8 }],
+    startingStructures: [{ kind: "barracks", x: 8, y: 34 }, { kind: "rifle", x: 12, y: 34 }, { kind: "wall", x: 9, y: 36 }, { kind: "howitzer", x: 15, y: 36 }, { kind: "wire", x: 12, y: 39 }, { kind: "sentry", x: 14, y: 32 }, { kind: "light", x: 10, y: 30 }, { kind: "trench", x: 8, y: 30 }],
+    startingMarines: [{ kind: "rifleman", x: 8, y: 33 }, { kind: "medic", x: 9, y: 34 }, { kind: "rifleman", x: 9, y: 33 }, { kind: "gunner", x: 11, y: 33 }, { kind: "rocketeer", x: 14, y: 34 }],
     heightAt: (x, y) => {
-      const rolling = Math.max(0, Math.sin(x * 0.43) + Math.cos(y * 0.55) - 0.5) * 0.25;
-      const ridge = Math.max(0, 1 - Math.hypot(x - 19, y - 14) / 7) * 0.88;
-      const northRise = Math.max(0, 1 - Math.hypot(x - 9, y - 5) / 4.9) * 0.52;
-      return (x < 4 && y > 19) || (x > 28 && y < 4) ? 0.04 : steppedHeight(rolling + ridge + northRise + 0.04);
+      const rolling = Math.max(0, Math.sin(x * 0.31) + Math.cos(y * 0.37) - 0.7) * 0.12;
+      const broadRise = Math.max(0, 1 - Math.hypot(x - 28, y - 17) / 13) * 0.34;
+      const northKnoll = Math.max(0, 1 - Math.hypot(x - 11, y - 9) / 8) * 0.22;
+      return steppedHeight(0.04 + rolling + broadRise + northKnoll);
     },
   },
   basin: {
     key: "basin", operation: "SUNSCOUR", sector: "K-12", name: "Cinder Basin", objective: "Defend the basin floor", terrain: "OPEN · ENCIRCLED",
     description: "Your command post sits low in a broad ash basin. Long sightlines help artillery, but portals wrap around both flanks.",
     background: 0x160b08, ground: 0x1d100c, fog: 0x090301, hue: 0.065, saturation: 0.34,
-    baseCell: { x: 15, y: 22 }, spawnCells: [{ x: 0, y: 1 }, { x: 31, y: 3 }, { x: 31, y: 18 }],
-    startingStructures: [{ kind: "barracks", x: 15, y: 19 }, { kind: "rifle", x: 12, y: 19 }, { kind: "wall", x: 14, y: 20 }, { kind: "howitzer", x: 18, y: 19 }, { kind: "wire", x: 16, y: 18 }, { kind: "railgun", x: 19, y: 16 }, { kind: "light", x: 15, y: 16 }, { kind: "bastion", x: 12, y: 18 }],
-    startingMarines: [{ kind: "rifleman", x: 14, y: 18 }, { kind: "medic", x: 16, y: 19 }, { kind: "rifleman", x: 16, y: 16 }, { kind: "gunner", x: 14, y: 16 }, { kind: "rocketeer", x: 18, y: 16 }],
+    baseCell: { x: 22, y: 37 }, spawnCells: [{ x: 0, y: 4 }, { x: 43, y: 5 }, { x: 43, y: 35 }, { x: 5, y: 0 }],
+    startingStructures: [{ kind: "barracks", x: 22, y: 34 }, { kind: "rifle", x: 18, y: 34 }, { kind: "wall", x: 21, y: 36 }, { kind: "howitzer", x: 26, y: 34 }, { kind: "wire", x: 23, y: 32 }, { kind: "railgun", x: 28, y: 30 }, { kind: "light", x: 22, y: 30 }, { kind: "bastion", x: 18, y: 32 }],
+    startingMarines: [{ kind: "rifleman", x: 20, y: 32 }, { kind: "medic", x: 23, y: 34 }, { kind: "rifleman", x: 24, y: 30 }, { kind: "gunner", x: 20, y: 30 }, { kind: "rocketeer", x: 26, y: 30 }],
     heightAt: (x, y) => {
-      const distance = Math.hypot(x - 15.5, y - 11.5);
-      const rim = Math.max(0, (distance - 5.7) / 9.7) * 0.96;
+      const distance = Math.hypot(x - 21.5, y - 21.5);
+      const rim = Math.max(0, (distance - 9) / 15) * 1.05;
       const dune = Math.max(0, Math.sin(x * 0.48 + y * 0.16) + Math.cos(y * 0.5) - 0.85) * 0.13;
       return steppedHeight(0.04 + rim + dune);
     },
@@ -157,21 +162,54 @@ const MAPS: Record<MapKey, MapConfig> = {
     key: "divide", operation: "BLACKGLASS", sector: "R-3", name: "Blackglass Divide", objective: "Control the fractured mesas", terrain: "CHOKEPOINTS · EXTREME HEIGHT",
     description: "Sheer, terraced volcanic mesas split the approach into deep channels. Climbers can cross the heights, but the ascent costs them time.",
     background: 0x090811, ground: 0x100f18, fog: 0x030207, hue: 0.69, saturation: 0.18,
-    baseCell: { x: 3, y: 11 }, spawnCells: [{ x: 31, y: 1 }, { x: 31, y: 22 }, { x: 16, y: 0 }],
-    startingStructures: [{ kind: "barracks", x: 5, y: 11 }, { kind: "rifle", x: 7, y: 8 }, { kind: "wall", x: 7, y: 12 }, { kind: "howitzer", x: 8, y: 15 }, { kind: "wire", x: 8, y: 9 }, { kind: "flame", x: 8, y: 11 }, { kind: "bastion", x: 7, y: 14 }, { kind: "light", x: 9, y: 12 }],
-    startingMarines: [{ kind: "rifleman", x: 5, y: 9 }, { kind: "medic", x: 5, y: 14 }, { kind: "rifleman", x: 5, y: 12 }, { kind: "gunner", x: 7, y: 9 }, { kind: "rocketeer", x: 8, y: 14 }],
+    baseCell: { x: 4, y: 22 }, spawnCells: [{ x: 43, y: 3 }, { x: 43, y: 40 }, { x: 22, y: 0 }, { x: 22, y: 43 }],
+    startingStructures: [{ kind: "barracks", x: 7, y: 22 }, { kind: "rifle", x: 9, y: 18 }, { kind: "wall", x: 9, y: 24 }, { kind: "howitzer", x: 11, y: 28 }, { kind: "wire", x: 11, y: 20 }, { kind: "flame", x: 11, y: 22 }, { kind: "bastion", x: 9, y: 26 }, { kind: "light", x: 13, y: 24 }],
+    startingMarines: [{ kind: "rifleman", x: 7, y: 19 }, { kind: "medic", x: 7, y: 26 }, { kind: "rifleman", x: 7, y: 24 }, { kind: "gunner", x: 9, y: 20 }, { kind: "rocketeer", x: 11, y: 26 }],
     heightAt: (x, y) => {
-      const terrace = (distance: number) => distance < 2.75 ? 4.32 : distance < 4.1 ? 3.2 : distance < 5.6 ? 1.76 : distance < 6.75 ? 0.64 : 0;
-      const northMesa = terrace(Math.hypot((x - 11) * 0.92, (y - 6) * 1.08));
-      const southMesa = terrace(Math.hypot((x - 20) * 0.9, (y - 18) * 1.05));
-      const fractureDistance = Math.abs((y - 11.5) - (x - 15.5) * 0.22);
+      const terrace = (distance: number) => distance < 4.2 ? 4.32 : distance < 6.1 ? 3.2 : distance < 8.2 ? 1.76 : distance < 10 ? 0.64 : 0;
+      const northMesa = terrace(Math.hypot((x - 14) * 0.92, (y - 11) * 1.08));
+      const southMesa = terrace(Math.hypot((x - 30) * 0.9, (y - 32) * 1.05));
+      const fractureDistance = Math.abs((y - 20) - (x - 22) * 0.28);
       const fracture = fractureDistance < 0.72 ? 0.56 : fractureDistance < 1.35 ? 0.24 : 0;
       const brokenGround = Math.max(0, Math.sin(x * 0.82) * Math.cos(y * 0.67)) * 0.22;
       return steppedHeight(0.08 + Math.max(northMesa, southMesa) + brokenGround - fracture);
     },
   },
+  ruins: {
+    key: "ruins", operation: "PALIMPSEST", sector: "T-9", name: "Temple of Dust", objective: "Hold the sacred center", terrain: "ANCIENT RUINS · HIGH WALLS",
+    description: "A central command post stands inside a shattered temple city. Tall perimeter ruins and thin elevated walls divide eight converging invasion routes.",
+    background: 0x15120c, ground: 0x211d14, fog: 0x080603, hue: 0.115, saturation: 0.2,
+    baseCell: { x: 22, y: 22 }, spawnCells: [{ x: 0, y: 7 }, { x: 0, y: 36 }, { x: 43, y: 7 }, { x: 43, y: 36 }, { x: 7, y: 0 }, { x: 36, y: 0 }, { x: 7, y: 43 }, { x: 36, y: 43 }],
+    startingStructures: [{ kind: "barracks", x: 20, y: 20 }, { kind: "rifle", x: 24, y: 20 }, { kind: "wall", x: 19, y: 22 }, { kind: "howitzer", x: 25, y: 24 }, { kind: "wire", x: 22, y: 18 }, { kind: "flak", x: 22, y: 25 }, { kind: "light", x: 22, y: 16 }, { kind: "bastion", x: 18, y: 24 }],
+    startingMarines: [{ kind: "rifleman", x: 21, y: 20 }, { kind: "medic", x: 23, y: 23 }, { kind: "rifleman", x: 24, y: 22 }, { kind: "gunner", x: 20, y: 24 }, { kind: "rocketeer", x: 25, y: 21 }],
+    burstScale: 0.42,
+    decorAt: (x, y) => ((x === 13 || x === 30) && (y === 13 || y === 30)) || ((x === 10 || x === 33) && y % 8 === 4) ? "pillar" : (x + y * 3) % 41 === 0 ? "obelisk" : null,
+    heightAt: (x, y) => {
+      const inGate = (value: number) => [7, 22, 36].some(gate => Math.abs(value - gate) <= 2);
+      const outerWall = ((x === 11 || x === 32) && y >= 6 && y <= 37 && !inGate(y)) || ((y === 11 || y === 32) && x >= 6 && x <= 37 && !inGate(x));
+      const thinWall = ((x === 16 || x === 27) && y >= 14 && y <= 29 && Math.abs(y - 22) > 2) || ((y === 16 || y === 27) && x >= 14 && x <= 29 && Math.abs(x - 22) > 2);
+      const templePad = Math.max(0, 1 - Math.hypot(x - 22, y - 22) / 7) * 0.42;
+      return steppedHeight(0.08 + templePad + (outerWall ? 2.55 : thinWall ? 1.9 : 0));
+    },
+  },
+  homeworld: {
+    key: "homeworld", operation: "THORNSPEAR", sector: "XENO-0", name: "The Breeding World", objective: "Survive the living planet", terrain: "ALIEN HOMEWORLD · TOTAL SURGE",
+    description: "The command post is surrounded by spawning pits, luminous growths, and organic ridges. Twelve perimeter gates feed a relentless homeworld swarm.",
+    background: 0x100619, ground: 0x160b20, fog: 0x050108, hue: 0.78, saturation: 0.46,
+    baseCell: { x: 22, y: 22 }, spawnCells: [{ x: 0, y: 5 }, { x: 0, y: 16 }, { x: 0, y: 38 }, { x: 43, y: 5 }, { x: 43, y: 27 }, { x: 43, y: 38 }, { x: 7, y: 0 }, { x: 22, y: 0 }, { x: 37, y: 0 }, { x: 7, y: 43 }, { x: 22, y: 43 }, { x: 37, y: 43 }],
+    startingStructures: [{ kind: "barracks", x: 20, y: 20 }, { kind: "rifle", x: 24, y: 20 }, { kind: "wall", x: 19, y: 22 }, { kind: "missile", x: 25, y: 24 }, { kind: "wire", x: 22, y: 18 }, { kind: "flak", x: 22, y: 25 }, { kind: "light", x: 22, y: 16 }, { kind: "bastion", x: 18, y: 24 }],
+    startingMarines: [{ kind: "rifleman", x: 21, y: 20 }, { kind: "medic", x: 23, y: 23 }, { kind: "rifleman", x: 24, y: 22 }, { kind: "gunner", x: 20, y: 24 }, { kind: "rocketeer", x: 25, y: 21 }],
+    activeEnemyCap: 170, waveMultiplier: 2.15, burstScale: 0.55, spawnIntervalMultiplier: 0.58,
+    decorAt: (x, y) => Math.hypot(x - 22, y - 22) > 7 && (x * 7 + y * 13) % 23 === 0 ? "growth" : null,
+    heightAt: (x, y) => {
+      const centralCalm = clamp(Math.hypot(x - 22, y - 22) / 9, 0, 1);
+      const organicRidges = Math.max(0, Math.sin(x * 0.48 + y * 0.21) + Math.cos(y * 0.43 - x * 0.12) - 0.45) * 0.38;
+      const broodMound = Math.max(0, 1 - Math.hypot(x - 11, y - 10) / 7) * 1.25 + Math.max(0, 1 - Math.hypot(x - 34, y - 34) / 8) * 1.1;
+      return steppedHeight(0.08 + (organicRidges + broodMound) * centralCalm);
+    },
+  },
 };
-const MAP_ORDER: MapKey[] = ["ridge", "basin", "divide"];
+const MAP_ORDER: MapKey[] = ["ridge", "basin", "divide", "ruins", "homeworld"];
 
 function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBarracksSelected, apiRef }: { selected: AssetKey; mapKey: MapKey; onHud: (h: Hud) => void; onMessage: (s: string) => void; onUnitSelected: (unit: SelectedUnit | null) => void; onBarracksSelected: (barracks: BarracksInfo | null) => void; apiRef: React.MutableRefObject<BattlefieldApi | null> }) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -186,9 +224,9 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     const map = MAPS[mapKey];
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(map.background);
-    scene.fog = new THREE.FogExp2(map.background, 0.014);
-    const camera = new THREE.PerspectiveCamera(42, host.clientWidth / host.clientHeight, 0.1, 220);
-    camera.position.set(29, 32, 34);
+    scene.fog = new THREE.FogExp2(map.background, 0.01);
+    const camera = new THREE.PerspectiveCamera(42, host.clientWidth / host.clientHeight, 0.1, 320);
+    camera.position.set(42, 46, 46);
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
     renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
     renderer.setSize(host.clientWidth, host.clientHeight);
@@ -202,8 +240,8 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
-    controls.minDistance = 20;
-    controls.maxDistance = 64;
+    controls.minDistance = 26;
+    controls.maxDistance = 92;
     controls.maxPolarAngle = Math.PI * 0.43;
     controls.minPolarAngle = Math.PI * 0.2;
     controls.target.set(0, 0, 0);
@@ -216,7 +254,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     sun.position.set(-14, 24, 12);
     sun.castShadow = true;
     sun.shadow.mapSize.set(1024, 1024);
-    sun.shadow.camera.left = -33; sun.shadow.camera.right = 33; sun.shadow.camera.top = 33; sun.shadow.camera.bottom = -33;
+    sun.shadow.camera.left = -45; sun.shadow.camera.right = 45; sun.shadow.camera.top = 45; sun.shadow.camera.bottom = -45;
     scene.add(sun);
     const rim = new THREE.DirectionalLight(0x55ffb0, 0.9);
     rim.position.set(18, 9, -18);
@@ -256,6 +294,27 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       if ((x * 13 + y * 19) % 17 === 0) {
         const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.12 + ((x + y) % 3) * 0.05, 0), new THREE.MeshStandardMaterial({ color: 0x526159, roughness: 1 }));
         rock.scale.setScalar(0.72); rock.position.copy(p).add(new THREE.Vector3(0.3, 0.09, -0.24)); rock.rotation.set(x, y, x + y); rock.castShadow = true; world.add(rock);
+      }
+      const decor = map.decorAt?.(x, y);
+      if (decor) {
+        const landmark = new THREE.Group(); landmark.position.copy(p); world.add(landmark);
+        if (decor === "pillar") {
+          cyl(landmark, [0.38, 0.5, 0.25, 8], [0, 0.13, 0], 0x75684e);
+          cyl(landmark, [0.22, 0.27, 2.75, 8], [0, 1.55, 0], 0x9a8965);
+          box(landmark, [0.7, 0.22, 0.7], [0, 2.95, 0], 0x79694e);
+        } else if (decor === "obelisk") {
+          const stone = new THREE.Mesh(new THREE.ConeGeometry(0.42, 2.8, 4), new THREE.MeshStandardMaterial({ color: 0x655b49, roughness: 0.95 }));
+          stone.position.y = 1.4; stone.rotation.y = Math.PI / 4; landmark.add(stone);
+        } else {
+          const core = new THREE.Mesh(new THREE.SphereGeometry(0.3, 9, 7), new THREE.MeshStandardMaterial({ color: 0x5a176f, emissive: 0x7d0c9c, emissiveIntensity: 1.4 })); core.position.y = 0.38; landmark.add(core);
+          for (let branch = 0; branch < 3; branch++) {
+            const angle = branch * Math.PI * 2 / 3 + (x + y) * 0.2;
+            const tip = new THREE.Vector3(Math.cos(angle) * 0.65, 1.1 + branch * 0.17, Math.sin(angle) * 0.65);
+            beam(landmark, new THREE.Vector3(0, 0.35, 0), tip, 0.075, 0x7d2d8e);
+            const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.13, 8, 6), new THREE.MeshBasicMaterial({ color: 0xe84dff })); bulb.position.copy(tip); landmark.add(bulb);
+          }
+        }
+        shadowify(landmark);
       }
     }
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(130, 130), new THREE.MeshStandardMaterial({ color: map.ground, roughness: 1 }));
@@ -751,6 +810,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     }
 
     const baseCell = map.baseCell, spawnCells = map.spawnCells;
+    const maxActiveEnemies = map.activeEnemyCap ?? MAX_ACTIVE_ENEMIES;
     const base = makeBase(); base.position.copy(worldPos(baseCell.x, baseCell.y)); base.rotation.y = 0.55; world.add(base);
     const spawnBeacons = spawnCells.map((cell, index) => {
       const group = new THREE.Group();
@@ -1146,8 +1206,9 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       enemies.push({ id: nextId++, kind, x: spawnX, y: spawnY, hp, maxHp: hp, speed: stats.speed * ALIEN_SPEED_MULTIPLIER * (1 + wave * 0.008), damage: stats.damage * (1 + wave * 0.022), reward: stats.reward, path: [], index: 0, group, hitFlash: 0, attackCooldown: Math.random() * 0.35, pathTimer: 0, targetBiasSeed: Math.random(), targetId: null, targetType: "base" });
     }
     function spawnAssaultGroup() {
-      const aliensPerGate = Math.min(MAX_ALIENS_PER_GATE_BURST, MIN_ALIENS_PER_GATE_BURST + Math.floor((wave - 1) / 3) * 2);
-      const groupSize = Math.min(spawnLeft, MAX_ACTIVE_ENEMIES - enemies.length, aliensPerGate * spawnCells.length);
+      const baseAliensPerGate = Math.min(MAX_ALIENS_PER_GATE_BURST, MIN_ALIENS_PER_GATE_BURST + Math.floor((wave - 1) / 3) * 2);
+      const aliensPerGate = Math.max(3, Math.round(baseAliensPerGate * (map.burstScale ?? 1)));
+      const groupSize = Math.min(spawnLeft, maxActiveEnemies - enemies.length, aliensPerGate * spawnCells.length);
       if (groupSize <= 0) return;
       const gateCounts = Array.from({ length: spawnCells.length }, () => 0);
       for (let i = 0; i < groupSize; i++) {
@@ -1162,7 +1223,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     function startWave() {
       if (active || gameOver) return;
       if (wave >= MAX_WAVES) { victory = true; gameOver = true; message("SECTOR SECURED · ALL WAVES REPELLED"); emitHud(true); return; }
-      buildTimer = 0; wave++; active = true; spawnLeft = (14 + Math.floor(wave * 2.35)) * ENEMY_SWARM_MULTIPLIER; spawnTimer = 0.45; assaultFront = Math.floor(Math.random() * spawnCells.length); message(`WAVE ${String(wave).padStart(2, "0")} INBOUND · ${spawnLeft} LIFE SIGNS · THREE FRONTS · CONSTRUCTION LOCKED`); emitHud(true);
+      buildTimer = 0; wave++; active = true; spawnLeft = Math.round((14 + Math.floor(wave * 2.35)) * ENEMY_SWARM_MULTIPLIER * (map.waveMultiplier ?? 1)); spawnTimer = 0.45; assaultFront = Math.floor(Math.random() * spawnCells.length); message(`WAVE ${String(wave).padStart(2, "0")} INBOUND · ${spawnLeft} LIFE SIGNS · ${spawnCells.length} FRONTS · CONSTRUCTION LOCKED`); emitHud(true);
     }
     function burst(at: THREE.Vector3, color: number, count = 10) {
       for (let i = 0; i < count; i++) {
@@ -1354,10 +1415,10 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       const forward = controls.target.clone().sub(camera.position); forward.y = 0; forward.normalize(); const right = new THREE.Vector3(-forward.z, 0, forward.x); const intent = new THREE.Vector3();
       if (heldKeys.has("w")) intent.add(forward); if (heldKeys.has("s")) intent.sub(forward); if (heldKeys.has("d")) intent.add(right); if (heldKeys.has("a")) intent.sub(right);
       if (intent.lengthSq()) cameraVelocity.addScaledVector(intent.normalize(), dt * 25); cameraVelocity.multiplyScalar(Math.exp(-dt * 5.2));
-      const cameraStep = cameraVelocity.clone().multiplyScalar(dt); camera.position.add(cameraStep); controls.target.add(cameraStep); controls.target.x = clamp(controls.target.x, -21, 21); controls.target.z = clamp(controls.target.z, -16, 16);
-      if (active && spawnLeft > 0 && enemies.length < MAX_ACTIVE_ENEMIES) {
+      const cameraStep = cameraVelocity.clone().multiplyScalar(dt); camera.position.add(cameraStep); controls.target.add(cameraStep); controls.target.x = clamp(controls.target.x, -30, 30); controls.target.z = clamp(controls.target.z, -30, 30);
+      if (active && spawnLeft > 0 && enemies.length < maxActiveEnemies) {
         spawnTimer -= dt;
-        if (spawnTimer <= 0) { spawnAssaultGroup(); spawnTimer = Math.max(1.15, 2.1 - wave * 0.025) + Math.random() * 0.35; }
+        if (spawnTimer <= 0) { spawnAssaultGroup(); spawnTimer = (Math.max(1.15, 2.1 - wave * 0.025) + Math.random() * 0.35) * (map.spawnIntervalMultiplier ?? 1); }
       }
       updateFogOfWar(dt);
       type EnemyTargetChoice = { type: "marine" | "structure" | "base"; id: number | null; x: number; y: number; group: THREE.Group; directDistance: number };
@@ -1613,7 +1674,7 @@ export default function Home() {
           <p>Recruit as many specialists as command credits allow. Every infantry unit deploys beside the barracks immediately.</p>
         </div>}
         <div className="camera-tools"><button onClick={() => apiRef.current?.rotate()} aria-label="Rotate camera">↻</button><span>ORBIT</span></div>
-        {briefing && <div className="briefing map-briefing"><div className="briefing-id">THEATER SELECTION // THREE ACTIVE SECTORS</div><h1>Choose the ground you hold.</h1><p>Each battlefield has a different elevation profile, command-post location, invasion portals, and opening deployment. Fog still conceals everything outside friendly vision.</p><div className="map-selector" aria-label="Available battlefields">{MAP_ORDER.map(key => { const option = MAPS[key]; return <button key={key} className={`map-option ${mapKey === key ? "active" : ""}`} aria-pressed={mapKey === key} onClick={() => selectMap(key)}><span className={`map-preview ${key}`} aria-hidden="true"><i className="base-pip" /><i className="portal-pip one" /><i className="portal-pip two" /><i className="portal-pip three" /></span><small>{option.terrain}</small><b>{option.name}</b><em>{option.objective}</em></button>; })}</div><p className="map-description"><b>OPERATION {map.operation} · SECTOR {map.sector}</b>{map.description}</p><div className="brief-grid"><span><kbd>LIGHT TOWER</kbd><b>Reveal a wide area</b></span><span><kbd>RIGHT CLICK</kbd><b>Move scouts forward</b></span><span><kbd>STACK WALLS</kbd><b>Shape every approach</b></span><span><kbd>MIDDLE DRAG</kbd><b>Orbit camera</b></span></div><button onClick={() => setBriefing(false)}>DEPLOY TO {map.name.toUpperCase()}</button></div>}
+        {briefing && <div className="briefing map-briefing"><div className="briefing-id">THEATER SELECTION // FIVE ACTIVE SECTORS</div><h1>Choose the ground you hold.</h1><p>Five huge square battlefields offer different elevation profiles, command-post locations, invasion portals, and opening deployments. Fog still conceals everything outside friendly vision.</p><div className="map-selector" aria-label="Available battlefields">{MAP_ORDER.map(key => { const option = MAPS[key]; const pipPosition = (cell: Cell) => ({ left: `${(cell.x / (GRID_W - 1)) * 100}%`, top: `${(cell.y / (GRID_H - 1)) * 100}%` }); return <button key={key} className={`map-option ${mapKey === key ? "active" : ""}`} aria-pressed={mapKey === key} onClick={() => selectMap(key)}><span className={`map-preview ${key}`} aria-hidden="true"><i className="base-pip" style={pipPosition(option.baseCell)} />{option.spawnCells.map((cell, index) => <i key={`${cell.x}-${cell.y}-${index}`} className="portal-pip" style={pipPosition(cell)} />)}</span><small>{option.terrain}</small><b>{option.name}</b><em>{option.objective}</em></button>; })}</div><p className="map-description"><b>OPERATION {map.operation} · SECTOR {map.sector}</b>{map.description}</p><div className="brief-grid"><span><kbd>LIGHT TOWER</kbd><b>Reveal a wide area</b></span><span><kbd>RIGHT CLICK</kbd><b>Move scouts forward</b></span><span><kbd>STACK WALLS</kbd><b>Shape every approach</b></span><span><kbd>MIDDLE DRAG</kbd><b>Orbit camera</b></span></div><button onClick={() => setBriefing(false)}>DEPLOY TO {map.name.toUpperCase()}</button></div>}
         {hud.gameOver && <div className={`end-card ${hud.victory ? "won" : "lost"}`}><small>{hud.victory ? "OPERATION COMPLETE" : "SIGNAL LOST"}</small><h2>{hud.victory ? `${map.name.toUpperCase()} HOLDS` : "COMMAND OVERRUN"}</h2><p>{hud.kills} hostiles eliminated across {hud.wave} waves.</p><button onClick={() => apiRef.current?.restart()}>RESTART OPERATION</button></div>}
       </section>
       <aside className={`build-panel ${hud.active || hud.gameOver ? "locked" : ""}`}>
