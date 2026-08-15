@@ -352,6 +352,19 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, apiRef }: { s
       const fill = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.072), new THREE.MeshBasicMaterial({ color: 0x7dff79, depthTest: false })); fill.position.z = 0.012; fill.renderOrder = 31; bar.add(fill);
       bar.position.copy(group.position).add(new THREE.Vector3(0, y * group.scale.y, 0)); world.add(bar); group.userData.healthBar = bar; group.userData.healthFill = fill; group.userData.healthOffset = y * group.scale.y;
     }
+    function updateTierBadge(group: THREE.Group, level: number) {
+      const bar = group.userData.healthBar as THREE.Group | undefined; if (!bar) return;
+      let canvas = group.userData.tierCanvas as HTMLCanvasElement | undefined, texture = group.userData.tierTexture as THREE.CanvasTexture | undefined, badge = group.userData.tierBadge as THREE.Sprite | undefined;
+      if (!canvas || !texture || !badge) {
+        canvas = document.createElement("canvas"); canvas.width = 128; canvas.height = 52;
+        texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace; texture.minFilter = THREE.LinearFilter;
+        badge = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false })); badge.position.set(0.82, 0, 0.025); badge.scale.set(0.42, 0.17, 1); badge.renderOrder = 32; bar.add(badge);
+        group.userData.tierCanvas = canvas; group.userData.tierTexture = texture; group.userData.tierBadge = badge;
+      }
+      const ctx = canvas.getContext("2d"); if (!ctx) return; const color = level === 3 ? "#ffd36a" : level === 2 ? "#62e8ff" : "#9fe870";
+      ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.fillStyle = "rgba(4,13,10,.96)"; ctx.fillRect(2, 2, 124, 48); ctx.strokeStyle = color; ctx.lineWidth = 4; ctx.strokeRect(3, 3, 122, 46);
+      ctx.fillStyle = color; ctx.font = "bold 30px monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(`T${level}`, 64, 28); texture.needsUpdate = true;
+    }
     function setHealthVisual(group: THREE.Group, hp: number, maxHp: number) {
       const ratio = clamp(Number.isFinite(hp / maxHp) ? hp / maxHp : 0, 0, 1); const fill = group.userData.healthFill as THREE.Mesh | undefined;
       if (fill) { fill.scale.x = Math.max(0.001, ratio); fill.position.x = -0.55 * (1 - ratio); (fill.material as THREE.MeshBasicMaterial).color.setHex(ratio > 0.55 ? 0x7dff79 : ratio > 0.25 ? 0xffbd55 : 0xff5249); }
@@ -360,7 +373,7 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, apiRef }: { s
       const bar = group.userData.healthBar as THREE.Group | undefined; if (!bar) return; bar.position.copy(group.position).add(new THREE.Vector3(0, group.userData.healthOffset as number, 0)); bar.quaternion.copy(camera.quaternion);
     }
     function removeHealthBar(group: THREE.Group) {
-      const bar = group.userData.healthBar as THREE.Group | undefined; if (bar) world.remove(bar); group.userData.healthBar = undefined; group.userData.healthFill = undefined;
+      const bar = group.userData.healthBar as THREE.Group | undefined; if (bar) world.remove(bar); (group.userData.tierTexture as THREE.CanvasTexture | undefined)?.dispose(); group.userData.healthBar = undefined; group.userData.healthFill = undefined; group.userData.tierBadge = undefined; group.userData.tierTexture = undefined; group.userData.tierCanvas = undefined;
     }
     let credits = 750, integrity = 100, wave = 0, kills = 0, active = false, gameOver = false, victory = false;
     let spawnLeft = 0, spawnTimer = 0, nextId = 1, elapsed = 0, lastHud = -1;
@@ -416,8 +429,8 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, apiRef }: { s
       const cost = getUpgradeCost(s); if (cost === null) return message(`${ASSETS[s.kind].name.toUpperCase()} IS AT MAXIMUM LEVEL`);
       if (credits < cost) return message(`UPGRADE REQUIRES ${cost} COMMAND CREDITS`);
       credits -= cost; const oldMax = s.maxHp; s.level++; s.maxHp = Math.round(STRUCTURE_HP[s.kind] * (1 + (s.level - 1) * 0.35)); s.hp = Math.min(s.maxHp, s.hp + (s.maxHp - oldMax) + Math.round(oldMax * 0.2));
-      setHealthVisual(s.group, s.hp, s.maxHp); addUpgradeVisual(s); publishStructureSelection(); emitHud(true);
-      burst(s.group.position.clone().add(new THREE.Vector3(0, 0.8, 0)), s.level === 3 ? 0xffd36a : 0x62e8ff, 14); message(`${ASSETS[s.kind].name.toUpperCase()} UPGRADED TO LEVEL ${s.level}`);
+      setHealthVisual(s.group, s.hp, s.maxHp); updateTierBadge(s.group, s.level); addUpgradeVisual(s); publishStructureSelection(); emitHud(true);
+      burst(s.group.position.clone().add(new THREE.Vector3(0, 0.8, 0)), s.level === 3 ? 0xffd36a : 0x62e8ff, 14); message(`${ASSETS[s.kind].name.toUpperCase()} UPGRADED TO TIER ${s.level}`);
     }
     function addStructure(kind: AssetKey, x: number, y: number, free = false, mountedOn?: number) {
       const group = kind === "rifle" ? makeRifleTeam() : kind === "sentry" ? makeSentry() : kind === "howitzer" ? makeHowitzer() : kind === "missile" ? makeMissileBattery() : kind === "wall" ? makeWall() : kind === "mine" ? makeMine() : makeBarracks();
@@ -425,6 +438,7 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, apiRef }: { s
       if (kind in TURRET_STATS) {
         const radius = kind === "howitzer" || kind === "missile" ? 1.04 : 0.9;
         const ring = new THREE.Mesh(new THREE.RingGeometry(radius * 0.82, radius, 28), new THREE.MeshBasicMaterial({ color: 0x7dff92, transparent: true, opacity: 0.95, side: THREE.DoubleSide })); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.035; ring.visible = false; group.add(ring); group.userData.selectionRing = ring;
+        updateTierBadge(group, 1);
       }
       const maxHp = STRUCTURE_HP[kind]; structures.push({ id: nextId++, kind, level: 1, x, y, targetX: x, targetY: y, hp: maxHp, maxHp, mountedOn, group, cooldown: Math.random(), spawnTimer: 0 });
       if (!free) credits -= ASSETS[kind].cost;
@@ -703,9 +717,9 @@ export default function Home() {
         <div className="mission-card"><span>OPERATION NIGHTFALL · SECTOR E-7</span><b>Hold the eastern ridge</b><small>Wave {Math.min(hud.wave + (hud.active ? 0 : 1), 8)} of 8 · {hud.kills} confirmed eliminations</small></div>
         <div className="status-feed"><i />{message}</div>
         {selectedUnit && <div className="upgrade-card" style={{ "--upgrade-color": ASSETS[selectedUnit.kind].accent } as React.CSSProperties}>
-          <small>SELECTED DEFENSE</small><div className="upgrade-heading"><b>{selectedUnit.name}</b><em>LV {selectedUnit.level}/{selectedUnit.maxLevel}</em></div>
+          <small>SELECTED DEFENSE</small><div className="upgrade-heading"><b>{selectedUnit.name}</b><em>TIER {selectedUnit.level}/{selectedUnit.maxLevel}</em></div>
           <div className="upgrade-stats"><span><small>DAMAGE</small><b>{selectedUnit.damage}</b></span><span><small>RANGE</small><b>{selectedUnit.range}</b></span><span><small>ARMOR</small><b>{selectedUnit.maxHp}</b></span></div>
-          <button disabled={selectedUnit.upgradeCost === null || hud.credits < selectedUnit.upgradeCost} onClick={() => apiRef.current?.upgradeSelected()}>{selectedUnit.upgradeCost === null ? "MAXIMUM LEVEL" : `UPGRADE TO LV ${selectedUnit.level + 1} · ¤ ${selectedUnit.upgradeCost}`}</button>
+          <button disabled={selectedUnit.upgradeCost === null || hud.credits < selectedUnit.upgradeCost} onClick={() => apiRef.current?.upgradeSelected()}>{selectedUnit.upgradeCost === null ? "MAXIMUM TIER" : `UPGRADE TO TIER ${selectedUnit.level + 1} · ¤ ${selectedUnit.upgradeCost}`}</button>
           <p>Upgrade increases damage, range, fire rate, and armor.</p>
         </div>}
         <div className="camera-tools"><button onClick={() => apiRef.current?.rotate()} aria-label="Rotate camera">↻</button><span>ORBIT</span></div>

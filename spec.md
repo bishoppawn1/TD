@@ -79,11 +79,12 @@ A support structure where the player can recruit riflemen for 60 credits after a
 ## Unit Upgrades
 
 - Clicking a single combat structure selects it and opens its upgrade panel.
-- Every combat structure begins at level one and can reach level three.
+- Every combat structure begins at tier one and can reach tier three.
 - Each upgrade increases damage, range, fire rate, maximum armor, and current survivability.
 - Upgrade costs scale with the structure's original purchase price and current level.
-- Upgraded structures gain visible energy rings; maximum-level structures also gain a stronger light treatment.
-- The panel shows the selected unit's current level, damage, range, armor, and exact next upgrade cost.
+- Each structure's health bar has a camera-facing `T1`, `T2`, or `T3` badge.
+- Upgraded structures gain visible energy rings; maximum-tier structures also gain a stronger light treatment.
+- The panel shows the selected unit's current tier, damage, range, armor, and exact next upgrade cost.
 
 ## Enemy Classes
 
