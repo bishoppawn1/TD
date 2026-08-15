@@ -534,7 +534,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     function makeAlien(kind: AlienKind) {
       const g = new THREE.Group();
       const bodyRig = new THREE.Group(); g.add(bodyRig);
-      const legs: THREE.Group[] = [], legPhases: number[] = [], tails: THREE.Group[] = [], wings: THREE.Group[] = [], creepSegments: THREE.Group[] = [];
+      const legs: THREE.Group[] = [], legPhases: number[] = [], tails: THREE.Group[] = [], wings: THREE.Group[] = [];
       const brute = kind === "brute", spitter = kind === "spitter", broodmother = kind === "broodmother", razortail = kind === "razortail", stalker = kind === "stalker", strider = kind === "strider", prowler = kind === "prowler";
       const shellColor = brute ? 0x673832 : broodmother ? 0x5d3548 : spitter ? 0x28654b : razortail ? 0x57305f : stalker ? 0x27536b : strider ? 0x62572d : prowler ? 0x62472f : 0x334d42;
       const skinColor = brute ? 0x2c1c1b : broodmother ? 0x271824 : spitter ? 0x172e25 : razortail ? 0x29162f : stalker ? 0x102832 : strider ? 0x292614 : prowler ? 0x2a1c16 : 0x192a24;
@@ -1011,7 +1011,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     }
     function spawnMarine(kind: MarineKind, x: number, y: number, mountedOn?: number) {
       const stats = MARINE_STATS[kind], mountedWall = mountedOn ? structures.find(s => s.id === mountedOn && isWall(s)) : undefined, lift = mountedWall ? wallTopLift(mountedWall) : 0;
-      const m = makeSoldier(1.12, kind); m.position.copy(worldPos(x, y, lift));
+      const m = makeSoldier(0.68, kind); m.position.copy(worldPos(x, y, lift));
       const ring = new THREE.Mesh(new THREE.RingGeometry(0.28, 0.34, 24), new THREE.MeshBasicMaterial({ color: new THREE.Color(stats.color), transparent: true, opacity: 0.95, side: THREE.DoubleSide })); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.025; ring.visible = false; m.add(ring); m.userData.selectionRing = ring;
       attachHealthBar(m, 1.22); world.add(m); const id = nextId++;
       marines.push({ id, kind, x, y, targetX: x, targetY: y, vx: 0, vy: 0, hp: stats.hp, maxHp: stats.hp, cooldown: 0, supportCooldown: 0, mountedOn, movePath: [], pathIndex: 0, lift, group: m }); return id;
