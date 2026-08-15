@@ -18,7 +18,7 @@ const MAX_ACTIVE_ENEMIES = 120;
 const MIN_ALIENS_PER_GATE_BURST = 20;
 const MAX_ALIENS_PER_GATE_BURST = 30;
 const TARGET_FRAME_RATE = 45;
-const ENEMY_SEPARATION_DISTANCE = 0.48;
+const ENEMY_COLLISION_BUCKET_SIZE = 1.12;
 const WALL_STACK_HEIGHT = 0.62;
 const WALL_CLIMB_SPEED = 0.46;
 const LIGHT_VISION_BASE = 7.2;
@@ -801,6 +801,11 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     const isWall = (s: Structure) => s.kind === "wall" || s.kind === "bastion";
     const isPathBlocking = (s: Structure) => s.kind !== "mine" && s.kind !== "wire" && s.kind !== "trench" && !s.mountedOn;
     const isEntrenched = (m: Marine) => !m.movePath.length && !!m.trenchId && structures.some(s => s.id === m.trenchId && s.kind === "trench" && Math.hypot(s.x - m.x, s.y - m.y) < 0.72);
+    const enemyCollisionRadius = (enemy: Enemy) =>
+      enemy.kind === "brute" || enemy.kind === "broodmother" ? 0.54
+        : enemy.kind === "razortail" ? 0.46
+          : enemy.kind === "spitter" || enemy.kind === "strider" || enemy.kind === "prowler" || enemy.kind === "flyer" ? 0.38
+            : enemy.kind === "stalker" ? 0.22 : 0.32;
     const blocked = () => new Set(structures.filter(isPathBlocking).map(s => keyOf(Math.round(s.x), Math.round(s.y))));
     const topWallAt = (x: number, y: number) => structures.filter(s => isWall(s) && s.x === x && s.y === y).sort((a, b) => b.stackLevel - a.stackLevel)[0];
     const wallTopLift = (wall: Structure) => (wall.stackLevel + 1) * WALL_STACK_HEIGHT;
@@ -1305,6 +1310,41 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       group.rotation.y += delta * Math.min(1, speed * dt);
     }
 
+    function resolveEnemyOverlaps() {
+      for (let pass = 0; pass < 3; pass++) {
+        const buckets = new Map<string, Enemy[]>();
+        for (const enemy of enemies) {
+          const bucketKey = keyOf(Math.floor(enemy.x / ENEMY_COLLISION_BUCKET_SIZE), Math.floor(enemy.y / ENEMY_COLLISION_BUCKET_SIZE));
+          const bucket = buckets.get(bucketKey);
+          if (bucket) bucket.push(enemy); else buckets.set(bucketKey, [enemy]);
+        }
+        for (const enemy of enemies) {
+          const bucketX = Math.floor(enemy.x / ENEMY_COLLISION_BUCKET_SIZE), bucketY = Math.floor(enemy.y / ENEMY_COLLISION_BUCKET_SIZE);
+          for (let offsetY = -1; offsetY <= 1; offsetY++) for (let offsetX = -1; offsetX <= 1; offsetX++) {
+            for (const other of buckets.get(keyOf(bucketX + offsetX, bucketY + offsetY)) ?? []) {
+              if (other.id <= enemy.id || FLYING_ENEMIES.has(other.kind) !== FLYING_ENEMIES.has(enemy.kind) || Math.abs(other.group.position.y - enemy.group.position.y) > 0.85) continue;
+              let apartX = enemy.x - other.x, apartY = enemy.y - other.y, apart = Math.hypot(apartX, apartY);
+              const minimumDistance = enemyCollisionRadius(enemy) + enemyCollisionRadius(other) + 0.025;
+              if (apart >= minimumDistance) continue;
+              if (apart < 0.0001) {
+                const angle = ((enemy.id * 2.399 + other.id * 0.73) % (Math.PI * 2));
+                apartX = Math.cos(angle); apartY = Math.sin(angle); apart = 1;
+              }
+              const push = (minimumDistance - apart) * 0.5;
+              const pushX = apartX / apart * push, pushY = apartY / apart * push;
+              enemy.x = clamp(enemy.x + pushX, 0, GRID_W - 1); enemy.y = clamp(enemy.y + pushY, 0, GRID_H - 1);
+              other.x = clamp(other.x - pushX, 0, GRID_W - 1); other.y = clamp(other.y - pushY, 0, GRID_H - 1);
+            }
+          }
+        }
+      }
+      for (const enemy of enemies) {
+        const lift = FLYING_ENEMIES.has(enemy.kind) ? 2.65 : Math.max(0, enemy.group.position.y - worldPos(enemy.x, enemy.y).y);
+        const p = worldPos(enemy.x, enemy.y, lift);
+        enemy.group.position.x = p.x; enemy.group.position.z = p.z; syncHealthBar(enemy.group);
+      }
+    }
+
     function update(dt: number) {
       elapsed += dt; spawnBeacons.forEach(beacon => { beacon.portal.rotation.z += dt * 0.7; beacon.inner.rotation.z -= dt * 0.42; beacon.light.intensity = 2.6 + Math.sin(elapsed * 3.2 + beacon.phase) * 0.7; });
       if (!active && !gameOver && wave > 0 && wave < MAX_WAVES && buildTimer > 0) {
@@ -1320,12 +1360,6 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         if (spawnTimer <= 0) { spawnAssaultGroup(); spawnTimer = Math.max(1.15, 2.1 - wave * 0.025) + Math.random() * 0.35; }
       }
       updateFogOfWar(dt);
-      const enemyBuckets = new Map<string, Enemy[]>();
-      for (const enemy of enemies) {
-        const bucketKey = keyOf(Math.floor(enemy.x / ENEMY_SEPARATION_DISTANCE), Math.floor(enemy.y / ENEMY_SEPARATION_DISTANCE));
-        const bucket = enemyBuckets.get(bucketKey);
-        if (bucket) bucket.push(enemy); else enemyBuckets.set(bucketKey, [enemy]);
-      }
       type EnemyTargetChoice = { type: "marine" | "structure" | "base"; id: number | null; x: number; y: number; group: THREE.Group; directDistance: number };
       type EnemyRoute = { path: Cell[]; travelTime: number };
       const enemyPathCache = new Map<string, EnemyRoute>();
@@ -1358,20 +1392,6 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       for (const e of enemies) {
         e.hitFlash = Math.max(0, e.hitFlash - dt); e.attackCooldown -= dt; e.pathTimer -= dt;
         const flying = FLYING_ENEMIES.has(e.kind);
-        let separationX = 0, separationY = 0;
-        const bucketX = Math.floor(e.x / ENEMY_SEPARATION_DISTANCE), bucketY = Math.floor(e.y / ENEMY_SEPARATION_DISTANCE);
-        for (let offsetY = -1; offsetY <= 1; offsetY++) for (let offsetX = -1; offsetX <= 1; offsetX++) {
-          for (const other of enemyBuckets.get(keyOf(bucketX + offsetX, bucketY + offsetY)) ?? []) {
-            if (other.id === e.id || FLYING_ENEMIES.has(other.kind) !== flying) continue;
-            const apartX = e.x - other.x, apartY = e.y - other.y, apart = Math.hypot(apartX, apartY);
-            if (apart >= ENEMY_SEPARATION_DISTANCE) continue;
-            const force = (ENEMY_SEPARATION_DISTANCE - apart) / ENEMY_SEPARATION_DISTANCE;
-            if (apart < 0.001) { const angle = (e.id * 2.399 + other.id * 0.73) % (Math.PI * 2); separationX += Math.cos(angle) * force; separationY += Math.sin(angle) * force; }
-            else { separationX += apartX / apart * force; separationY += apartY / apart * force; }
-          }
-        }
-        const separationLength = Math.hypot(separationX, separationY);
-        if (separationLength > 0.001) { const separationStep = Math.min(0.42 * dt, separationLength * 0.08); e.x = clamp(e.x + separationX / separationLength * separationStep, 0, GRID_W - 1); e.y = clamp(e.y + separationY / separationLength * separationStep, 0, GRID_H - 1); }
         const enemyStats = ENEMY_STATS[e.kind], climbsWalls = WALL_CLIMBERS.has(e.kind);
         const targets: EnemyTargetChoice[] = [{ type: "base", id: null, x: baseCell.x, y: baseCell.y, group: base, directDistance: Math.hypot(baseCell.x - e.x, baseCell.y - e.y) }];
         marines.forEach(m => targets.push({ type: "marine", id: m.id, x: m.x, y: m.y, group: m.group, directDistance: Math.hypot(m.x - e.x, m.y - e.y) }));
@@ -1454,6 +1474,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         const climbLift = climbingWall ? wallTopLift(climbingWall) * clamp(1 - climbDistance / 1.05, 0, 1) : 0;
         const p = worldPos(e.x, e.y, flying ? 2.65 : climbLift); e.group.position.lerp(p, Math.min(1, dt * 12)); e.group.position.y += Math.sin(elapsed * (flying ? 4.8 : 9) + e.id) * (flying ? 0.16 : e.kind === "brute" ? 0.005 : 0.01); syncHealthBar(e.group);
       }
+      resolveEnemyOverlaps();
       for (const s of structures) {
         s.cooldown -= dt;
         const scanRig = s.group.userData.scanRig as THREE.Group | undefined; if (scanRig) scanRig.rotation.y += dt * 0.42;
