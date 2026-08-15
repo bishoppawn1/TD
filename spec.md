@@ -92,7 +92,7 @@ A static precision tower that tracks visible targets and deals damage immediatel
 
 ### M777 Howitzer — 350 credits
 
-A slow-firing long-range artillery piece. Its shells deal heavy damage in an area, making it effective against dense groups and durable targets. Batteries coordinate against projected incoming blast damage, spreading shells across targets and clusters that are not already expected to be destroyed. High-ground placement is especially valuable. Its crew can reposition it at a very slow towing pace.
+A slow-firing long-range artillery piece produced exclusively by a Machining Factory in a 30-second assembly cycle. Its shells deal heavy damage in an area, making it effective against dense groups and durable targets. Batteries coordinate against projected incoming blast damage, spreading shells across targets and clusters that are not already expected to be destroyed. High-ground placement is especially valuable. Its crew can reposition it at a very slow towing pace.
 
 ### Javelin Battery — 480 credits
 
@@ -116,12 +116,20 @@ A single-use proximity explosive. It detonates when an enemy comes close and dea
 
 ### Field Barracks — 425 credits
 
-A support structure where the player can instantly recruit riflemen, heavy gunners, combat medics, and rocketeers. There is no training timer or recruitment cooldown; command credits are the only limit.
+A support structure where the player queues riflemen, heavy gunners, combat medics, and rocketeers. Every infantry order takes five seconds to train, and additional orders wait in the selected barracks' visible queue before deploying beside the building.
+
+### Machining Factory — 700 credits
+
+A heavy-production structure occupying a true two-by-two grid footprint. Its entire footprint blocks movement and must be placed on four clear, dry construction cells. Tanks and M777 Howitzers cannot be placed directly from the construction panel: both must be queued here, take 30 seconds each to assemble, and deploy beside the factory when complete.
 
 ## Friendly Units
 
 - Ten or more stationary infantry of the same class within a one-grid-square-diameter collection area collapse into a single rendered troop stack with a persistent `×N` badge. The stack can grow beyond ten and moves as one selectable formation member.
 - Troop stacks retain the health of every soldier. Incoming hits damage only the front soldier, removing one member when that soldier falls, while the representative's outgoing damage and medical support scale with the number of surviving members.
+
+### Tank — 600 credits
+
+A heavily armored mobile direct-fire unit produced exclusively by the Machining Factory in 30 seconds. The Tank carries a long cannon, uses tracked movement to route around fortifications and water, turns to face its target before firing, and can be selected, formation-moved, and upgraded through three tiers like other combat units.
 
 ### Rocketeer — 155 credits
 

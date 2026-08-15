@@ -4,14 +4,18 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
-type AssetKey = "rifle" | "sentry" | "flak" | "flame" | "laser" | "railgun" | "howitzer" | "missile" | "light" | "wall" | "bastion" | "trench" | "wire" | "mine" | "barracks";
-type CombatKey = "rifle" | "sentry" | "flak" | "flame" | "laser" | "railgun" | "howitzer" | "missile";
+type AssetKey = "rifle" | "sentry" | "flak" | "flame" | "laser" | "railgun" | "tank" | "howitzer" | "missile" | "light" | "wall" | "bastion" | "trench" | "wire" | "mine" | "barracks" | "factory";
+type DeployableAssetKey = Exclude<AssetKey, "tank" | "howitzer">;
+type CombatKey = "rifle" | "sentry" | "flak" | "flame" | "laser" | "railgun" | "tank" | "howitzer" | "missile";
 type UpgradableKey = CombatKey | "light";
 type MarineKind = "rifleman" | "gunner" | "medic" | "rocketeer";
+type FactoryUnitKind = "tank" | "howitzer";
 type AlienKind = "drone" | "spitter" | "brute" | "razortail" | "stalker" | "strider" | "broodmother" | "flyer" | "prowler";
 
 const FINAL_MAP_WAVES = 25;
 const BETWEEN_WAVE_BUILD_SECONDS = 30;
+const INFANTRY_PRODUCTION_SECONDS = 5;
+const FACTORY_PRODUCTION_SECONDS = 30;
 const ALIEN_SPEED_MULTIPLIER = 1.8;
 const ENEMY_SWARM_MULTIPLIER = 6;
 const MAX_ACTIVE_ENEMIES = 120;
@@ -75,6 +79,7 @@ const ASSETS: Record<AssetKey, { name: string; role: string; cost: number; range
   flame: { name: "Inferno Turret", role: "Short range · Burning splash", cost: 210, range: 3.25, icon: "♨", accent: "#ff875c" },
   laser: { name: "Helios Laser Tower", role: "Instant beam · Precision damage", cost: 360, range: 7.2, icon: "◇", accent: "#ff4ff5" },
   railgun: { name: "M-90 Rail Turret", role: "Long range · Armor piercing", cost: 410, range: 9.6, icon: "↯", accent: "#b889ff" },
+  tank: { name: "Tank", role: "Armored mobile cannon", cost: 600, range: 6.4, icon: "▱", accent: "#b8d16f" },
   howitzer: { name: "M777 Howitzer", role: "Heavy shell · Area damage", cost: 350, range: 7.4, icon: "◎", accent: "#ffb45d" },
   missile: { name: "Javelin Battery", role: "Long range · Wide blast", cost: 480, range: 8.8, icon: "✦", accent: "#ff7f91" },
   light: { name: "Sentinel Light Tower", role: "Wide vision · Sweeping searchlights", cost: 135, range: 0, icon: "☼", accent: "#fff1a3" },
@@ -84,7 +89,10 @@ const ASSETS: Record<AssetKey, { name: string; role: string; cost: number; range
   wire: { name: "Razor Wire", role: "Snags hostiles · Heavy bleed", cost: 40, range: 0, icon: "〰", accent: "#e4cc9e" },
   mine: { name: "Shock Mine", role: "Proximity · One use", cost: 100, range: 1.35, icon: "⌁", accent: "#ff655f" },
   barracks: { name: "Field Barracks", role: "Trains specialized infantry", cost: 425, range: 0, icon: "⌂", accent: "#67c8ff" },
+  factory: { name: "Machining Factory", role: "2×2 · Builds tanks and howitzers", cost: 700, range: 0, icon: "⚙", accent: "#e5ba67" },
 };
+
+const DEPLOYABLE_ASSET_KEYS = (Object.keys(ASSETS) as AssetKey[]).filter((key): key is DeployableAssetKey => key !== "tank" && key !== "howitzer");
 
 const TURRET_STATS: Record<CombatKey, { damage: number; cooldown: number; splash: number; arcHeight: number; color: number; heavy: boolean; turnSpeed: number; beam?: boolean; airDamageMultiplier?: number }> = {
   rifle: { damage: 5.8, cooldown: 0.15, splash: 0, arcHeight: 0, color: 0xd6ff81, heavy: false, turnSpeed: 8 },
@@ -93,6 +101,7 @@ const TURRET_STATS: Record<CombatKey, { damage: number; cooldown: number; splash
   flame: { damage: 13, cooldown: 0.2, splash: 0.82, arcHeight: 0.18, color: 0xff713d, heavy: false, turnSpeed: 7 },
   laser: { damage: 68, cooldown: 0.72, splash: 0, arcHeight: 0, color: 0xff4ff5, heavy: false, turnSpeed: 6.5, beam: true },
   railgun: { damage: 185, cooldown: 2.8, splash: 0, arcHeight: 0, color: 0xc090ff, heavy: true, turnSpeed: 4.4 },
+  tank: { damage: 92, cooldown: 1.15, splash: 0.42, arcHeight: 0, color: 0xd8ef83, heavy: true, turnSpeed: 4.8 },
   howitzer: { damage: 105, cooldown: 2.35, splash: 1.25, arcHeight: 2.2, color: 0xffa64d, heavy: true, turnSpeed: 3.5 },
   missile: { damage: 165, cooldown: 3.2, splash: 1.75, arcHeight: 2.8, color: 0xff667d, heavy: true, turnSpeed: 2.8 },
 };
@@ -107,7 +116,8 @@ const MARINE_STATS: Record<MarineKind, { name: string; role: string; cost: numbe
 type Hud = { credits: number; integrity: number; wave: number; enemies: number; kills: number; active: boolean; buildSeconds: number | null; gameOver: boolean; victory: boolean };
 type Cell = { x: number; y: number };
 type MoveWaypoint = Cell & { lift: number };
-type Structure = { id: number; kind: AssetKey; level: number; x: number; y: number; targetX: number; targetY: number; hp: number; maxHp: number; mountedOn?: number; mountTarget?: number; movePath: MoveWaypoint[]; pathIndex: number; lift: number; stackLevel: number; group: THREE.Group; cooldown: number };
+type ProductionOrder = { category: "marine"; kind: MarineKind; name: string; duration: number } | { category: "factory"; kind: FactoryUnitKind; name: string; duration: number };
+type Structure = { id: number; kind: AssetKey; level: number; x: number; y: number; targetX: number; targetY: number; footprint: Cell[]; hp: number; maxHp: number; mountedOn?: number; mountTarget?: number; movePath: MoveWaypoint[]; pathIndex: number; lift: number; stackLevel: number; group: THREE.Group; cooldown: number; productionQueue: ProductionOrder[]; productionRemaining: number };
 type Enemy = { id: number; kind: AlienKind; x: number; y: number; hp: number; maxHp: number; speed: number; damage: number; reward: number; path: Cell[]; index: number; group: THREE.Group; hitFlash: number; attackCooldown: number; pathTimer: number; targetBiasSeed: number; targetId: number | null; targetType: "marine" | "structure" | "base"; retaliateAgainstId?: number; wireContactId?: number };
 type Marine = { id: number; kind: MarineKind; x: number; y: number; targetX: number; targetY: number; vx: number; vy: number; hp: number; maxHp: number; memberHp: number[]; stacked: boolean; cooldown: number; supportCooldown: number; mountedOn?: number; mountTarget?: number; trenchId?: number; movePath: MoveWaypoint[]; pathIndex: number; lift: number; group: THREE.Group };
 type ProjectilePool = "light" | "heavy" | "rocket";
@@ -115,10 +125,10 @@ type Bullet = { mesh: THREE.Object3D; pool: ProjectilePool; from: THREE.Vector3;
 type HostileProjectile = { group: THREE.Group; kind: AlienKind; from: THREE.Vector3; to: THREE.Vector3; t: number; speed: number; arcHeight: number; targetId: number; targetType: "marine" | "structure"; damage: number; color: number; impactCount: number };
 type Particle = { mesh: THREE.Mesh; velocity: THREE.Vector3; life: number; maxLife: number };
 type SelectedUnit = { id: number; kind: UpgradableKey; name: string; level: number; maxLevel: number; upgradeCost: number | null; damage: number; range: number; maxHp: number; support: boolean };
-type BarracksInfo = { id: number };
+type ProductionBuildingInfo = { id: number; kind: "barracks" | "factory"; currentName: string | null; remaining: number; duration: number; queueLength: number };
 type GameMode = "campaign" | "tester";
 type TestWaveConfig = { wave: number; enemyCount: number };
-type BattlefieldApi = { start: (config?: TestWaveConfig) => void; restart: () => void; rotate: () => void; upgradeSelected: () => void; recruit: (kind: MarineKind) => void };
+type BattlefieldApi = { start: (config?: TestWaveConfig) => void; restart: () => void; rotate: () => void; upgradeSelected: () => void; recruit: (kind: MarineKind) => void; produce: (kind: FactoryUnitKind) => void };
 type MapKey = "ridge" | "basin" | "divide" | "ruins" | "homeworld";
 type DecorKind = "supply" | "pine" | "cactus" | "bones" | "crystal" | "vent" | "pillar" | "obelisk" | "growth";
 type MapConfig = {
@@ -176,7 +186,7 @@ const MAPS: Record<MapKey, MapConfig> = {
       { kind: "flak", x: 9, y: 30 }, { kind: "flak", x: 15, y: 32 },
       { kind: "flame", x: 7, y: 37 }, { kind: "flame", x: 13, y: 37 },
       { kind: "laser", x: 16, y: 34 }, { kind: "railgun", x: 17, y: 37 },
-      { kind: "howitzer", x: 10, y: 28 }, { kind: "howitzer", x: 18, y: 35 }, { kind: "missile", x: 18, y: 31 },
+      { kind: "factory", x: 10, y: 28 }, { kind: "factory", x: 18, y: 35 }, { kind: "missile", x: 18, y: 31 },
       { kind: "light", x: 6, y: 30 }, { kind: "light", x: 14, y: 29 }, { kind: "light", x: 18, y: 39 },
       { kind: "bastion", x: 6, y: 32 }, { kind: "bastion", x: 7, y: 32 }, { kind: "bastion", x: 8, y: 32 }, { kind: "bastion", x: 9, y: 32 }, { kind: "bastion", x: 10, y: 32 }, { kind: "bastion", x: 11, y: 32 }, { kind: "bastion", x: 12, y: 32 }, { kind: "bastion", x: 13, y: 32 }, { kind: "bastion", x: 14, y: 32 },
       { kind: "bastion", x: 6, y: 39 }, { kind: "bastion", x: 14, y: 39 }, { kind: "bastion", x: 6, y: 40 }, { kind: "bastion", x: 14, y: 40 },
@@ -209,7 +219,7 @@ const MAPS: Record<MapKey, MapConfig> = {
     background: 0x160b08, ground: 0x1d100c, fog: 0x090301, hue: 0.065, saturation: 0.34,
     baseCell: { x: 22, y: 37 }, spawnCells: [{ x: 0, y: 4 }, { x: 43, y: 5 }, { x: 43, y: 35 }, { x: 5, y: 0 }],
     waveCount: 11,
-    startingStructures: [{ kind: "barracks", x: 22, y: 34 }, { kind: "rifle", x: 18, y: 34 }, { kind: "wall", x: 21, y: 36 }, { kind: "howitzer", x: 26, y: 34 }, { kind: "wire", x: 23, y: 32 }, { kind: "railgun", x: 28, y: 30 }, { kind: "light", x: 22, y: 30 }, { kind: "bastion", x: 18, y: 32 }],
+    startingStructures: [{ kind: "barracks", x: 22, y: 34 }, { kind: "rifle", x: 18, y: 34 }, { kind: "wall", x: 21, y: 36 }, { kind: "factory", x: 26, y: 34 }, { kind: "wire", x: 23, y: 32 }, { kind: "railgun", x: 28, y: 30 }, { kind: "light", x: 22, y: 30 }, { kind: "bastion", x: 18, y: 32 }],
     startingMarines: [{ kind: "rifleman", x: 20, y: 32 }, { kind: "medic", x: 23, y: 34 }, { kind: "rifleman", x: 24, y: 30 }, { kind: "gunner", x: 20, y: 30 }, { kind: "rocketeer", x: 26, y: 30 }],
     waterColor: 0x198a91, waterGlow: 0x075c64,
     waterAt: (x, y) => Math.hypot(x - 11, y - 18) <= 4.3 || (x <= 11 && Math.abs(y - 18) <= 1),
@@ -231,7 +241,7 @@ const MAPS: Record<MapKey, MapConfig> = {
     background: 0x090811, ground: 0x100f18, fog: 0x030207, hue: 0.69, saturation: 0.18,
     baseCell: { x: 4, y: 22 }, spawnCells: [{ x: 43, y: 3 }, { x: 43, y: 40 }, { x: 22, y: 0 }, { x: 22, y: 43 }],
     waveCount: 16,
-    startingStructures: [{ kind: "barracks", x: 7, y: 22 }, { kind: "rifle", x: 9, y: 18 }, { kind: "wall", x: 9, y: 24 }, { kind: "howitzer", x: 11, y: 28 }, { kind: "wire", x: 11, y: 20 }, { kind: "flame", x: 11, y: 22 }, { kind: "bastion", x: 9, y: 26 }, { kind: "light", x: 13, y: 24 }],
+    startingStructures: [{ kind: "barracks", x: 7, y: 22 }, { kind: "rifle", x: 9, y: 18 }, { kind: "wall", x: 9, y: 24 }, { kind: "factory", x: 11, y: 28 }, { kind: "wire", x: 11, y: 20 }, { kind: "flame", x: 11, y: 22 }, { kind: "bastion", x: 9, y: 26 }, { kind: "light", x: 13, y: 24 }],
     startingMarines: [{ kind: "rifleman", x: 7, y: 19 }, { kind: "medic", x: 7, y: 26 }, { kind: "rifleman", x: 7, y: 24 }, { kind: "gunner", x: 9, y: 20 }, { kind: "rocketeer", x: 11, y: 26 }],
     waterColor: 0x243d62, waterGlow: 0x101f4a,
     waterAt: (x, y) => Math.abs((y - 21) - (x - 22) * 0.24) <= 0.72 && !blackglassBridgeAt(x, y),
@@ -264,7 +274,7 @@ const MAPS: Record<MapKey, MapConfig> = {
     background: 0x15120c, ground: 0x211d14, fog: 0x080603, hue: 0.115, saturation: 0.2,
     baseCell: { x: 22, y: 22 }, spawnCells: [{ x: 0, y: 7 }, { x: 0, y: 36 }, { x: 43, y: 7 }, { x: 43, y: 36 }, { x: 7, y: 0 }, { x: 36, y: 0 }, { x: 7, y: 43 }, { x: 36, y: 43 }],
     waveCount: 21,
-    startingStructures: [{ kind: "barracks", x: 20, y: 20 }, { kind: "rifle", x: 24, y: 20 }, { kind: "wall", x: 19, y: 22 }, { kind: "howitzer", x: 25, y: 24 }, { kind: "wire", x: 22, y: 18 }, { kind: "flak", x: 22, y: 25 }, { kind: "light", x: 22, y: 16 }, { kind: "bastion", x: 18, y: 24 }],
+    startingStructures: [{ kind: "barracks", x: 20, y: 20 }, { kind: "rifle", x: 24, y: 20 }, { kind: "wall", x: 19, y: 22 }, { kind: "factory", x: 25, y: 24 }, { kind: "wire", x: 22, y: 18 }, { kind: "flak", x: 22, y: 25 }, { kind: "light", x: 22, y: 16 }, { kind: "bastion", x: 18, y: 24 }],
     startingMarines: [{ kind: "rifleman", x: 21, y: 20 }, { kind: "medic", x: 23, y: 23 }, { kind: "rifleman", x: 24, y: 22 }, { kind: "gunner", x: 20, y: 24 }, { kind: "rocketeer", x: 25, y: 21 }],
     burstScale: 0.42,
     waterColor: 0x287789, waterGlow: 0x103e4d,
@@ -313,12 +323,12 @@ const MAPS: Record<MapKey, MapConfig> = {
 };
 const MAP_ORDER: MapKey[] = ["ridge", "basin", "divide", "ruins", "homeworld"];
 
-function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSelected, onBarracksSelected, apiRef }: { selected: AssetKey; mapKey: MapKey; testerMode: boolean; onHud: (h: Hud) => void; onMessage: (s: string) => void; onUnitSelected: (unit: SelectedUnit | null) => void; onBarracksSelected: (barracks: BarracksInfo | null) => void; apiRef: React.MutableRefObject<BattlefieldApi | null> }) {
+function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSelected, onProductionSelected, apiRef }: { selected: DeployableAssetKey; mapKey: MapKey; testerMode: boolean; onHud: (h: Hud) => void; onMessage: (s: string) => void; onUnitSelected: (unit: SelectedUnit | null) => void; onProductionSelected: (building: ProductionBuildingInfo | null) => void; apiRef: React.MutableRefObject<BattlefieldApi | null> }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const selectedRef = useRef(selected);
-  const callbacks = useRef({ onHud, onMessage, onUnitSelected, onBarracksSelected });
+  const callbacks = useRef({ onHud, onMessage, onUnitSelected, onProductionSelected });
   useEffect(() => { selectedRef.current = selected; }, [selected]);
-  useEffect(() => { callbacks.current = { onHud, onMessage, onUnitSelected, onBarracksSelected }; }, [onHud, onMessage, onUnitSelected, onBarracksSelected]);
+  useEffect(() => { callbacks.current = { onHud, onMessage, onUnitSelected, onProductionSelected }; }, [onHud, onMessage, onUnitSelected, onProductionSelected]);
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -664,6 +674,26 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       const muzzle = new THREE.Object3D(); muzzle.position.set(0, 0.82, -1.58); g.add(muzzle); g.userData.muzzle = muzzle;
       return g;
     }
+    function makeTank() {
+      const g = new THREE.Group();
+      for (const side of [-1, 1]) {
+        box(g, [0.34, 0.38, 1.72], [side * 0.64, 0.28, 0.06], 0x242b25, 0.18);
+        for (const z of [-0.56, -0.18, 0.2, 0.58]) cyl(g, [0.16, 0.16, 0.08, 12], [side * 0.82, 0.28, z], 0x56604f, [0, 0, Math.PI / 2]);
+        for (const z of [-0.76, 0.78]) box(g, [0.4, 0.09, 0.1], [side * 0.64, 0.48, z], 0x8c9a70, 0.4);
+      }
+      box(g, [1.15, 0.36, 1.48], [0, 0.53, 0.04], 0x536348, 0.3);
+      box(g, [0.98, 0.24, 0.92], [0, 0.77, -0.06], 0x687654, 0.28);
+      const turret = new THREE.Group(); turret.position.set(0, 0.94, -0.05); g.add(turret);
+      cyl(turret, [0.46, 0.54, 0.32, 10], [0, 0, 0], 0x59694b);
+      box(turret, [0.72, 0.3, 0.72], [0, 0.15, -0.12], 0x657552, 0.3);
+      const barrelStart = new THREE.Vector3(0, 0.18, -0.36), muzzlePoint = new THREE.Vector3(0, 0.21, -1.55);
+      beam(turret, barrelStart, muzzlePoint, 0.09, 0x303a32);
+      cyl(turret, [0.13, 0.13, 0.22, 10], [0, 0.21, -1.62], 0x202823, [Math.PI / 2, 0, 0]);
+      const hatch = cyl(turret, [0.2, 0.22, 0.09, 12], [0.22, 0.39, 0.02], 0x39463a); hatch.rotation.z = 0.08;
+      const antenna = beam(turret, new THREE.Vector3(-0.28, 0.28, 0.12), new THREE.Vector3(-0.31, 0.83, 0.16), 0.018, 0x899882); antenna.rotation.z = -0.04;
+      const muzzle = new THREE.Object3D(); muzzle.position.copy(muzzlePoint).add(new THREE.Vector3(0, 0, -0.13)); turret.add(muzzle); g.userData.muzzle = muzzle; g.userData.turret = turret;
+      return g;
+    }
     function makeHowitzer() {
       const g = new THREE.Group();
       box(g, [0.72, 0.16, 1.1], [0, 0.22, 0.12], 0x4e5d49);
@@ -816,6 +846,26 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       box(g, [0.48, 0.71, 0.04], [0, 0.38, -0.76], 0x151d1a);
       box(g, [0.45, 0.35, 0.45], [1, 0.18, 0.42], 0x7c6844); box(g, [0.34, 0.3, 0.34], [0.88, 0.15, -0.31], 0x8a744b);
       cyl(g, [0.025, 0.025, 1.25, 7], [0.63, 1.55, 0.3], 0x9aa59d); return g;
+    }
+    function makeMachiningFactory() {
+      const g = new THREE.Group();
+      box(g, [3.45, 0.18, 3.45], [0, 0.1, 0], 0x303834, 0.24);
+      box(g, [2.5, 1.35, 2.55], [0.22, 0.82, 0.18], 0x505b55, 0.34);
+      box(g, [2.72, 0.16, 2.76], [0.22, 1.5, 0.18], 0x303b38, 0.25);
+      const bay = box(g, [1.62, 0.94, 0.08], [-0.28, 0.62, -1.13], 0x17201d, 0.18);
+      for (const x of [-0.72, -0.24, 0.24]) box(g, [0.08, 0.9, 0.08], [x, 0.64, -1.18], 0x8a926f, 0.35);
+      for (const x of [-1.34, 1.34]) {
+        cyl(g, [0.2, 0.24, 1.7, 10], [x, 0.87, 0.34], 0x434c48);
+        const cap = new THREE.Mesh(new THREE.ConeGeometry(0.25, 0.4, 8), new THREE.MeshStandardMaterial({ color: 0x303936, roughness: 0.7 })); cap.position.set(x, 1.9, 0.34); g.add(cap);
+      }
+      const crane = new THREE.Group(); crane.position.set(0.92, 1.62, -0.5); g.add(crane); g.userData.factoryRig = crane;
+      beam(crane, new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0.72, 0), 0.07, 0xd0a94e);
+      beam(crane, new THREE.Vector3(-0.62, 0.68, 0), new THREE.Vector3(0.62, 0.68, 0), 0.06, 0xd0a94e);
+      beam(crane, new THREE.Vector3(0.54, 0.66, 0), new THREE.Vector3(0.54, 0.1, 0), 0.025, 0x262d2a);
+      const warning = new THREE.PointLight(0xffb84d, 1.8, 5); warning.position.set(-0.9, 1.72, -0.92); g.add(warning);
+      const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 7), new THREE.MeshStandardMaterial({ color: 0xffc35c, emissive: 0xa14b13, emissiveIntensity: 2.2 })); lamp.position.copy(warning.position); g.add(lamp);
+      g.userData.factoryBay = bay;
+      return g;
     }
     function makeAlien(kind: AlienKind) {
       const g = new THREE.Group();
@@ -1043,7 +1093,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       return { group, portal, inner, light, phase: index * Math.PI * 0.67 };
     });
 
-    const STRUCTURE_HP: Record<AssetKey, number> = { rifle: 190, sentry: 280, flak: 290, flame: 245, laser: 275, railgun: 310, howitzer: 300, missile: 340, light: 230, wall: 600, bastion: 1050, trench: 360, wire: 180, mine: 45, barracks: 500 };
+    const STRUCTURE_HP: Record<AssetKey, number> = { rifle: 190, sentry: 280, flak: 290, flame: 245, laser: 275, railgun: 310, tank: 620, howitzer: 300, missile: 340, light: 230, wall: 600, bastion: 1050, trench: 360, wire: 180, mine: 45, barracks: 500, factory: 900 };
     function attachHealthBar(group: THREE.Group, y = 1.75) {
       // Health remains part of the combat simulation, but floating bars are
       // intentionally disabled because they obscure the battlefield.
@@ -1095,10 +1145,10 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
     const lightProjectilePool: THREE.Mesh[] = [], heavyProjectilePool: THREE.Mesh[] = [], rocketProjectilePool: THREE.Group[] = [];
     const lightProjectileGeometry = new THREE.SphereGeometry(0.045, 7, 5), heavyProjectileGeometry = new THREE.SphereGeometry(0.11, 7, 5);
     const rocketBodyGeometry = new THREE.CylinderGeometry(0.055, 0.072, 0.32, 8), rocketNoseGeometry = new THREE.ConeGeometry(0.058, 0.16, 8), rocketExhaustGeometry = new THREE.SphereGeometry(0.055, 7, 5);
-    let routeRevision = 0, marineStackTimer = 0;
+    let routeRevision = 0, marineStackTimer = 0, lastProductionSnapshot = "";
     const selectedMarines = new Set<number>();
     const selectedEmplacements = new Set<number>();
-    let selectedBarracksId: number | null = null;
+    let selectedProductionId: number | null = null;
     const marineTroopCount = (marine: Marine) => marine.memberHp.length;
     const marineTotalHp = (marine: Marine) => marine.memberHp.reduce((total, hp) => total + hp, 0);
     const marineHealthRatio = (marine: Marine) => marineTotalHp(marine) / Math.max(1, marineTroopCount(marine) * marine.maxHp);
@@ -1197,23 +1247,27 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       const poolItems = pool === "rocket" ? rocketProjectilePool : pool === "heavy" ? heavyProjectilePool : lightProjectilePool;
       if (poolItems.length < PROJECTILE_POOL_LIMIT) poolItems.push(projectile as never); else disposeObjectResources(projectile, false);
     }
-    const isMobileEmplacement = (s: Structure) => s.kind === "rifle" || s.kind === "howitzer";
+    const isMobileEmplacement = (s: Structure) => s.kind === "rifle" || s.kind === "tank" || s.kind === "howitzer";
     const isCombatStructure = (s: Structure): s is Structure & { kind: CombatKey } => s.kind in TURRET_STATS;
     const isUpgradableStructure = (s: Structure): s is Structure & { kind: UpgradableKey } => isCombatStructure(s) || s.kind === "light";
+    const isProductionBuilding = (s: Structure): s is Structure & { kind: "barracks" | "factory" } => s.kind === "barracks" || s.kind === "factory";
     const isWall = (s: Structure) => s.kind === "wall" || s.kind === "bastion";
     const isPathBlocking = (s: Structure) => s.kind !== "mine" && s.kind !== "wire" && s.kind !== "trench" && !s.mountedOn;
+    const footprintFor = (kind: AssetKey, x: number, y: number): Cell[] => kind === "factory" ? [{ x, y }, { x: x + 1, y }, { x, y: y + 1 }, { x: x + 1, y: y + 1 }] : [{ x, y }];
+    const occupiedCellsFor = (s: Structure) => isMobileEmplacement(s) ? [{ x: Math.round(s.x), y: Math.round(s.y) }] : s.footprint;
+    const structureOccupiesCell = (s: Structure, x: number, y: number) => occupiedCellsFor(s).some(cell => cell.x === x && cell.y === y);
     const isEntrenched = (m: Marine) => !m.movePath.length && !!m.trenchId && structures.some(s => s.id === m.trenchId && s.kind === "trench" && Math.hypot(s.x - m.x, s.y - m.y) < 0.72);
     const enemyCollisionRadius = (enemy: Enemy) =>
       enemy.kind === "brute" || enemy.kind === "broodmother" ? 0.54
         : enemy.kind === "razortail" ? 0.46
           : enemy.kind === "spitter" || enemy.kind === "strider" || enemy.kind === "prowler" || enemy.kind === "flyer" ? 0.38
             : enemy.kind === "stalker" ? 0.22 : 0.32;
-    const blocked = () => new Set(structures.filter(isPathBlocking).map(s => keyOf(Math.round(s.x), Math.round(s.y))));
+    const blocked = () => new Set(structures.filter(isPathBlocking).flatMap(s => occupiedCellsFor(s).map(cell => keyOf(cell.x, cell.y))));
     const topWallAt = (x: number, y: number) => structures.filter(s => isWall(s) && s.x === x && s.y === y).sort((a, b) => b.stackLevel - a.stackLevel)[0];
     const wallTopLift = (wall: Structure) => (wall.stackLevel + 1) * WALL_STACK_HEIGHT;
     const blockedForEnemy = (kind: AlienKind) => new Set([
       ...(!FLYING_ENEMIES.has(kind) && !WATER_ALIENS.has(kind) ? waterCells : []),
-      ...structures.filter(s => !FLYING_ENEMIES.has(kind) && isPathBlocking(s) && (!WALL_CLIMBERS.has(kind) || !isWall(s))).map(s => keyOf(Math.round(s.x), Math.round(s.y))),
+      ...structures.filter(s => !FLYING_ENEMIES.has(kind) && isPathBlocking(s) && (!WALL_CLIMBERS.has(kind) || !isWall(s))).flatMap(s => occupiedCellsFor(s).map(cell => keyOf(cell.x, cell.y))),
     ]);
     const terrainSpeedMultiplier = (from: Cell, to: Cell) => clamp(1 - (heights[to.y][to.x] - heights[from.y][from.x]) * 1.45, 0.28, 1.65);
     const friendlyStepTime = (from: Cell, to: Cell, speed: number) => {
@@ -1275,7 +1329,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       while (k) { const [x, y] = k.split(",").map(Number); out.push({ x, y }); k = prev.get(k) || ""; }
       return out.reverse();
     }
-    const friendlyBlocked = () => new Set([...waterCells, ...structures.filter(s => isPathBlocking(s) && !isMobileEmplacement(s)).map(s => keyOf(Math.round(s.x), Math.round(s.y)))]);
+    const friendlyBlocked = () => new Set([...waterCells, ...structures.filter(s => isPathBlocking(s) && !isMobileEmplacement(s)).flatMap(s => occupiedCellsFor(s).map(cell => keyOf(cell.x, cell.y)))]);
     const wallLiftDocks = (wall: Structure) => [
       { x: wall.x + 1, y: wall.y }, { x: wall.x - 1, y: wall.y },
       { x: wall.x, y: wall.y + 1 }, { x: wall.x, y: wall.y - 1 },
@@ -1351,13 +1405,17 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       const chosen = structures.find(s => selectedEmplacements.has(s.id));
       callbacks.current.onUnitSelected(chosen && isUpgradableStructure(chosen) && selectedEmplacements.size === 1 && selectedMarines.size === 0 ? getStructureInfo(chosen) : null);
     }
-    function publishBarracksSelection() {
-      const barracks = structures.find(s => s.id === selectedBarracksId && s.kind === "barracks");
-      callbacks.current.onBarracksSelected(barracks ? { id: barracks.id } : null);
+    function publishProductionSelection(force = false) {
+      const building = structures.find(s => s.id === selectedProductionId && isProductionBuilding(s));
+      const current = building?.productionQueue[0];
+      const info: ProductionBuildingInfo | null = building ? { id: building.id, kind: building.kind as "barracks" | "factory", currentName: current?.name ?? null, remaining: current ? Math.max(0, Math.ceil(building.productionRemaining)) : 0, duration: current?.duration ?? 0, queueLength: building.productionQueue.length } : null;
+      const snapshot = info ? `${info.id}:${info.currentName}:${info.remaining}:${info.queueLength}` : "none";
+      if (!force && snapshot === lastProductionSnapshot) return;
+      lastProductionSnapshot = snapshot; callbacks.current.onProductionSelected(info);
     }
     function addUpgradeVisual(s: Structure) {
       const color = s.level === 2 ? 0x62e8ff : 0xffd36a;
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(s.kind === "howitzer" || s.kind === "missile" ? 0.78 : 0.62, 0.035, 7, 28), new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.3, roughness: 0.28 }));
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(s.kind === "tank" || s.kind === "howitzer" || s.kind === "missile" ? 0.78 : 0.62, 0.035, 7, 28), new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.3, roughness: 0.28 }));
       ring.rotation.x = Math.PI / 2; ring.position.y = 0.3 + s.level * 0.08; s.group.add(ring);
       if (s.level === 3) { const light = new THREE.PointLight(color, 1.1, 2.8); light.position.y = 1.1; s.group.add(light); }
     }
@@ -1395,17 +1453,18 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       });
     }
     function addStructure(kind: AssetKey, x: number, y: number, free = false, mountedOn?: number, stackLevel = 0) {
-      const group = kind === "rifle" ? makeRifleTeam() : kind === "sentry" ? makeSentry() : kind === "flak" ? makeFlakTurret() : kind === "flame" ? makeFlameTurret() : kind === "laser" ? makeLaserTower() : kind === "railgun" ? makeRailgun() : kind === "howitzer" ? makeHowitzer() : kind === "missile" ? makeMissileBattery() : kind === "light" ? makeLightTower() : kind === "wall" ? makeWall() : kind === "bastion" ? makeBastion() : kind === "trench" ? makeTrench() : kind === "wire" ? makeWire() : kind === "mine" ? makeMine() : makeBarracks();
+      const group = kind === "rifle" ? makeRifleTeam() : kind === "sentry" ? makeSentry() : kind === "flak" ? makeFlakTurret() : kind === "flame" ? makeFlameTurret() : kind === "laser" ? makeLaserTower() : kind === "railgun" ? makeRailgun() : kind === "tank" ? makeTank() : kind === "howitzer" ? makeHowitzer() : kind === "missile" ? makeMissileBattery() : kind === "light" ? makeLightTower() : kind === "wall" ? makeWall() : kind === "bastion" ? makeBastion() : kind === "trench" ? makeTrench() : kind === "wire" ? makeWire() : kind === "mine" ? makeMine() : kind === "factory" ? makeMachiningFactory() : makeBarracks();
       const mountedWall = mountedOn ? structures.find(s => s.id === mountedOn && isWall(s)) : undefined;
       const mountCount = mountedOn ? structures.filter(s => s.mountedOn === mountedOn).length : 0;
       const lift = mountedWall ? wallTopLift(mountedWall) : kind === "wall" || kind === "bastion" ? stackLevel * WALL_STACK_HEIGHT : 0;
-      group.position.copy(worldPos(x + (mountedOn ? (mountCount - 1) * 0.26 : 0), y, lift)); group.rotation.y = kind === "trench" ? 0 : kind === "wall" || kind === "bastion" || kind === "wire" ? Math.PI / 2 : -0.35; group.scale.multiplyScalar(mountedOn ? 0.58 : 0.72); attachHealthBar(group, kind === "wall" || kind === "bastion" ? 1.25 : kind === "barracks" ? 2 : 1.65); world.add(group);
+      const footprint = footprintFor(kind, x, y), centerX = footprint.reduce((sum, cell) => sum + cell.x, 0) / footprint.length, centerY = footprint.reduce((sum, cell) => sum + cell.y, 0) / footprint.length;
+      group.position.copy(worldPos(centerX + (mountedOn ? (mountCount - 1) * 0.26 : 0), centerY, lift)); group.rotation.y = kind === "trench" || kind === "factory" ? 0 : kind === "wall" || kind === "bastion" || kind === "wire" ? Math.PI / 2 : -0.35; group.scale.multiplyScalar(mountedOn ? 0.58 : 0.72); attachHealthBar(group, kind === "wall" || kind === "bastion" ? 1.25 : kind === "barracks" ? 2 : kind === "factory" ? 2.35 : kind === "tank" ? 1.85 : 1.65); world.add(group);
       if (kind in TURRET_STATS || kind === "light") {
-        const radius = kind === "howitzer" || kind === "missile" || kind === "railgun" ? 1.04 : 0.9;
+        const radius = kind === "tank" || kind === "howitzer" || kind === "missile" || kind === "railgun" ? 1.04 : 0.9;
         const ring = new THREE.Mesh(new THREE.RingGeometry(radius * 0.82, radius, 28), new THREE.MeshBasicMaterial({ color: 0x7dff92, transparent: true, opacity: 0.95, side: THREE.DoubleSide })); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.035; ring.visible = false; group.add(ring); group.userData.selectionRing = ring;
         updateTierBadge(group, 1);
       }
-      const maxHp = STRUCTURE_HP[kind], structure = { id: nextId++, kind, level: 1, x, y, targetX: x, targetY: y, hp: maxHp, maxHp, mountedOn, movePath: [], pathIndex: 0, lift, stackLevel, group, cooldown: Math.random() } satisfies Structure; structures.push(structure);
+      const maxHp = STRUCTURE_HP[kind], structure = { id: nextId++, kind, level: 1, x: centerX, y: centerY, targetX: centerX, targetY: centerY, footprint, hp: maxHp, maxHp, mountedOn, movePath: [], pathIndex: 0, lift, stackLevel, group, cooldown: Math.random(), productionQueue: [], productionRemaining: 0 } satisfies Structure; structures.push(structure);
       if (kind === "trench") refreshTrenchConnections();
       if (!free && !testerMode) credits -= ASSETS[kind].cost;
       return structure;
@@ -1434,12 +1493,14 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       if (gameOver) return;
       if (active && !testerMode) return message("CONSTRUCTION LOCKED · BUILDINGS DEPLOY BETWEEN WAVES ONLY");
       if (!testerMode && credits < asset.cost) return message("INSUFFICIENT COMMAND CREDITS");
-      if (isWaterCell(x, y)) return message("WATERLOGGED GROUND · CONSTRUCTION REQUIRES DRY LAND");
-      if (map.bridgeAt?.(x, y)) return message("BRIDGE DECK MUST REMAIN CLEAR");
+      const footprint = footprintFor(kind, x, y);
+      if (footprint.some(cell => cell.x < 0 || cell.y < 0 || cell.x >= GRID_W || cell.y >= GRID_H)) return message(`${asset.name.toUpperCase()} REQUIRES A CLEAR ${kind === "factory" ? "2×2" : "1×1"} GRID FOOTPRINT`);
+      if (footprint.some(cell => isWaterCell(cell.x, cell.y))) return message("WATERLOGGED GROUND · ENTIRE STRUCTURE FOOTPRINT REQUIRES DRY LAND");
+      if (footprint.some(cell => map.bridgeAt?.(cell.x, cell.y))) return message("BRIDGE DECK MUST REMAIN CLEAR");
       const wall = topWallAt(x, y), stackingWall = !!wall && (kind === "wall" || kind === "bastion");
       const canMount = !!wall && (kind in TURRET_STATS || kind === "light");
-      const occupied = structures.some(s => Math.hypot(s.x - x, s.y - y) < 0.72 && !s.mountedOn && !(stackingWall && isWall(s)));
-      if ((x === baseCell.x && y === baseCell.y) || spawnCells.some(cell => x === cell.x && y === cell.y)) return message("DEPLOYMENT ZONE OCCUPIED");
+      const occupied = structures.some(s => !s.mountedOn && !(stackingWall && isWall(s)) && footprint.some(cell => structureOccupiesCell(s, cell.x, cell.y)));
+      if (footprint.some(cell => (cell.x === baseCell.x && cell.y === baseCell.y) || spawnCells.some(spawn => cell.x === spawn.x && cell.y === spawn.y))) return message("DEPLOYMENT ZONE OCCUPIED");
       if (occupied && !canMount && !stackingWall) return message(wall ? "ONLY TURRETS, LIGHTS, OR MORE WALLS CAN USE THIS POSITION" : "DEPLOYMENT ZONE OCCUPIED");
       const stackLevel = stackingWall ? wall.stackLevel + 1 : 0;
       const placed = addStructure(kind, x, y, false, canMount ? wall.id : undefined, stackLevel);
@@ -1461,7 +1522,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
         collapsingWalls.filter(wall => wall !== s).forEach(wall => { burst(wall.group.position, 0xff794f, 7); removeHealthBar(wall.group); discardWorldObject(wall.group); structures.splice(structures.indexOf(wall), 1); });
       }
       selectedEmplacements.delete(s.id);
-      if (selectedBarracksId === s.id) { selectedBarracksId = null; publishBarracksSelection(); }
+      if (selectedProductionId === s.id) { selectedProductionId = null; publishProductionSelection(true); }
       publishStructureSelection();
       if (salvaged && !testerMode) credits += Math.floor(ASSETS[s.kind].cost * 0.6);
       burst(s.group.position.clone().add(new THREE.Vector3(0, 0.5, 0)), salvaged ? 0x9dff8b : 0xff553f, salvaged ? 5 : 15);
@@ -1470,7 +1531,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       invalidateEnemyRoutes();
     }
     function removeStructureAt(x: number, y: number) {
-      const s = structures.filter(item => Math.hypot(item.x - x, item.y - y) < 0.72).sort((a, b) => Number(!!b.mountedOn) - Number(!!a.mountedOn) || b.stackLevel - a.stackLevel)[0]; if (!s) return;
+      const s = structures.filter(item => structureOccupiesCell(item, x, y) || Math.hypot(item.x - x, item.y - y) < 0.72).sort((a, b) => Number(!!b.mountedOn) - Number(!!a.mountedOn) || b.stackLevel - a.stackLevel)[0]; if (!s) return;
       destroyStructure(s, true);
       message(testerMode ? `${ASSETS[s.kind].name.toUpperCase()} REMOVED FROM TEST RANGE` : `${ASSETS[s.kind].name.toUpperCase()} SALVAGED · +${Math.floor(ASSETS[s.kind].cost * 0.6)} CREDITS`); emitHud(true);
     }
@@ -1535,16 +1596,54 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       if (!routed) { message("NO SAFE ROUTE · WATER OR FORTIFICATIONS BLOCK THE FORMATION"); return true; }
       message(`${routed}-UNIT COMPACT ${columns}×${rows} FORMATION ${wall ? "ROUTING TO WALL ELEVATORS" : "ROUTING AROUND FORTIFICATIONS"} · CREWED WEAPONS MOVE SLOWLY`); return true;
     }
-    function selectBarracksAt(x: number, y: number) {
-      const barracks = structures.find(s => s.kind === "barracks" && s.x === x && s.y === y); if (!barracks) return false;
-      selectedMarines.clear(); selectedEmplacements.clear(); refreshSelection(); publishStructureSelection(); selectedBarracksId = barracks.id; publishBarracksSelection();
-      message("BARRACKS SELECTED · INSTANT INFANTRY DEPLOYMENT ONLINE"); return true;
+    function selectProductionBuildingAt(x: number, y: number) {
+      const building = structures.find(s => isProductionBuilding(s) && structureOccupiesCell(s, x, y)); if (!building) return false;
+      selectedMarines.clear(); selectedEmplacements.clear(); refreshSelection(); publishStructureSelection(); selectedProductionId = building.id; publishProductionSelection(true);
+      message(building.kind === "factory" ? "MACHINING FACTORY SELECTED · HEAVY UNIT ASSEMBLY ONLINE" : "BARRACKS SELECTED · FIVE-SECOND INFANTRY TRAINING ONLINE"); return true;
+    }
+    function queueProduction(building: Structure, order: ProductionOrder, cost: number) {
+      if (gameOver) return message("PRODUCTION OFFLINE · OPERATION HAS ENDED");
+      if (!testerMode && credits < cost) return message(`${order.name.toUpperCase()} REQUIRES ${cost} COMMAND CREDITS`);
+      if (!testerMode) credits -= cost;
+      building.productionQueue.push(order);
+      if (building.productionQueue.length === 1) building.productionRemaining = order.duration;
+      publishProductionSelection(true); emitHud(true);
+      message(`${order.name.toUpperCase()} QUEUED · ${order.duration}-SECOND ${order.category === "marine" ? "TRAINING" : "ASSEMBLY"} CYCLE · POSITION ${building.productionQueue.length}`);
     }
     function recruit(kind: MarineKind) {
-      const stats = MARINE_STATS[kind], barracks = structures.find(s => s.id === selectedBarracksId && s.kind === "barracks");
+      const stats = MARINE_STATS[kind], barracks = structures.find(s => s.id === selectedProductionId && s.kind === "barracks");
       if (!barracks) return message("SELECT A FIELD BARRACKS FIRST");
-      if (!testerMode && credits < stats.cost) return message(`${stats.name.toUpperCase()} REQUIRES ${stats.cost} COMMAND CREDITS`);
-      if (!testerMode) credits -= stats.cost; const n = marines.length; spawnMarine(kind, clamp(barracks.x + 0.6 + (n % 3) * 0.28, 0, GRID_W - 1), clamp(barracks.y - 0.7 + (n % 2) * 0.45, 0, GRID_H - 1)); publishBarracksSelection(); message(`${stats.name.toUpperCase()} DEPLOYED INSTANTLY · DRAG A BOX TO ADD THEM TO A SQUAD`); emitHud(true);
+      queueProduction(barracks, { category: "marine", kind, name: stats.name, duration: INFANTRY_PRODUCTION_SECONDS }, stats.cost);
+    }
+    function produce(kind: FactoryUnitKind) {
+      const factory = structures.find(s => s.id === selectedProductionId && s.kind === "factory");
+      if (!factory) return message("SELECT A MACHINING FACTORY FIRST");
+      const asset = ASSETS[kind]; queueProduction(factory, { category: "factory", kind, name: asset.name, duration: FACTORY_PRODUCTION_SECONDS }, asset.cost);
+    }
+    function productionExit(building: Structure) {
+      const candidates = [
+        { x: Math.round(building.x + 2.5), y: Math.round(building.y) }, { x: Math.round(building.x - 2.5), y: Math.round(building.y) },
+        { x: Math.round(building.x), y: Math.round(building.y + 2.5) }, { x: Math.round(building.x), y: Math.round(building.y - 2.5) },
+      ].filter(cell => cell.x >= 0 && cell.y >= 0 && cell.x < GRID_W && cell.y < GRID_H && !isWaterCell(cell.x, cell.y));
+      return candidates.find(cell => !structures.some(s => isPathBlocking(s) && structureOccupiesCell(s, cell.x, cell.y))) ?? candidates[0] ?? { x: clamp(Math.round(building.x + 1), 0, GRID_W - 1), y: clamp(Math.round(building.y), 0, GRID_H - 1) };
+    }
+    function finishProduction(building: Structure, order: ProductionOrder) {
+      const exit = productionExit(building);
+      if (order.category === "marine") spawnMarine(order.kind, exit.x, exit.y);
+      else addStructure(order.kind, exit.x, exit.y, true);
+      burst(worldPos(exit.x, exit.y, 0.45), order.category === "marine" ? 0x67c8ff : 0xe5ba67, 10);
+      message(`${order.name.toUpperCase()} PRODUCTION COMPLETE · UNIT DEPLOYED BESIDE ${building.kind === "factory" ? "FACTORY" : "BARRACKS"}`);
+    }
+    function updateProduction(dt: number) {
+      for (const building of structures.filter(isProductionBuilding)) {
+        if (!building.productionQueue.length) continue;
+        building.productionRemaining -= dt;
+        while (building.productionQueue.length && building.productionRemaining <= 0) {
+          const completed = building.productionQueue.shift()!; finishProduction(building, completed);
+          const next = building.productionQueue[0]; building.productionRemaining += next?.duration ?? 0;
+        }
+      }
+      if (selectedProductionId !== null) publishProductionSelection();
     }
     function assaultOffset(spawnCell: Cell, formationIndex: number): Cell {
       const column = formationIndex % 6, rank = Math.floor(formationIndex / 6);
@@ -1721,14 +1820,14 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
     }
     function restart() {
       [...structures, ...enemies, ...marines].forEach(o => { removeHealthBar(o.group); discardWorldObject(o.group); }); bullets.forEach(b => releaseProjectile(b.mesh, b.pool)); hostileProjectiles.forEach(p => discardWorldObject(p.group)); particles.forEach(p => discardWorldObject(p.mesh));
-      structures = []; enemies = []; marines = []; bullets = []; hostileProjectiles = []; particles = []; enemyRouteCache.clear(); routeRevision++; selectedMarines.clear(); selectedEmplacements.clear(); selectedBarracksId = null; callbacks.current.onUnitSelected(null); callbacks.current.onBarracksSelected(null); credits = testerMode ? Infinity : 750; integrity = 100; wave = 0; kills = 0; active = false; buildTimer = 0; gameOver = false; victory = false; spawnLeft = 0; spawnTimer = 0; assaultFront = 0;
+      structures = []; enemies = []; marines = []; bullets = []; hostileProjectiles = []; particles = []; enemyRouteCache.clear(); routeRevision++; selectedMarines.clear(); selectedEmplacements.clear(); selectedProductionId = null; lastProductionSnapshot = ""; callbacks.current.onUnitSelected(null); callbacks.current.onProductionSelected(null); credits = testerMode ? Infinity : 750; integrity = 100; wave = 0; kills = 0; active = false; buildTimer = 0; gameOver = false; victory = false; spawnLeft = 0; spawnTimer = 0; assaultFront = 0;
       deployStartingForces(); message(testerMode ? "UNIT TEST RANGE RESET · UNLIMITED ASSETS ONLINE" : "COMMAND SYSTEMS RESET · AWAITING DEPLOYMENT"); emitHud(true);
     }
     function rotate() {
       const offset = camera.position.clone().sub(controls.target); const a = Math.PI / 2;
       camera.position.set(controls.target.x + offset.x * Math.cos(a) - offset.z * Math.sin(a), camera.position.y, controls.target.z + offset.x * Math.sin(a) + offset.z * Math.cos(a)); controls.update();
     }
-    apiRef.current = { start: startWave, restart, rotate, upgradeSelected, recruit };
+    apiRef.current = { start: startWave, restart, rotate, upgradeSelected, recruit, produce };
 
     const raycaster = new THREE.Raycaster(), pointer = new THREE.Vector2(), cameraVelocity = new THREE.Vector3(); const heldKeys = new Set<string>(); let hovered: PickedTerrain | null = null, downX = 0, downY = 0, rightDownX = 0, rightDownY = 0, selecting = false;
     const selectionBox = document.createElement("div"); selectionBox.className = "selection-box"; host.appendChild(selectionBox);
@@ -1752,15 +1851,15 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       if (drag > 5) {
         const minX = Math.min(downX, e.clientX), maxX = Math.max(downX, e.clientX), minY = Math.min(downY, e.clientY), maxY = Math.max(downY, e.clientY), r = renderer.domElement.getBoundingClientRect(); if (!e.shiftKey) { selectedMarines.clear(); selectedEmplacements.clear(); }
         marines.forEach(m => { const p = m.group.getWorldPosition(new THREE.Vector3()).project(camera), sx = r.left + (p.x + 1) * r.width / 2, sy = r.top + (-p.y + 1) * r.height / 2; if (sx >= minX && sx <= maxX && sy >= minY && sy <= maxY) selectedMarines.add(m.id); });
-        structures.filter(isUpgradableStructure).forEach(s => { const p = s.group.getWorldPosition(new THREE.Vector3()).project(camera), sx = r.left + (p.x + 1) * r.width / 2, sy = r.top + (-p.y + 1) * r.height / 2; if (sx >= minX && sx <= maxX && sy >= minY && sy <= maxY) selectedEmplacements.add(s.id); }); selectedBarracksId = null; refreshSelection(); publishStructureSelection(); publishBarracksSelection(); const count = marines.filter(marine => selectedMarines.has(marine.id)).reduce((total, marine) => total + marineTroopCount(marine), 0) + selectedEmplacements.size; message(`${count} UNIT${count === 1 ? "" : "S"} BOX-SELECTED · RIGHT-CLICK FOR COMPACT FORMATION`); return;
+        structures.filter(isUpgradableStructure).forEach(s => { const p = s.group.getWorldPosition(new THREE.Vector3()).project(camera), sx = r.left + (p.x + 1) * r.width / 2, sy = r.top + (-p.y + 1) * r.height / 2; if (sx >= minX && sx <= maxX && sy >= minY && sy <= maxY) selectedEmplacements.add(s.id); }); selectedProductionId = null; refreshSelection(); publishStructureSelection(); publishProductionSelection(true); const count = marines.filter(marine => selectedMarines.has(marine.id)).reduce((total, marine) => total + marineTroopCount(marine), 0) + selectedEmplacements.size; message(`${count} UNIT${count === 1 ? "" : "S"} BOX-SELECTED · RIGHT-CLICK FOR COMPACT FORMATION`); return;
       }
       const tile = pick(e); if (!tile) return; const x = tile.cell.x, y = tile.cell.y;
       const stackOrder = (selectedRef.current === "wall" || selectedRef.current === "bastion") && !!topWallAt(x, y);
       if (stackOrder) { tryPlace(x, y); return; }
-      if (selectBarracksAt(x, y)) return; if (selectUnitAt(x, y, e.shiftKey)) { selectedBarracksId = null; publishBarracksSelection(); return; } if (!selectedMarines.size && !selectedEmplacements.size) { selectedBarracksId = null; publishBarracksSelection(); tryPlace(x, y); }
+      if (selectProductionBuildingAt(x, y)) return; if (selectUnitAt(x, y, e.shiftKey)) { selectedProductionId = null; publishProductionSelection(true); return; } if (!selectedMarines.size && !selectedEmplacements.size) { selectedProductionId = null; publishProductionSelection(true); tryPlace(x, y); }
     }
     function onContext(e: MouseEvent) { e.preventDefault(); if (Math.hypot(e.clientX - rightDownX, e.clientY - rightDownY) > 6) return; const tile = pick(e as PointerEvent); if (!tile) return; if (e.shiftKey) removeStructureAt(tile.cell.x, tile.cell.y); else if (!commandFormation(tile.cell.x, tile.cell.y)) message("SELECT RIFLEMEN OR CREWED WEAPONS WITH A CLICK OR DRAG BOX FIRST"); }
-    function onKey(e: KeyboardEvent) { heldKeys.add(e.key.toLowerCase()); if (e.key.toLowerCase() === "r") rotate(); if (e.key === "Escape") { selectedMarines.clear(); selectedEmplacements.clear(); selectedBarracksId = null; refreshSelection(); publishStructureSelection(); publishBarracksSelection(); } if (e.code === "Space") { e.preventDefault(); if (testerMode) message("USE THE UNIT TEST CONSOLE TO LAUNCH AN EXACT WAVE"); else startWave(); } }
+    function onKey(e: KeyboardEvent) { heldKeys.add(e.key.toLowerCase()); if (e.key.toLowerCase() === "r") rotate(); if (e.key === "Escape") { selectedMarines.clear(); selectedEmplacements.clear(); selectedProductionId = null; refreshSelection(); publishStructureSelection(); publishProductionSelection(true); } if (e.code === "Space") { e.preventDefault(); if (testerMode) message("USE THE UNIT TEST CONSOLE TO LAUNCH AN EXACT WAVE"); else startWave(); } }
     function onKeyUp(e: KeyboardEvent) { heldKeys.delete(e.key.toLowerCase()); }
     renderer.domElement.addEventListener("pointermove", onMove, true); renderer.domElement.addEventListener("pointerdown", onDown, true); renderer.domElement.addEventListener("pointerup", onUp, true); renderer.domElement.addEventListener("contextmenu", onContext); window.addEventListener("keydown", onKey); window.addEventListener("keyup", onKeyUp);
 
@@ -1814,6 +1913,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
         buildTimer = Math.max(0, buildTimer - dt);
         if (buildTimer === 0) { message("BUILD WINDOW CLOSED · NEXT WAVE DEPLOYING"); startWave(); }
       }
+      if (!gameOver) updateProduction(dt);
       const forward = controls.target.clone().sub(camera.position); forward.y = 0; forward.normalize(); const right = new THREE.Vector3(-forward.z, 0, forward.x); const intent = new THREE.Vector3();
       if (heldKeys.has("w")) intent.add(forward); if (heldKeys.has("s")) intent.sub(forward); if (heldKeys.has("d")) intent.add(right); if (heldKeys.has("a")) intent.sub(right);
       if (intent.lengthSq()) cameraVelocity.addScaledVector(intent.normalize(), dt * 25); cameraVelocity.multiplyScalar(Math.exp(-dt * 5.2));
@@ -1949,9 +2049,11 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       for (const s of structures) {
         s.cooldown -= dt;
         const scanRig = s.group.userData.scanRig as THREE.Group | undefined; if (scanRig) scanRig.rotation.y += dt * 0.42;
+        const factoryRig = s.group.userData.factoryRig as THREE.Group | undefined; if (factoryRig && s.productionQueue.length) factoryRig.rotation.y += dt * 0.7;
         let isMoving = false;
         if (isMobileEmplacement(s)) {
-          isMoving = advanceFriendly(s, s.kind === "howitzer" ? 0.26 : 0.42, s.kind === "howitzer" ? 2.2 : 3.2, dt);
+          const movementSpeed = s.kind === "howitzer" ? 0.26 : s.kind === "tank" ? 0.58 : 0.42;
+          isMoving = advanceFriendly(s, movementSpeed, s.kind === "howitzer" ? 2.2 : s.kind === "tank" ? 4.2 : 3.2, dt);
           s.group.position.lerp(worldPos(s.x, s.y, s.lift), Math.min(1, dt * 10));
         }
         syncHealthBar(s.group);
@@ -2051,14 +2153,14 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
 }
 
 export default function Home() {
-  const [selected, setSelected] = useState<AssetKey>("rifle");
+  const [selected, setSelected] = useState<DeployableAssetKey>("rifle");
   const [mapKey, setMapKey] = useState<MapKey>("ridge");
   const [gameMode, setGameMode] = useState<GameMode>("campaign");
   const [testWave, setTestWave] = useState(1);
   const [testEnemyCount, setTestEnemyCount] = useState(100);
   const [hud, setHud] = useState<Hud>({ credits: 750, integrity: 100, wave: 0, enemies: 0, kills: 0, active: false, buildSeconds: null, gameOver: false, victory: false });
   const [selectedUnit, setSelectedUnit] = useState<SelectedUnit | null>(null);
-  const [selectedBarracks, setSelectedBarracks] = useState<BarracksInfo | null>(null);
+  const [selectedProduction, setSelectedProduction] = useState<ProductionBuildingInfo | null>(null);
   const [message, setMessage] = useState("OPERATION FIRST WATCH · HQ COMMAND ONLINE");
   const [briefing, setBriefing] = useState(true);
   const apiRef = useRef<BattlefieldApi | null>(null);
@@ -2068,12 +2170,12 @@ export default function Home() {
   const map = MAPS[mapKey];
   const formatBuildTime = (seconds: number) => `00:${String(seconds).padStart(2, "0")}`;
   const selectMap = (nextMap: MapKey) => {
-    setMapKey(nextMap); setSelectedUnit(null); setSelectedBarracks(null);
+    setMapKey(nextMap); setSelectedUnit(null); setSelectedProduction(null);
     setMessage(`OPERATION ${MAPS[nextMap].operation} · ${MAPS[nextMap].sector} SELECTED`);
   };
   const selectMode = (nextMode: GameMode) => {
     if (messageTimer.current) clearTimeout(messageTimer.current);
-    setGameMode(nextMode); setSelectedUnit(null); setSelectedBarracks(null);
+    setGameMode(nextMode); setSelectedUnit(null); setSelectedProduction(null);
     setMessage(nextMode === "tester" ? "UNIT TESTER SELECTED · UNLIMITED ASSETS AUTHORIZED" : `OPERATION ${map.operation} · CAMPAIGN RULES RESTORED`);
   };
   const launchTest = () => apiRef.current?.start({ wave: clamp(Math.round(testWave), 1, FINAL_MAP_WAVES), enemyCount: clamp(Math.round(testEnemyCount), 1, 5000) });
@@ -2092,7 +2194,7 @@ export default function Home() {
         </div> : <button className="wave-button" disabled={hud.active || hud.gameOver} onClick={() => apiRef.current?.start()}>{hud.active ? `WAVE ${String(hud.wave).padStart(2, "0")} ACTIVE` : hud.gameOver ? "OPERATION ENDED" : hud.buildSeconds === null ? `DEPLOY WAVE ${String(hud.wave + 1).padStart(2, "0")}` : `START WAVE ${String(hud.wave + 1).padStart(2, "0")} NOW`}</button>}
       </header>
       <section className="battlefield">
-        <Battlefield selected={selected} mapKey={mapKey} testerMode={testerMode} onHud={setHud} onMessage={showMessage} onUnitSelected={setSelectedUnit} onBarracksSelected={setSelectedBarracks} apiRef={apiRef} />
+        <Battlefield selected={selected} mapKey={mapKey} testerMode={testerMode} onHud={setHud} onMessage={showMessage} onUnitSelected={setSelectedUnit} onProductionSelected={setSelectedProduction} apiRef={apiRef} />
         <div className={`mission-card ${testerMode ? "tester" : ""}`}><span>{testerMode ? "UNIT TESTER · SANDBOX RANGE" : `OPERATION ${map.operation} · SECTOR ${map.sector}`}</span><b>{testerMode ? `${map.name} Combat Laboratory` : map.objective}</b><small>{testerMode ? `Wave ${testWave} profile · ${testEnemyCount.toLocaleString()} aliens requested · unlimited construction` : `Wave ${Math.min(hud.wave + (hud.active ? 0 : 1), map.waveCount)} of ${map.waveCount} · ${hud.kills} confirmed eliminations · ${hud.active ? "CONSTRUCTION LOCKED" : hud.buildSeconds === null ? "STAGING AREA OPEN" : `BUILD ${formatBuildTime(hud.buildSeconds)}`}`}</small><button className="map-change" disabled={hud.active} onClick={() => setBriefing(true)}>CHANGE MAP / MODE</button></div>
         <div className="status-feed"><i />{message}</div>
         {selectedUnit && <div className="upgrade-card" style={{ "--upgrade-color": ASSETS[selectedUnit.kind].accent } as React.CSSProperties}>
@@ -2101,10 +2203,11 @@ export default function Home() {
           <button disabled={selectedUnit.upgradeCost === null || (!testerMode && hud.credits < selectedUnit.upgradeCost)} onClick={() => apiRef.current?.upgradeSelected()}>{selectedUnit.upgradeCost === null ? "MAXIMUM TIER" : testerMode ? `UPGRADE TO TIER ${selectedUnit.level + 1} · FREE` : `UPGRADE TO TIER ${selectedUnit.level + 1} · ¤ ${selectedUnit.upgradeCost}`}</button>
           <p>{selectedUnit.support ? "Upgrade increases vision radius, searchlight power, and armor." : "Upgrade increases damage, range, fire rate, and armor."}</p>
         </div>}
-        {selectedBarracks && <div className="barracks-card">
-          <small>SELECTED BUILDING</small><div className="barracks-heading"><div><b>FIELD BARRACKS</b><span>INFANTRY DEPLOYMENT BAY</span></div><em>INSTANT</em></div>
-          <div className="recruit-list">{(Object.keys(MARINE_STATS) as MarineKind[]).map(kind => { const unit = MARINE_STATS[kind]; return <button key={kind} disabled={!testerMode && hud.credits < unit.cost} onClick={() => apiRef.current?.recruit(kind)} style={{ "--unit-color": unit.color } as React.CSSProperties}><span>{kind === "rifleman" ? "⌖" : kind === "gunner" ? "▣" : kind === "medic" ? "+" : "➶"}</span><div><b>{unit.name}</b><small>{unit.role} · Instant</small></div><em>{testerMode ? "FREE" : `¤ ${unit.cost}`}</em></button>; })}</div>
-          <p>{testerMode ? "Sandbox supply is unlimited. Recruit any number of specialists instantly." : "Recruit as many specialists as command credits allow. Every infantry unit deploys beside the barracks immediately."}</p>
+        {selectedProduction && <div className={`barracks-card ${selectedProduction.kind === "factory" ? "factory-card" : ""}`}>
+          <small>SELECTED BUILDING</small><div className="barracks-heading"><div><b>{selectedProduction.kind === "factory" ? "MACHINING FACTORY" : "FIELD BARRACKS"}</b><span>{selectedProduction.kind === "factory" ? "HEAVY VEHICLE ASSEMBLY · 2×2" : "INFANTRY TRAINING BAY"}</span></div><em>{selectedProduction.currentName ? `00:${String(selectedProduction.remaining).padStart(2, "0")}` : "READY"}</em></div>
+          <div className="production-status"><span><b>{selectedProduction.currentName ?? "PRODUCTION IDLE"}</b><small>{selectedProduction.queueLength ? `${selectedProduction.queueLength} ORDER${selectedProduction.queueLength === 1 ? "" : "S"} IN QUEUE` : "SELECT A UNIT TO BEGIN"}</small></span><i><b style={{ width: `${selectedProduction.currentName ? clamp((selectedProduction.duration - selectedProduction.remaining) / selectedProduction.duration * 100, 0, 100) : 0}%` }} /></i></div>
+          {selectedProduction.kind === "barracks" ? <div className="recruit-list">{(Object.keys(MARINE_STATS) as MarineKind[]).map(kind => { const unit = MARINE_STATS[kind]; return <button key={kind} disabled={!testerMode && hud.credits < unit.cost} onClick={() => apiRef.current?.recruit(kind)} style={{ "--unit-color": unit.color } as React.CSSProperties}><span>{kind === "rifleman" ? "⌖" : kind === "gunner" ? "▣" : kind === "medic" ? "+" : "➶"}</span><div><b>{unit.name}</b><small>{unit.role} · 5 sec</small></div><em>{testerMode ? "FREE" : `¤ ${unit.cost}`}</em></button>; })}</div> : <div className="recruit-list">{(["tank", "howitzer"] as FactoryUnitKind[]).map(kind => { const unit = ASSETS[kind]; return <button key={kind} disabled={!testerMode && hud.credits < unit.cost} onClick={() => apiRef.current?.produce(kind)} style={{ "--unit-color": unit.accent } as React.CSSProperties}><span>{unit.icon}</span><div><b>{unit.name}</b><small>{unit.role} · 30 sec</small></div><em>{testerMode ? "FREE" : `¤ ${unit.cost}`}</em></button>; })}</div>}
+          <p>{selectedProduction.kind === "factory" ? "Tanks and M777 Howitzers can only be assembled here. Completed units deploy beside the factory." : "Every infantry specialist completes a five-second training cycle before deploying beside the barracks."}</p>
         </div>}
         <div className="camera-tools"><button onClick={() => apiRef.current?.rotate()} aria-label="Rotate camera">↻</button><span>ORBIT</span></div>
         {briefing && <div className="briefing map-briefing"><div className="briefing-id">DEPLOYMENT MODE // FIVE ACTIVE SECTORS</div><h1>Choose how you want to play.</h1><p>Run each battlefield&apos;s progressive campaign or open a combat laboratory with exact wave controls and unlimited friendly assets.</p><div className="mode-selector" aria-label="Game mode"><button className={gameMode === "campaign" ? "active" : ""} aria-pressed={gameMode === "campaign"} onClick={() => selectMode("campaign")}><small>STANDARD OPERATION</small><b>CAMPAIGN</b><span>Credits, build windows, and progressively longer operations.</span></button><button className={gameMode === "tester" ? "active" : ""} aria-pressed={gameMode === "tester"} onClick={() => selectMode("tester")}><small>COMBAT LABORATORY</small><b>UNIT TESTER</b><span>Pick a wave and alien count. All defenses, upgrades, and infantry are free.</span></button></div><div className="map-selector" aria-label="Available battlefields">{MAP_ORDER.map(key => { const option = MAPS[key]; const pipPosition = (cell: Cell) => ({ left: `${(cell.x / (GRID_W - 1)) * 100}%`, top: `${(cell.y / (GRID_H - 1)) * 100}%` }); return <button key={key} className={`map-option ${mapKey === key ? "active" : ""}`} aria-pressed={mapKey === key} onClick={() => selectMap(key)}><span className={`map-preview ${key}`} aria-hidden="true"><i className="base-pip" style={pipPosition(option.baseCell)} />{option.spawnCells.map((cell, index) => <i key={`${cell.x}-${cell.y}-${index}`} className="portal-pip" style={pipPosition(cell)} />)}</span><small>{option.terrain}</small><b>{option.name}</b><em>{option.objective} · {option.waveCount} campaign waves</em></button>; })}</div><p className="map-description"><b>{testerMode ? "UNIT TEST RANGE" : `OPERATION ${map.operation} · SECTOR ${map.sector}`}</b>{testerMode ? `Use ${map.name} to test any wave from 1 to ${FINAL_MAP_WAVES} against a custom force of up to 5,000 aliens.` : map.description}</p><div className="brief-grid"><span><kbd>{testerMode ? "WAVE 1–25" : "LIGHT TOWER"}</kbd><b>{testerMode ? "Choose enemy strength and unit mix" : "Reveal a wide area"}</b></span><span><kbd>{testerMode ? "1–5,000" : "RIGHT CLICK"}</kbd><b>{testerMode ? "Set the exact alien population" : "Move scouts forward"}</b></span><span><kbd>{testerMode ? "UNLIMITED" : "STACK WALLS"}</kbd><b>{testerMode ? "Place, upgrade, and recruit for free" : "Shape every approach"}</b></span><span><kbd>MIDDLE DRAG</kbd><b>Orbit camera</b></span></div><button onClick={() => setBriefing(false)}>{testerMode ? `OPEN UNIT TESTER ON ${map.name.toUpperCase()}` : `DEPLOY TO ${map.name.toUpperCase()}`}</button></div>}
@@ -2112,7 +2215,7 @@ export default function Home() {
       </section>
       <aside className={`build-panel ${testerMode ? "tester" : ""} ${(!testerMode && hud.active) || hud.gameOver ? "locked" : ""}`}>
         <div className="panel-title"><small>{testerMode ? "UNIT TEST SUPPLY · UNLIMITED" : hud.active ? "CONSTRUCTION LOCKED · WAVE ACTIVE" : hud.gameOver ? "OPERATION ENDED" : hud.buildSeconds === null ? "FORWARD ENGINEERING · STAGING" : `FORWARD ENGINEERING · ${formatBuildTime(hud.buildSeconds)} LEFT`}</small><b>DEPLOYABLE ASSETS</b></div>
-        {(Object.keys(ASSETS) as AssetKey[]).map(key => { const a = ASSETS[key]; return <button key={key} disabled={hud.gameOver || (!testerMode && hud.active)} className={`asset ${selected === key ? "active" : ""}`} onClick={() => setSelected(key)} style={{ "--asset-color": a.accent } as React.CSSProperties}><span>{a.icon}</span><div><b>{a.name}</b><small>{a.role}</small></div><em>{testerMode ? "∞" : a.cost}</em></button>; })}
+        {DEPLOYABLE_ASSET_KEYS.map(key => { const a = ASSETS[key]; return <button key={key} disabled={hud.gameOver || (!testerMode && hud.active)} className={`asset ${selected === key ? "active" : ""}`} onClick={() => setSelected(key)} style={{ "--asset-color": a.accent } as React.CSSProperties}><span>{a.icon}</span><div><b>{a.name}</b><small>{a.role}</small></div><em>{testerMode ? "∞" : a.cost}</em></button>; })}
         <div className="intel"><span>{testerMode ? "TESTER INTEL" : "FIELD INTEL"}</span><p>{testerMode ? "Asset supply, upgrades, and infantry recruitment are unlimited—even during an active test. Water blocks all ordinary ground units; only aquatic aliens can enter it, while flyers pass above. Select a wave and exact alien population in the top console, then rerun as many configurations as you want." : "Water blocks friendly units, construction, and ordinary ground aliens. Only aquatic aliens can enter it; winged Skyrazors pass above terrain. Friendly troops climb natural terrain far faster than aliens. Buildings deploy only before a wave or during the 30-second build window. Shift + right-click salvages."}</p></div>
       </aside>
       <footer className="controls"><span><kbd>DRAG BOX</kbd> SELECT UNITS</span><span><kbd>RIGHT CLICK</kbd> FORMATION MOVE</span><span><kbd>MIDDLE DRAG</kbd> ORBIT</span><span><kbd>WASD</kbd> GLIDE CAMERA</span><span><kbd>{testerMode ? "TEST CONSOLE" : "SPACE"}</kbd> {testerMode ? "RUN EXACT WAVE" : "START WAVE"}</span><span className="online">● GITHUB PAGES</span></footer>
