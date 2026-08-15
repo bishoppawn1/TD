@@ -120,7 +120,7 @@ A support structure where the player can instantly recruit riflemen, heavy gunne
 
 ## Friendly Units
 
-- Ten or more stationary infantry of the same class in one grid square collapse into a single rendered troop stack with a persistent `×N` badge. The stack can grow beyond ten and moves as one selectable formation member.
+- Ten or more stationary infantry of the same class within a one-grid-square-diameter collection area collapse into a single rendered troop stack with a persistent `×N` badge. The stack can grow beyond ten and moves as one selectable formation member.
 - Troop stacks retain the health of every soldier. Incoming hits damage only the front soldier, removing one member when that soldier falls, while the representative's outgoing damage and medical support scale with the number of surviving members.
 
 ### Rocketeer — 155 credits

@@ -23,6 +23,8 @@ const ROUTE_CACHE_LIMIT = 900;
 const PROJECTILE_POOL_LIMIT = 80;
 const AOE_RADIUS_MULTIPLIER = 0.85;
 const MARINE_STACK_THRESHOLD = 10;
+const MARINE_STACK_COLLECTION_DIAMETER = 1;
+const MARINE_STACK_COLLECTION_RADIUS = MARINE_STACK_COLLECTION_DIAMETER / 2;
 const ENEMY_COLLISION_BUCKET_SIZE = 1.12;
 const WALL_STACK_HEIGHT = 0.62;
 const WALL_CLIMB_SPEED = 0.46;
@@ -1058,24 +1060,35 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       syncMarineStackState(marine);
     }
     function compactMarineStacks() {
-      const buckets = new Map<string, Marine[]>();
+      const stationaryMarines: Marine[] = [], buckets = new Map<string, Marine[]>();
+      const stackLayer = (marine: Marine) => `${marine.kind}:${marine.mountedOn ?? 0}:${marine.trenchId ?? 0}:${Math.round(marine.lift * 20)}`;
+      const stackBucket = (marine: Marine, cellX = Math.floor(marine.x / MARINE_STACK_COLLECTION_RADIUS), cellY = Math.floor(marine.y / MARINE_STACK_COLLECTION_RADIUS)) => `${stackLayer(marine)}:${cellX},${cellY}`;
       for (const marine of marines) {
         if (marine.movePath.length) continue;
-        const cellX = Math.round(marine.x), cellY = Math.round(marine.y), layer = `${marine.mountedOn ?? 0}:${marine.trenchId ?? 0}:${Math.round(marine.lift * 20)}`;
-        const bucketKey = `${marine.kind}:${cellX},${cellY}:${layer}`, bucket = buckets.get(bucketKey);
+        stationaryMarines.push(marine);
+        const bucketKey = stackBucket(marine), bucket = buckets.get(bucketKey);
         if (bucket) bucket.push(marine); else buckets.set(bucketKey, [marine]);
       }
+      const remaining = new Set(stationaryMarines);
       let changed = false;
-      for (const bucket of buckets.values()) {
-        const total = bucket.reduce((count, marine) => count + marineTroopCount(marine), 0);
-        if (bucket.length < 2 || (total < MARINE_STACK_THRESHOLD && !bucket.some(marine => marine.stacked))) continue;
-        const representative = bucket.find(marine => marine.stacked) ?? bucket[0], absorbed = bucket.filter(marine => marine !== representative);
+      for (const anchor of stationaryMarines.sort((a, b) => Number(b.stacked) - Number(a.stacked) || a.id - b.id)) {
+        if (!remaining.has(anchor)) continue;
+        const cellX = Math.floor(anchor.x / MARINE_STACK_COLLECTION_RADIUS), cellY = Math.floor(anchor.y / MARINE_STACK_COLLECTION_RADIUS), nearby: Marine[] = [];
+        for (let offsetX = -1; offsetX <= 1; offsetX++) for (let offsetY = -1; offsetY <= 1; offsetY++) {
+          for (const marine of buckets.get(stackBucket(anchor, cellX + offsetX, cellY + offsetY)) ?? []) {
+            if (remaining.has(marine) && Math.hypot(marine.x - anchor.x, marine.y - anchor.y) <= MARINE_STACK_COLLECTION_RADIUS) nearby.push(marine);
+          }
+        }
+        const total = nearby.reduce((count, marine) => count + marineTroopCount(marine), 0);
+        if (nearby.length < 2 || (total < MARINE_STACK_THRESHOLD && !nearby.some(marine => marine.stacked))) continue;
+        const representative = nearby.find(marine => marine.stacked) ?? anchor, absorbed = nearby.filter(marine => marine !== representative);
         representative.memberHp = [representative, ...absorbed].flatMap(marine => marine.memberHp);
-        representative.stacked = true; representative.cooldown = Math.min(...bucket.map(marine => marine.cooldown)); representative.supportCooldown = Math.min(...bucket.map(marine => marine.supportCooldown));
-        if (bucket.some(marine => selectedMarines.has(marine.id))) selectedMarines.add(representative.id);
+        representative.stacked = true; representative.cooldown = Math.min(...nearby.map(marine => marine.cooldown)); representative.supportCooldown = Math.min(...nearby.map(marine => marine.supportCooldown));
+        if (nearby.some(marine => selectedMarines.has(marine.id))) selectedMarines.add(representative.id);
         const absorbedIds = new Set(absorbed.map(marine => marine.id));
         hostileProjectiles.forEach(shot => { if (shot.targetType === "marine" && absorbedIds.has(shot.targetId)) shot.targetId = representative.id; });
         enemies.forEach(enemy => { if (enemy.targetType === "marine" && enemy.targetId !== null && absorbedIds.has(enemy.targetId)) { enemy.targetId = representative.id; enemy.pathTimer = 0; } });
+        for (const marine of nearby) remaining.delete(marine);
         for (const marine of absorbed) {
           selectedMarines.delete(marine.id); removeHealthBar(marine.group); discardWorldObject(marine.group); marines.splice(marines.indexOf(marine), 1);
         }
