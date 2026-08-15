@@ -644,9 +644,9 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, onBarracksSel
       if (gameOver) return;
       if (credits < asset.cost) return message("INSUFFICIENT COMMAND CREDITS");
       const wall = structures.find(s => isWall(s) && s.x === x && s.y === y);
-      const canMount = !!wall && (kind === "rifle" || kind === "howitzer");
+      const canMount = !!wall && kind in TURRET_STATS;
       if ((x === baseCell.x && y === baseCell.y) || (x === spawnCell.x && y === spawnCell.y) || (structures.some(s => Math.hypot(s.x - x, s.y - y) < 0.72) && !canMount)) return message(wall ? "WALL POSITION ALREADY OCCUPIED" : "DEPLOYMENT ZONE OCCUPIED");
-      if (wall && !canMount) return message("ONLY RIFLE TEAMS OR ARTILLERY CAN MOUNT WALLS");
+      if (wall && !canMount) return message("ONLY TURRETS CAN MOUNT WALLS");
       if (kind !== "mine" && kind !== "wire" && !canMount && !findPath(spawnCell.x, spawnCell.y, { x, y }).length) return message("FORTIFICATION WOULD SEAL THE EVACUATION CORRIDOR");
       addStructure(kind, x, y, false, canMount ? wall?.id : undefined);
       if (kind !== "mine" && kind !== "wire" && !canMount) enemies.forEach(e => { e.pathTimer = 0; e.index = 0; });
@@ -997,7 +997,7 @@ export default function Home() {
       <aside className="build-panel">
         <div className="panel-title"><small>FORWARD ENGINEERING</small><b>DEPLOYABLE ASSETS</b></div>
         {(Object.keys(ASSETS) as AssetKey[]).map(key => { const a = ASSETS[key]; return <button key={key} className={`asset ${selected === key ? "active" : ""}`} onClick={() => setSelected(key)} style={{ "--asset-color": a.accent } as React.CSSProperties}><span>{a.icon}</span><div><b>{a.name}</b><small>{a.role}</small></div><em>{a.cost}</em></button>; })}
-        <div className="intel"><span>FIELD INTEL</span><p>Razor wire slows and damages anything crossing it. Both wall types support rifle teams and artillery. Click a barracks to train specialists. Shift + right-click salvages.</p></div>
+        <div className="intel"><span>FIELD INTEL</span><p>Razor wire slows and damages anything crossing it. Both wall types support every turret. Click a barracks to train specialists. Shift + right-click salvages.</p></div>
       </aside>
       <footer className="controls"><span><kbd>DRAG BOX</kbd> SELECT UNITS</span><span><kbd>RIGHT CLICK</kbd> FORMATION MOVE</span><span><kbd>MIDDLE DRAG</kbd> ORBIT</span><span><kbd>WASD</kbd> GLIDE CAMERA</span><span><kbd>SPACE</kbd> START WAVE</span><span className="online">● GITHUB PAGES</span></footer>
     </main>
