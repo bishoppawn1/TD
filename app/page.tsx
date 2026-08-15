@@ -329,8 +329,8 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
     scene.fog = new THREE.FogExp2(map.background, 0.01);
     const camera = new THREE.PerspectiveCamera(42, host.clientWidth / host.clientHeight, 0.1, 320);
     camera.position.set(42, 46, 46);
-    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
-    renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+    const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "low-power" });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 1));
     renderer.setSize(host.clientWidth, host.clientHeight);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -383,26 +383,25 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       m.position.copy(mid); m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize()); parent.add(m); return m;
     };
 
-    const tileMeshes: THREE.Mesh[] = [];
+    type TerrainCell = { x: number; y: number; height: number; base: THREE.Color; water: boolean; bridge: boolean };
+    type PickedTerrain = { mesh: THREE.InstancedMesh; instanceId: number; cell: TerrainCell };
+    const terrainCells: TerrainCell[] = [];
+    const tileMeshes: THREE.InstancedMesh[] = [];
     const waterRipples: Array<{ mesh: THREE.Mesh; phase: number }> = [];
-    const fogTiles: Array<{ x: number; y: number; mesh: THREE.Mesh; material: THREE.MeshBasicMaterial }> = [];
+    const fogCells: Array<{ x: number; y: number; index: number }> = [];
     for (let y = 0; y < GRID_H; y++) for (let x = 0; x < GRID_W; x++) {
       const h = heights[y][x];
       const water = isWaterCell(x, y), bridge = !!map.bridgeAt?.(x, y);
       const color = bridge ? new THREE.Color((x + y) % 2 ? 0x515a62 : 0x626c73) : water ? new THREE.Color(map.waterColor).offsetHSL(0, 0, ((x + y) % 3 - 1) * 0.025) : new THREE.Color().setHSL(map.hue + ((x * 7 + y * 3) % 5) * 0.006, map.saturation, 0.20 + h * 0.035);
-      const material = new THREE.MeshStandardMaterial({ color, roughness: bridge ? 0.48 : water ? 0.18 : 0.98, metalness: bridge ? 0.46 : water ? 0.34 : 0, emissive: water ? map.waterGlow : 0x000000, emissiveIntensity: water ? 0.8 : 1 });
-      const tile = new THREE.Mesh(new THREE.BoxGeometry(TILE - 0.045, 0.55 + h, TILE - 0.045), material);
-      const p = worldPos(x, y); tile.position.set(p.x, (h - 0.55) / 2, p.z); tile.userData = { x, y, base: color.clone(), water, bridge };
-      world.add(tile); tileMeshes.push(tile);
-      if (water && terrainNoise(x, y, 71) > 0.58) {
+      const p = worldPos(x, y);
+      terrainCells.push({ x, y, height: h, base: color, water, bridge });
+      fogCells.push({ x, y, index: y * GRID_W + x });
+      if (water && terrainNoise(x, y, 71) > 0.78) {
         const rippleMaterial = new THREE.MeshBasicMaterial({ color: new THREE.Color(map.waterColor).offsetHSL(0.02, 0.12, 0.25), transparent: true, opacity: 0.25, side: THREE.DoubleSide, depthWrite: false });
-        const ripple = new THREE.Mesh(new THREE.RingGeometry(0.16, 0.2, 18), rippleMaterial);
+        const ripple = new THREE.Mesh(new THREE.RingGeometry(0.16, 0.2, 12), rippleMaterial);
         ripple.rotation.x = -Math.PI / 2; ripple.scale.y = 0.56; ripple.position.copy(p).add(new THREE.Vector3(0, 0.04, 0)); ripple.renderOrder = 2; world.add(ripple);
         waterRipples.push({ mesh: ripple, phase: terrainNoise(x, y, 89) * Math.PI * 2 });
       }
-      const fogMaterial = new THREE.MeshBasicMaterial({ color: map.fog, transparent: true, opacity: 0.88, depthWrite: false, side: THREE.DoubleSide });
-      const fogTile = new THREE.Mesh(new THREE.PlaneGeometry(TILE - 0.025, TILE - 0.025), fogMaterial);
-      fogTile.rotation.x = -Math.PI / 2; fogTile.position.copy(p).add(new THREE.Vector3(0, 0.045, 0)); fogTile.renderOrder = 8; world.add(fogTile); fogTiles.push({ x, y, mesh: fogTile, material: fogMaterial });
       if (bridge) {
         const bridgeRig = new THREE.Group(); bridgeRig.position.copy(p); world.add(bridgeRig);
         for (const crossX of [-0.42, 0, 0.42]) box(bridgeRig, [0.08, 0.035, TILE * 0.94], [crossX, 0.035, 0], 0xa08149, 0.66);
@@ -462,6 +461,66 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
         }
       }
     }
+    const tileGeometry = new THREE.BoxGeometry(TILE - 0.045, 1, TILE - 0.045);
+    const identityRotation = new THREE.Quaternion();
+    const instanceMatrix = new THREE.Matrix4();
+    function addTerrainBatch(cells: TerrainCell[], roughness: number, metalness: number, emissive = 0x000000, emissiveIntensity = 1) {
+      if (!cells.length) return;
+      const material = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness, metalness, emissive, emissiveIntensity });
+      const mesh = new THREE.InstancedMesh(tileGeometry, material, cells.length);
+      cells.forEach((cell, index) => {
+        const p = worldPos(cell.x, cell.y);
+        instanceMatrix.compose(new THREE.Vector3(p.x, (cell.height - 0.55) / 2, p.z), identityRotation, new THREE.Vector3(1, 0.55 + cell.height, 1));
+        mesh.setMatrixAt(index, instanceMatrix);
+        mesh.setColorAt(index, cell.base);
+      });
+      mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+      mesh.userData.cells = cells;
+      mesh.computeBoundingSphere();
+      world.add(mesh);
+      tileMeshes.push(mesh);
+    }
+    addTerrainBatch(terrainCells.filter(cell => !cell.water && !cell.bridge), 0.98, 0);
+    addTerrainBatch(terrainCells.filter(cell => cell.water && !cell.bridge), 0.18, 0.34, map.waterGlow, 0.8);
+    addTerrainBatch(terrainCells.filter(cell => cell.bridge), 0.48, 0.46);
+
+    const fogOpacity = new Float32Array(GRID_W * GRID_H).fill(0.88);
+    const fogGeometry = new THREE.PlaneGeometry(TILE - 0.025, TILE - 0.025);
+    const fogOpacityAttribute = new THREE.InstancedBufferAttribute(fogOpacity, 1);
+    fogGeometry.setAttribute("instanceOpacity", fogOpacityAttribute);
+    const fogMaterial = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      uniforms: { fogColor: { value: new THREE.Color(map.fog) } },
+      vertexShader: `
+        attribute float instanceOpacity;
+        varying float vOpacity;
+        void main() {
+          vOpacity = instanceOpacity;
+          gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 fogColor;
+        varying float vOpacity;
+        void main() {
+          if (vOpacity <= 0.025) discard;
+          gl_FragColor = vec4(fogColor, vOpacity);
+        }
+      `,
+    });
+    const fogMesh = new THREE.InstancedMesh(fogGeometry, fogMaterial, fogCells.length);
+    const fogRotation = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
+    fogCells.forEach(cell => {
+      const p = worldPos(cell.x, cell.y);
+      instanceMatrix.compose(new THREE.Vector3(p.x, p.y + 0.045, p.z), fogRotation, new THREE.Vector3(1, 1, 1));
+      fogMesh.setMatrixAt(cell.index, instanceMatrix);
+    });
+    fogMesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+    fogMesh.renderOrder = 8;
+    fogMesh.computeBoundingSphere();
+    world.add(fogMesh);
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(130, 130), new THREE.MeshStandardMaterial({ color: map.ground, roughness: 1 }));
     ground.rotation.x = -Math.PI / 2; ground.position.y = -0.58; scene.add(ground);
 
@@ -1184,7 +1243,8 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
     const isRevealed = (x: number, y: number) => visionSources.some(source => Math.hypot(source.x - x, source.y - y) <= source.radius);
     function updateFogOfWar(dt: number) {
       fogTimer -= dt; if (fogTimer > 0) return; fogTimer = 0.1; rebuildVision();
-      fogTiles.forEach(tile => { const strength = visibilityStrength(tile.x, tile.y); tile.material.opacity = 0.9 * (1 - strength); tile.mesh.visible = tile.material.opacity > 0.025; });
+      fogCells.forEach(cell => { fogOpacity[cell.index] = 0.9 * (1 - visibilityStrength(cell.x, cell.y)); });
+      fogOpacityAttribute.needsUpdate = true;
       enemies.forEach(enemy => { enemy.group.visible = isRevealed(enemy.x, enemy.y); });
       hostileProjectiles.forEach(shot => { shot.group.visible = isRevealed((shot.to.x / TILE) + (GRID_W - 1) / 2, (shot.to.z / TILE) + (GRID_H - 1) / 2); });
     }
@@ -1670,16 +1730,21 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
     }
     apiRef.current = { start: startWave, restart, rotate, upgradeSelected, recruit };
 
-    const raycaster = new THREE.Raycaster(), pointer = new THREE.Vector2(), cameraVelocity = new THREE.Vector3(); const heldKeys = new Set<string>(); let hovered: THREE.Mesh | null = null, downX = 0, downY = 0, rightDownX = 0, rightDownY = 0, selecting = false;
+    const raycaster = new THREE.Raycaster(), pointer = new THREE.Vector2(), cameraVelocity = new THREE.Vector3(); const heldKeys = new Set<string>(); let hovered: PickedTerrain | null = null, downX = 0, downY = 0, rightDownX = 0, rightDownY = 0, selecting = false;
     const selectionBox = document.createElement("div"); selectionBox.className = "selection-box"; host.appendChild(selectionBox);
     function pick(e: PointerEvent) {
       const r = renderer.domElement.getBoundingClientRect(); pointer.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1); raycaster.setFromCamera(pointer, camera);
-      return raycaster.intersectObjects(tileMeshes, false)[0]?.object as THREE.Mesh | undefined;
+      const hit = raycaster.intersectObjects(tileMeshes, false)[0];
+      if (!hit || hit.instanceId === undefined) return undefined;
+      const mesh = hit.object as THREE.InstancedMesh;
+      return { mesh, instanceId: hit.instanceId, cell: (mesh.userData.cells as TerrainCell[])[hit.instanceId] };
     }
     function onMove(e: PointerEvent) {
       if (selecting) { const r = host.getBoundingClientRect(), x1 = Math.min(downX, e.clientX) - r.left, y1 = Math.min(downY, e.clientY) - r.top; selectionBox.style.display = "block"; selectionBox.style.left = `${x1}px`; selectionBox.style.top = `${y1}px`; selectionBox.style.width = `${Math.abs(e.clientX - downX)}px`; selectionBox.style.height = `${Math.abs(e.clientY - downY)}px`; return; }
-      const tile = pick(e); if (hovered && hovered !== tile) (hovered.material as THREE.MeshStandardMaterial).emissive.setHex(hovered.userData.water ? map.waterGlow : 0x000000);
-      hovered = tile || null; if (hovered) (hovered.material as THREE.MeshStandardMaterial).emissive.setHex(0x16452e);
+      const tile = pick(e), changed = !hovered || !tile || hovered.mesh !== tile.mesh || hovered.instanceId !== tile.instanceId;
+      if (hovered && changed) { hovered.mesh.setColorAt(hovered.instanceId, hovered.cell.base); if (hovered.mesh.instanceColor) hovered.mesh.instanceColor.needsUpdate = true; }
+      hovered = tile || null;
+      if (hovered && changed) { hovered.mesh.setColorAt(hovered.instanceId, new THREE.Color(0x3b8060)); if (hovered.mesh.instanceColor) hovered.mesh.instanceColor.needsUpdate = true; }
     }
     function onDown(e: PointerEvent) { if (e.button === 2) { rightDownX = e.clientX; rightDownY = e.clientY; } if (e.button === 0) { downX = e.clientX; downY = e.clientY; selecting = true; controls.enabled = false; e.stopImmediatePropagation(); } }
     function onUp(e: PointerEvent) {
@@ -1689,12 +1754,12 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
         marines.forEach(m => { const p = m.group.getWorldPosition(new THREE.Vector3()).project(camera), sx = r.left + (p.x + 1) * r.width / 2, sy = r.top + (-p.y + 1) * r.height / 2; if (sx >= minX && sx <= maxX && sy >= minY && sy <= maxY) selectedMarines.add(m.id); });
         structures.filter(isUpgradableStructure).forEach(s => { const p = s.group.getWorldPosition(new THREE.Vector3()).project(camera), sx = r.left + (p.x + 1) * r.width / 2, sy = r.top + (-p.y + 1) * r.height / 2; if (sx >= minX && sx <= maxX && sy >= minY && sy <= maxY) selectedEmplacements.add(s.id); }); selectedBarracksId = null; refreshSelection(); publishStructureSelection(); publishBarracksSelection(); const count = marines.filter(marine => selectedMarines.has(marine.id)).reduce((total, marine) => total + marineTroopCount(marine), 0) + selectedEmplacements.size; message(`${count} UNIT${count === 1 ? "" : "S"} BOX-SELECTED · RIGHT-CLICK FOR COMPACT FORMATION`); return;
       }
-      const tile = pick(e); if (!tile) return; const x = tile.userData.x, y = tile.userData.y;
+      const tile = pick(e); if (!tile) return; const x = tile.cell.x, y = tile.cell.y;
       const stackOrder = (selectedRef.current === "wall" || selectedRef.current === "bastion") && !!topWallAt(x, y);
       if (stackOrder) { tryPlace(x, y); return; }
       if (selectBarracksAt(x, y)) return; if (selectUnitAt(x, y, e.shiftKey)) { selectedBarracksId = null; publishBarracksSelection(); return; } if (!selectedMarines.size && !selectedEmplacements.size) { selectedBarracksId = null; publishBarracksSelection(); tryPlace(x, y); }
     }
-    function onContext(e: MouseEvent) { e.preventDefault(); if (Math.hypot(e.clientX - rightDownX, e.clientY - rightDownY) > 6) return; const tile = pick(e as PointerEvent); if (!tile) return; if (e.shiftKey) removeStructureAt(tile.userData.x, tile.userData.y); else if (!commandFormation(tile.userData.x, tile.userData.y)) message("SELECT RIFLEMEN OR CREWED WEAPONS WITH A CLICK OR DRAG BOX FIRST"); }
+    function onContext(e: MouseEvent) { e.preventDefault(); if (Math.hypot(e.clientX - rightDownX, e.clientY - rightDownY) > 6) return; const tile = pick(e as PointerEvent); if (!tile) return; if (e.shiftKey) removeStructureAt(tile.cell.x, tile.cell.y); else if (!commandFormation(tile.cell.x, tile.cell.y)) message("SELECT RIFLEMEN OR CREWED WEAPONS WITH A CLICK OR DRAG BOX FIRST"); }
     function onKey(e: KeyboardEvent) { heldKeys.add(e.key.toLowerCase()); if (e.key.toLowerCase() === "r") rotate(); if (e.key === "Escape") { selectedMarines.clear(); selectedEmplacements.clear(); selectedBarracksId = null; refreshSelection(); publishStructureSelection(); publishBarracksSelection(); } if (e.code === "Space") { e.preventDefault(); if (testerMode) message("USE THE UNIT TEST CONSOLE TO LAUNCH AN EXACT WAVE"); else startWave(); } }
     function onKeyUp(e: KeyboardEvent) { heldKeys.delete(e.key.toLowerCase()); }
     renderer.domElement.addEventListener("pointermove", onMove, true); renderer.domElement.addEventListener("pointerdown", onDown, true); renderer.domElement.addEventListener("pointerup", onUp, true); renderer.domElement.addEventListener("contextmenu", onContext); window.addEventListener("keydown", onKey); window.addEventListener("keyup", onKeyUp);
@@ -1965,16 +2030,22 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       emitHud();
     }
 
-    let raf = 0, last = performance.now();
+    const targetFrameMs = 1000 / 30;
+    let raf = 0, last = performance.now(), lastFrame = last - targetFrameMs, suspended = document.hidden;
     function animate(now: number) {
+      raf = requestAnimationFrame(animate);
+      if (suspended || now - lastFrame < targetFrameMs) return;
+      const frameElapsed = now - lastFrame;
+      lastFrame = now - (frameElapsed % targetFrameMs);
       const dt = Math.min(MAX_FRAME_DELTA, Math.max(0, (now - last) / 1000)); last = now;
       update(dt); controls.update(); renderer.render(scene, camera);
-      raf = requestAnimationFrame(animate);
     }
+    const onVisibilityChange = () => { suspended = document.hidden; last = performance.now(); lastFrame = last - targetFrameMs; };
+    document.addEventListener("visibilitychange", onVisibilityChange);
     emitHud(true); raf = requestAnimationFrame(animate);
     const resize = () => { camera.aspect = host.clientWidth / host.clientHeight; camera.updateProjectionMatrix(); renderer.setSize(host.clientWidth, host.clientHeight); };
     window.addEventListener("resize", resize);
-    return () => { cancelAnimationFrame(raf); window.removeEventListener("resize", resize); window.removeEventListener("keydown", onKey); window.removeEventListener("keyup", onKeyUp); renderer.domElement.removeEventListener("pointermove", onMove, true); renderer.domElement.removeEventListener("pointerdown", onDown, true); renderer.domElement.removeEventListener("pointerup", onUp, true); renderer.domElement.removeEventListener("contextmenu", onContext); controls.dispose(); renderer.dispose(); host.removeChild(renderer.domElement); host.removeChild(selectionBox); apiRef.current = null; };
+    return () => { cancelAnimationFrame(raf); document.removeEventListener("visibilitychange", onVisibilityChange); window.removeEventListener("resize", resize); window.removeEventListener("keydown", onKey); window.removeEventListener("keyup", onKeyUp); renderer.domElement.removeEventListener("pointermove", onMove, true); renderer.domElement.removeEventListener("pointerdown", onDown, true); renderer.domElement.removeEventListener("pointerup", onUp, true); renderer.domElement.removeEventListener("contextmenu", onContext); controls.dispose(); disposeObjectResources(scene); renderer.renderLists.dispose(); renderer.dispose(); host.removeChild(renderer.domElement); host.removeChild(selectionBox); apiRef.current = null; };
   }, [apiRef, mapKey, testerMode]);
   return <div ref={hostRef} className="three-host" aria-label="Interactive 3D battlefield" />;
 }

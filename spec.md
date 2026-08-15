@@ -232,3 +232,7 @@ Future audio should reinforce tactical clarity with restrained military radio ch
 ## Technical Shape
 
 The current game is a browser-based React experience rendered in Three.js. Simulation, construction, pathfinding, combat, particles, HUD updates, camera controls, and restart behavior run client-side. Future changes should preserve responsive rendering, deterministic rule clarity, and mouse-and-keyboard accessibility while keeping the game deployable as a web application.
+
+- The 1,936 terrain cells are rendered as three GPU-instanced material batches, and the full fog-of-war grid is rendered as one GPU-instanced shader batch. This keeps the static battlefield to four primary draw calls instead of thousands of individual meshes.
+- The renderer targets 30 frames per second, uses a one-to-one device-pixel budget without multisample antialiasing, requests the low-power GPU profile, and suspends simulation and rendering while the page is hidden.
+- Decorative water ripples are intentionally sparse and low-poly so water remains animated without dominating the frame budget.
