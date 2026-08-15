@@ -35,7 +35,7 @@ Protect the command post through all 25 enemy waves.
 - Each map changes terrain elevation, ground palette, command-post position, invasion-portal positions, and the opening friendly deployment.
 - Every map begins with five infantry and eight free structures tailored to its terrain and invasion pattern.
 - Razorback Expanse is a vast open frontier with long sightlines; Cinder Basin exposes a low defense to encirclement; and Blackglass Divide uses sheer multi-level mesas and deep approach channels.
-- Temple of Dust places the command post in the center of ancient ruins. High stone barriers, thin elevated walls, pillars, and obelisks divide eight invasion routes arriving from every side.
+- Temple of Dust places the command post in the center of an ancient ruin maze. Staggered openings across concentric high walls and broken corridor baffles force eight invasion routes to bend through distinct approaches.
 - The Breeding World is an alien homeworld with organic ridges, luminous growths, and twelve perimeter spawning pits surrounding a central command post.
 - Portal counts vary by battlefield. The homeworld more than doubles the usual wave population, deploys it at a faster cadence, and permits up to 170 simultaneous hostiles; the temple divides smaller bursts among its eight fronts.
 - Alien portals release synchronized mass surges instead of single-file trickles. Normal maps deploy at least twenty hostiles per gate in each burst, with later waves increasing that amount to thirty.

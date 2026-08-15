@@ -186,7 +186,7 @@ const MAPS: Record<MapKey, MapConfig> = {
   },
   ruins: {
     key: "ruins", operation: "PALIMPSEST", sector: "T-9", name: "Temple of Dust", objective: "Hold the sacred center", terrain: "ANCIENT RUINS · HIGH WALLS",
-    description: "A central command post stands inside a shattered temple city. Tall perimeter ruins and thin elevated walls divide eight converging invasion routes.",
+    description: "A central command post stands inside a shattered temple maze. Staggered gates and broken stone corridors bend eight invasion routes around the ruins.",
     background: 0x15120c, ground: 0x211d14, fog: 0x080603, hue: 0.115, saturation: 0.2,
     baseCell: { x: 22, y: 22 }, spawnCells: [{ x: 0, y: 7 }, { x: 0, y: 36 }, { x: 43, y: 7 }, { x: 43, y: 36 }, { x: 7, y: 0 }, { x: 36, y: 0 }, { x: 7, y: 43 }, { x: 36, y: 43 }],
     startingStructures: [{ kind: "barracks", x: 20, y: 20 }, { kind: "rifle", x: 24, y: 20 }, { kind: "wall", x: 19, y: 22 }, { kind: "howitzer", x: 25, y: 24 }, { kind: "wire", x: 22, y: 18 }, { kind: "flak", x: 22, y: 25 }, { kind: "light", x: 22, y: 16 }, { kind: "bastion", x: 18, y: 24 }],
@@ -194,11 +194,24 @@ const MAPS: Record<MapKey, MapConfig> = {
     burstScale: 0.42,
     decorAt: (x, y) => ((x === 13 || x === 30) && (y === 13 || y === 30)) || ((x === 10 || x === 33) && y % 8 === 4) ? "pillar" : (x + y * 3) % 41 === 0 ? "obelisk" : null,
     heightAt: (x, y) => {
-      const inGate = (value: number) => [7, 22, 36].some(gate => Math.abs(value - gate) <= 2);
-      const outerWall = ((x === 11 || x === 32) && y >= 6 && y <= 37 && !inGate(y)) || ((y === 11 || y === 32) && x >= 6 && x <= 37 && !inGate(x));
-      const thinWall = ((x === 16 || x === 27) && y >= 14 && y <= 29 && Math.abs(y - 22) > 2) || ((y === 16 || y === 27) && x >= 14 && x <= 29 && Math.abs(x - 22) > 2);
+      const openAt = (value: number, gates: number[]) => gates.some(gate => Math.abs(value - gate) <= 1);
+      const outerWall =
+        (x === 10 && y >= 5 && y <= 38 && !openAt(y, [13, 30]))
+        || (x === 33 && y >= 5 && y <= 38 && !openAt(y, [11, 34]))
+        || (y === 10 && x >= 5 && x <= 38 && !openAt(x, [14, 31]))
+        || (y === 33 && x >= 5 && x <= 38 && !openAt(x, [12, 28]));
+      const innerWall =
+        (x === 16 && y >= 13 && y <= 30 && !openAt(y, [19, 27]))
+        || (x === 27 && y >= 13 && y <= 30 && !openAt(y, [16, 25]))
+        || (y === 16 && x >= 13 && x <= 30 && !openAt(x, [18, 22]))
+        || (y === 27 && x >= 13 && x <= 30 && !openAt(x, [19, 26]));
+      const corridorBaffle =
+        (y === 13 && x >= 10 && x <= 21 && !openAt(x, [18]))
+        || (x === 30 && y >= 10 && y <= 22 && !openAt(y, [16]))
+        || (y === 30 && x >= 21 && x <= 33 && !openAt(x, [27]))
+        || (x === 13 && y >= 21 && y <= 33 && !openAt(y, [28]));
       const templePad = Math.max(0, 1 - Math.hypot(x - 22, y - 22) / 7) * 0.42;
-      return steppedHeight(0.08 + templePad + (outerWall ? 2.55 : thinWall ? 1.9 : 0));
+      return steppedHeight(0.08 + templePad + (outerWall ? 2.55 : corridorBaffle ? 2.2 : innerWall ? 1.9 : 0));
     },
   },
   homeworld: {
