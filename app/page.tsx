@@ -27,7 +27,6 @@ const WALL_STACK_HEIGHT = 0.62;
 const WALL_CLIMB_SPEED = 0.46;
 const WALL_LIFT_SPEED = 3.6;
 const FRIENDLY_TERRAIN_CLIMB_SPEED = 0.85;
-const FRIENDLY_WATER_SPEED_MULTIPLIER = 0.62;
 const ENEMY_WATER_SPEED_MULTIPLIER = 0.76;
 const BASE_VISION_RADIUS = 7.5;
 const MARINE_VISION_RADIUS = 5.5;
@@ -1046,8 +1045,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     const friendlyStepTime = (from: Cell, to: Cell, speed: number) => {
       const distance = Math.hypot(to.x - from.x, to.y - from.y), climb = Math.max(0, heights[to.y][to.x] - heights[from.y][from.x]);
       const downhillBoost = clamp(1 + Math.max(0, heights[from.y][from.x] - heights[to.y][to.x]) * 0.3, 1, 1.35);
-      const waterRate = isWaterCell(from.x, from.y) || isWaterCell(to.x, to.y) ? FRIENDLY_WATER_SPEED_MULTIPLIER : 1;
-      return distance / Math.max(0.01, speed * downhillBoost * waterRate) + climb / FRIENDLY_TERRAIN_CLIMB_SPEED;
+      return distance / Math.max(0.01, speed * downhillBoost) + climb / FRIENDLY_TERRAIN_CLIMB_SPEED;
     };
     let visionSources: Array<{ x: number; y: number; radius: number }> = [], fogTimer = 0;
     function rebuildVision() {
@@ -1102,7 +1100,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       while (k) { const [x, y] = k.split(",").map(Number); out.push({ x, y }); k = prev.get(k) || ""; }
       return out.reverse();
     }
-    const friendlyBlocked = () => new Set(structures.filter(s => isPathBlocking(s) && !isMobileEmplacement(s)).map(s => keyOf(Math.round(s.x), Math.round(s.y))));
+    const friendlyBlocked = () => new Set([...waterCells, ...structures.filter(s => isPathBlocking(s) && !isMobileEmplacement(s)).map(s => keyOf(Math.round(s.x), Math.round(s.y)))]);
     const wallLiftDocks = (wall: Structure) => [
       { x: wall.x + 1, y: wall.y }, { x: wall.x - 1, y: wall.y },
       { x: wall.x, y: wall.y + 1 }, { x: wall.x, y: wall.y - 1 },
@@ -1343,6 +1341,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         ...marines.filter(m => selectedMarines.has(m.id)).map(unit => ({ type: "marine" as const, unit })),
         ...structures.filter(s => selectedEmplacements.has(s.id) && isMobileEmplacement(s)).map(unit => ({ type: "emplacement" as const, unit })),
       ]; if (!squad.length) return false;
+      if (isWaterCell(x, y)) { message("WATER IMPASSABLE · FRIENDLY GROUND UNITS REQUIRE DRY LAND"); return true; }
       const cx = squad.reduce((sum, member) => sum + member.unit.x, 0) / squad.length, cy = squad.reduce((sum, member) => sum + member.unit.y, 0) / squad.length;
       const dx = x - cx, dy = y - cy, len = Math.hypot(dx, dy) || 1, forwardX = dx / len, forwardY = dy / len, rightX = -forwardY, rightY = forwardX;
       const columns = Math.ceil(Math.sqrt(squad.length)), rows = Math.ceil(squad.length / columns), spacing = 0.7;
@@ -1356,7 +1355,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         const wallScale = 0.42;
         if (planFriendlyMove(member.unit, destination, wall, wall ? { x: offsetX * wallScale, y: offsetY * wallScale } : undefined)) { if (member.type === "marine") member.unit.trenchId = undefined; routed++; }
       });
-      if (!routed) { message("NO SAFE ROUTE · WALLS AND FORTIFICATIONS BLOCK THE FORMATION"); return true; }
+      if (!routed) { message("NO SAFE ROUTE · WATER OR FORTIFICATIONS BLOCK THE FORMATION"); return true; }
       message(`${routed}-UNIT COMPACT ${columns}×${rows} FORMATION ${wall ? "ROUTING TO WALL ELEVATORS" : "ROUTING AROUND FORTIFICATIONS"} · CREWED WEAPONS MOVE SLOWLY`); return true;
     }
     function selectBarracksAt(x: number, y: number) {
@@ -1897,7 +1896,7 @@ export default function Home() {
       <aside className={`build-panel ${hud.active || hud.gameOver ? "locked" : ""}`}>
         <div className="panel-title"><small>{hud.active ? "CONSTRUCTION LOCKED · WAVE ACTIVE" : hud.gameOver ? "OPERATION ENDED" : hud.buildSeconds === null ? "FORWARD ENGINEERING · STAGING" : `FORWARD ENGINEERING · ${formatBuildTime(hud.buildSeconds)} LEFT`}</small><b>DEPLOYABLE ASSETS</b></div>
         {(Object.keys(ASSETS) as AssetKey[]).map(key => { const a = ASSETS[key]; return <button key={key} disabled={hud.active || hud.gameOver} className={`asset ${selected === key ? "active" : ""}`} onClick={() => setSelected(key)} style={{ "--asset-color": a.accent } as React.CSSProperties}><span>{a.icon}</span><div><b>{a.name}</b><small>{a.role}</small></div><em>{a.cost}</em></button>; })}
-        <div className="intel"><span>FIELD INTEL</span><p>Shallow water slows ground movement and rejects construction. Friendly troops climb natural terrain far faster than aliens. Buildings deploy only before a wave or during the 30-second build window; barracks recruitment remains available at any time. Winged Skyrazors ignore terrain, so counter them with Aegis flak. Shift + right-click salvages.</p></div>
+        <div className="intel"><span>FIELD INTEL</span><p>Water blocks infantry, crewed weapons, and construction; ground aliens wade through it slowly. Friendly troops climb natural terrain far faster than aliens. Buildings deploy only before a wave or during the 30-second build window; barracks recruitment remains available at any time. Winged Skyrazors ignore terrain, so counter them with Aegis flak. Shift + right-click salvages.</p></div>
       </aside>
       <footer className="controls"><span><kbd>DRAG BOX</kbd> SELECT UNITS</span><span><kbd>RIGHT CLICK</kbd> FORMATION MOVE</span><span><kbd>MIDDLE DRAG</kbd> ORBIT</span><span><kbd>WASD</kbd> GLIDE CAMERA</span><span><kbd>SPACE</kbd> START WAVE</span><span className="online">● GITHUB PAGES</span></footer>
     </main>
