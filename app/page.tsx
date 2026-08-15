@@ -8,7 +8,7 @@ type AssetKey = "rifle" | "sentry" | "flame" | "laser" | "railgun" | "howitzer" 
 type CombatKey = "rifle" | "sentry" | "flame" | "laser" | "railgun" | "howitzer" | "missile";
 type UpgradableKey = CombatKey | "light";
 type MarineKind = "rifleman" | "gunner" | "medic" | "rocketeer";
-type AlienKind = "drone" | "spitter" | "brute" | "razortail" | "stalker" | "strider" | "broodmother";
+type AlienKind = "drone" | "spitter" | "brute" | "razortail" | "stalker" | "strider" | "broodmother" | "prowler";
 
 const MAX_WAVES = 25;
 const ALIEN_SPEED_MULTIPLIER = 1.8;
@@ -42,6 +42,7 @@ const ENEMY_STATS: Record<AlienKind, { hp: number; speed: number; damage: number
   stalker: { hp: 64, speed: 1.85, damage: 5, reward: 30, attackRange: 1.25, attackCooldown: 0.48, gait: 18, barHeight: 0.95 },
   strider: { hp: 118, speed: 0.7, damage: 13, reward: 48, attackRange: 6.4, attackCooldown: 1.65, gait: 5.4, barHeight: 1.8 },
   broodmother: { hp: 285, speed: 0.52, damage: 16, reward: 75, attackRange: 5.1, attackCooldown: 2.4, gait: 3.8, barHeight: 2.2 },
+  prowler: { hp: 155, speed: 1.08, damage: 11, reward: 52, attackRange: 1.55, attackCooldown: 0.68, gait: 10.2, barHeight: 1.15 },
 };
 
 const GRID_W = 32;
@@ -533,11 +534,11 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     function makeAlien(kind: AlienKind) {
       const g = new THREE.Group();
       const bodyRig = new THREE.Group(); g.add(bodyRig);
-      const legs: THREE.Group[] = [], legPhases: number[] = [], tails: THREE.Group[] = [], wings: THREE.Group[] = [];
-      const brute = kind === "brute", spitter = kind === "spitter", broodmother = kind === "broodmother", razortail = kind === "razortail", stalker = kind === "stalker", strider = kind === "strider";
-      const shellColor = brute ? 0x673832 : broodmother ? 0x5d3548 : spitter ? 0x28654b : razortail ? 0x57305f : stalker ? 0x27536b : strider ? 0x62572d : 0x334d42;
-      const skinColor = brute ? 0x2c1c1b : broodmother ? 0x271824 : spitter ? 0x172e25 : razortail ? 0x29162f : stalker ? 0x102832 : strider ? 0x292614 : 0x192a24;
-      const glowColor = broodmother ? 0xff8bb8 : spitter ? 0x63ff9f : razortail ? 0xe86bff : stalker ? 0x51dfff : strider ? 0xffe56d : 0xff503f;
+      const legs: THREE.Group[] = [], legPhases: number[] = [], tails: THREE.Group[] = [], wings: THREE.Group[] = [], creepSegments: THREE.Group[] = [];
+      const brute = kind === "brute", spitter = kind === "spitter", broodmother = kind === "broodmother", razortail = kind === "razortail", stalker = kind === "stalker", strider = kind === "strider", prowler = kind === "prowler";
+      const shellColor = brute ? 0x673832 : broodmother ? 0x5d3548 : spitter ? 0x28654b : razortail ? 0x57305f : stalker ? 0x27536b : strider ? 0x62572d : prowler ? 0x62472f : 0x334d42;
+      const skinColor = brute ? 0x2c1c1b : broodmother ? 0x271824 : spitter ? 0x172e25 : razortail ? 0x29162f : stalker ? 0x102832 : strider ? 0x292614 : prowler ? 0x2a1c16 : 0x192a24;
+      const glowColor = broodmother ? 0xff8bb8 : spitter ? 0x63ff9f : razortail ? 0xe86bff : stalker ? 0x51dfff : strider ? 0xffe56d : prowler ? 0xffb36a : 0xff503f;
       const shell = new THREE.MeshStandardMaterial({ color: shellColor, roughness: 0.48, metalness: 0.18 });
       const skin = new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.82 });
       const glow = new THREE.MeshBasicMaterial({ color: glowColor });
@@ -552,6 +553,14 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         beam(pivot, new THREE.Vector3(), knee, thickness, shellColor);
         beam(pivot, knee, foot, thickness * 0.72, skinColor);
         const claw = new THREE.Mesh(new THREE.ConeGeometry(thickness * 1.25, 0.2, 6), skin); claw.position.copy(foot).add(new THREE.Vector3(0, 0.025, -0.09)); claw.rotation.x = -Math.PI / 2; pivot.add(claw);
+        legs.push(pivot); legPhases.push(phase);
+      };
+      const addUnderLeg = (x: number, z: number, phase: number) => {
+        const pivot = new THREE.Group(), rootY = 0.46; pivot.position.set(x, rootY, z); g.add(pivot);
+        const knee = new THREE.Vector3(x * 0.5, -0.22, z + (z < 0 ? -0.12 : 0.12));
+        const foot = new THREE.Vector3(x * 0.68, -rootY + 0.05, z + (z < 0 ? -0.23 : 0.23));
+        beam(pivot, new THREE.Vector3(), knee, 0.052, shellColor); beam(pivot, knee, foot, 0.037, skinColor);
+        const paw = new THREE.Mesh(new THREE.SphereGeometry(0.075, 8, 6), skin); paw.position.copy(foot); paw.scale.set(1.2, 0.45, 1.45); pivot.add(paw);
         legs.push(pivot); legPhases.push(phase);
       };
       const addEye = (x: number, y: number, z: number, radius: number) => {
@@ -634,6 +643,19 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         const emitter = new THREE.Mesh(new THREE.SphereGeometry(0.085, 10, 7), glow); emitter.position.set(0, 1.17, -1.16); bodyRig.add(emitter);
         const emitterLight = new THREE.PointLight(0xffe56d, 1.5, 2.8); emitterLight.position.copy(emitter.position); bodyRig.add(emitterLight);
         [-0.05, 0.18, 0.38].forEach((z, i) => addSpine(0, 1.58 - i * 0.025, z, 0.18 - i * 0.018, 0xa08d43));
+      } else if (kind === "prowler") {
+        addOrb(bodyRig, 0.48, [0, 0.53, 0.1], [0.95, 0.64, 1.32], shell);
+        addOrb(bodyRig, 0.35, [0, 0.48, -0.5], [1.08, 0.72, 0.98], skin);
+        addOrb(bodyRig, 0.23, [0, 0.42, -0.86], [1.14, 0.63, 0.82], shell);
+        addPlate([0, 0.73, 0.08], [0.94, 0.3, 1.16], 0x6d5834);
+        for (const side of [-1, 1]) {
+          addEye(side * 0.11, 0.46, -1.03, 0.046);
+          addAntenna(side, new THREE.Vector3(side * 0.1, 0.5, -0.96), new THREE.Vector3(side * 0.24, 0.66, -1.15), new THREE.Vector3(side * 0.4, 0.5, -1.37), 0.016);
+          const fang = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.24, 5), new THREE.MeshStandardMaterial({ color: 0xd1c291, roughness: 0.65 })); fang.position.set(side * 0.13, 0.33, -1.07); fang.rotation.x = -Math.PI / 2; bodyRig.add(fang);
+        }
+        addUnderLeg(-0.25, -0.38, 0); addUnderLeg(0.25, -0.38, Math.PI);
+        addUnderLeg(-0.25, 0.38, Math.PI * 1.08); addUnderLeg(0.25, 0.38, Math.PI * 0.08);
+        [-0.2, 0.08, 0.34].forEach((z, i) => addSpine(0, 0.92 - i * 0.04, z, 0.2 - i * 0.024, 0x8a7042));
       } else if (kind === "stalker") {
         addOrb(bodyRig, 0.31, [0, 0.34, 0.14], [0.66, 0.42, 1.55], shell);
         addOrb(bodyRig, 0.2, [0, 0.31, -0.45], [0.82, 0.48, 1.12], skin);
@@ -679,7 +701,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         for (const side of [-1, 1]) addOrb(bodyRig, 0.25, [side * 0.6, 1.12, -0.2], [1.2, 0.7, 1], shell);
       }
 
-      const classScale = brute ? 0.9 : broodmother ? 0.82 : spitter ? 0.68 : razortail ? 0.74 : strider ? 0.72 : stalker ? 0.4 : 0.52;
+      const classScale = brute ? 0.9 : broodmother ? 0.82 : spitter ? 0.68 : razortail ? 0.74 : strider ? 0.72 : prowler ? 0.62 : stalker ? 0.4 : 0.52;
       g.scale.setScalar(classScale * (0.94 + Math.random() * 0.12));
       g.userData.legs = legs; g.userData.legPhases = legPhases; g.userData.tails = tails; g.userData.wings = wings; g.userData.bodyRig = bodyRig; g.userData.kind = kind;
       g.traverse(o => { if (o instanceof THREE.Mesh) { o.castShadow = false; o.receiveShadow = false; } }); return g;
@@ -1068,6 +1090,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         ["drone", Math.max(30, 82 - wave * 2)],
         ["spitter", wave >= 3 ? 18 + wave * 0.8 : 0],
         ["stalker", 10 + wave * 0.45],
+        ["prowler", wave >= 6 ? 9 + wave * 0.48 : 0],
         ["brute", wave >= 7 ? 7 + wave * 0.55 : 0],
         ["strider", wave >= 8 ? 7 + wave * 0.42 : 0],
         ["razortail", wave >= 10 ? 6 + wave * 0.5 : 0],
@@ -1106,12 +1129,16 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       }
     }
     function hostileStrike(kind: AlienKind, from: THREE.Vector3, to: THREE.Vector3, targetType: "marine" | "structure", targetId: number, damage: number) {
-      const group = new THREE.Group(), startHeight = kind === "brute" ? 0.85 : kind === "broodmother" ? 1.05 : kind === "razortail" ? 0.68 : kind === "spitter" ? 0.66 : kind === "strider" ? 0.92 : kind === "stalker" ? 0.25 : 0.38;
+      const group = new THREE.Group(), startHeight = kind === "brute" ? 0.85 : kind === "broodmother" ? 1.05 : kind === "razortail" ? 0.68 : kind === "spitter" ? 0.66 : kind === "strider" ? 0.92 : kind === "prowler" ? 0.44 : kind === "stalker" ? 0.25 : 0.38;
       const start = from.clone().add(new THREE.Vector3(0, startHeight, 0)), end = to.clone().add(new THREE.Vector3(0, 0.58, 0));
       let speed = 7.5, arcHeight = 0.08, color = 0xff9857, impactCount = 5;
       if (kind === "drone") {
         const needle = new THREE.Mesh(new THREE.ConeGeometry(0.065, 0.46, 6), new THREE.MeshStandardMaterial({ color: 0xe6b56d, emissive: 0x6d2816, emissiveIntensity: 0.7, roughness: 0.38 }));
         needle.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), end.clone().sub(start).normalize()); needle.castShadow = true; group.add(needle);
+      } else if (kind === "prowler") {
+        speed = 8.6; arcHeight = 0.03; color = 0xffb36a; impactCount = 7;
+        const bite = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.42, 5), new THREE.MeshStandardMaterial({ color: 0xe7c18e, emissive: 0x7a3517, emissiveIntensity: 1.5, roughness: 0.35 }));
+        bite.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), end.clone().sub(start).normalize()); group.add(bite);
       } else if (kind === "spitter") {
         speed = 2.15; arcHeight = 0.78; color = 0x63ff9f; impactCount = 11;
         const glob = new THREE.Mesh(new THREE.IcosahedronGeometry(0.15, 1), new THREE.MeshStandardMaterial({ color, emissive: 0x22b862, emissiveIntensity: 2.2, transparent: true, opacity: 0.92, roughness: 0.18 })); group.add(glob);
@@ -1447,8 +1474,8 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       }
       for (const e of [...enemies]) {
         if (e.hp <= 0) {
-          const deathColor = e.kind === "broodmother" ? 0xff73aa : e.kind === "spitter" ? 0x58ff96 : e.kind === "razortail" ? 0xe66bff : e.kind === "stalker" ? 0x58ddff : e.kind === "strider" ? 0xffe56d : 0xff573e;
-          const deathCount = e.kind === "brute" ? 24 : e.kind === "broodmother" ? 22 : e.kind === "razortail" ? 20 : e.kind === "strider" ? 14 : e.kind === "stalker" ? 9 : 12;
+          const deathColor = e.kind === "broodmother" ? 0xff73aa : e.kind === "spitter" ? 0x58ff96 : e.kind === "razortail" ? 0xe66bff : e.kind === "stalker" ? 0x58ddff : e.kind === "strider" ? 0xffe56d : e.kind === "prowler" ? 0xffb36a : 0xff573e;
+          const deathCount = e.kind === "brute" ? 24 : e.kind === "broodmother" ? 22 : e.kind === "razortail" ? 20 : e.kind === "strider" ? 14 : e.kind === "prowler" ? 13 : e.kind === "stalker" ? 9 : 12;
           credits += e.reward; kills++; burst(e.group.position.clone().add(new THREE.Vector3(0, 0.4, 0)), deathColor, deathCount); removeHealthBar(e.group); world.remove(e.group); enemies.splice(enemies.indexOf(e), 1); continue;
         }
         if (e.targetType === "base" && Math.hypot(e.x - baseCell.x, e.y - baseCell.y) < 0.22) { integrity = Math.max(0, integrity - e.damage); burst(base.position.clone().add(new THREE.Vector3(0, 1, 0)), 0xff4a31, 14); removeHealthBar(e.group); world.remove(e.group); enemies.splice(enemies.indexOf(e), 1); if (integrity <= 0) { gameOver = true; active = false; message("COMMAND POST OVERRUN · SECTOR LOST"); } }
