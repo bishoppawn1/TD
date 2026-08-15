@@ -6,6 +6,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 type AssetKey = "rifle" | "sentry" | "flame" | "laser" | "railgun" | "howitzer" | "missile" | "light" | "wall" | "bastion" | "trench" | "wire" | "mine" | "barracks";
 type CombatKey = "rifle" | "sentry" | "flame" | "laser" | "railgun" | "howitzer" | "missile";
+type UpgradableKey = CombatKey | "light";
 type MarineKind = "rifleman" | "gunner" | "medic" | "rocketeer";
 type AlienKind = "drone" | "spitter" | "brute" | "razortail" | "stalker" | "strider" | "broodmother";
 
@@ -17,7 +18,10 @@ const TARGET_FRAME_RATE = 45;
 const ENEMY_SEPARATION_DISTANCE = 0.48;
 const WALL_STACK_HEIGHT = 0.62;
 const WALL_CLIMB_SPEED = 0.46;
+const LIGHT_VISION_BASE = 7.2;
+const LIGHT_VISION_PER_LEVEL = 1.8;
 const ENEMY_TERRAIN_CLIMB_SPEED = 0.08;
+const TARGET_SELECTION_VARIANCE = 0.34;
 const RAZOR_WIRE_RADIUS = 1.05;
 const RAZOR_WIRE_SLOW_MULTIPLIER = 0.32;
 const RAZOR_WIRE_ENTRY_DAMAGE = 18;
@@ -76,12 +80,12 @@ type Hud = { credits: number; integrity: number; wave: number; enemies: number; 
 type Cell = { x: number; y: number };
 type MoveWaypoint = Cell & { lift: number };
 type Structure = { id: number; kind: AssetKey; level: number; x: number; y: number; targetX: number; targetY: number; hp: number; maxHp: number; mountedOn?: number; mountTarget?: number; movePath: MoveWaypoint[]; pathIndex: number; lift: number; stackLevel: number; group: THREE.Group; cooldown: number; spawnTimer: number };
-type Enemy = { id: number; kind: AlienKind; x: number; y: number; hp: number; maxHp: number; speed: number; damage: number; reward: number; path: Cell[]; index: number; group: THREE.Group; hitFlash: number; attackCooldown: number; pathTimer: number; targetId: number | null; targetType: "marine" | "structure" | "base"; wireContactId?: number };
+type Enemy = { id: number; kind: AlienKind; x: number; y: number; hp: number; maxHp: number; speed: number; damage: number; reward: number; path: Cell[]; index: number; group: THREE.Group; hitFlash: number; attackCooldown: number; pathTimer: number; targetBiasSeed: number; targetId: number | null; targetType: "marine" | "structure" | "base"; wireContactId?: number };
 type Marine = { id: number; kind: MarineKind; x: number; y: number; targetX: number; targetY: number; vx: number; vy: number; hp: number; maxHp: number; cooldown: number; supportCooldown: number; mountedOn?: number; mountTarget?: number; trenchId?: number; movePath: MoveWaypoint[]; pathIndex: number; lift: number; group: THREE.Group };
 type Bullet = { mesh: THREE.Object3D; from: THREE.Vector3; to: THREE.Vector3; impactX: number; impactY: number; t: number; speed: number; target: number; damage: number; splash: number; arcHeight: number; color: number };
 type HostileProjectile = { group: THREE.Group; kind: AlienKind; from: THREE.Vector3; to: THREE.Vector3; t: number; speed: number; arcHeight: number; targetId: number; targetType: "marine" | "structure"; damage: number; color: number; impactCount: number };
 type Particle = { mesh: THREE.Mesh; velocity: THREE.Vector3; life: number; maxLife: number };
-type SelectedUnit = { id: number; kind: CombatKey; name: string; level: number; maxLevel: number; upgradeCost: number | null; damage: number; range: number; maxHp: number };
+type SelectedUnit = { id: number; kind: UpgradableKey; name: string; level: number; maxLevel: number; upgradeCost: number | null; damage: number; range: number; maxHp: number; support: boolean };
 type BarracksInfo = { id: number; busy: boolean; readyIn: number };
 type BattlefieldApi = { start: () => void; restart: () => void; rotate: () => void; upgradeSelected: () => void; recruit: (kind: MarineKind) => void };
 type MapKey = "ridge" | "basin" | "divide";
@@ -409,6 +413,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     }
     function makeLightTower() {
       const g = new THREE.Group();
+      const searchlights: THREE.SpotLight[] = [];
       cyl(g, [0.66, 0.78, 0.2, 16], [0, 0.12, 0], 0x3b423e);
       for (const side of [-1, 1]) {
         beam(g, new THREE.Vector3(side * 0.38, 0.18, 0.26), new THREE.Vector3(side * 0.16, 2.05, 0), 0.055, 0x6e786f);
@@ -422,9 +427,11 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         const lens = new THREE.Mesh(new THREE.CircleGeometry(0.14, 16), new THREE.MeshBasicMaterial({ color: 0xfff3b0 })); lens.position.set(side * 0.34, -0.055, -0.49); lens.rotation.x = -0.32; head.add(lens);
         const searchlight = new THREE.SpotLight(0xffed9a, 7.5, 11, Math.PI / 5.5, 0.62, 1.1); searchlight.position.set(side * 0.34, 0, -0.35);
         const target = new THREE.Object3D(); target.position.set(side * 2.8, -2.4, -4.2); head.add(target); searchlight.target = target; head.add(searchlight);
+        searchlights.push(searchlight);
       }
       const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 7), new THREE.MeshStandardMaterial({ color: 0xfff5bb, emissive: 0xffd85a, emissiveIntensity: 2.8, roughness: 0.2 })); beacon.position.y = 0.34; head.add(beacon);
       const halo = new THREE.PointLight(0xffe795, 2.8, 8.5); halo.position.y = 0.2; head.add(halo);
+      g.userData.searchlights = searchlights; g.userData.lightHalo = halo; g.userData.lightBeacon = beacon;
       shadowify(g); return g;
     }
     function addWallStairs(g: THREE.Group, top = 0.72) {
@@ -687,6 +694,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     let selectedBarracksId: number | null = null, lastBarracksSecond = -1;
     const isMobileEmplacement = (s: Structure) => s.kind === "rifle" || s.kind === "howitzer";
     const isCombatStructure = (s: Structure): s is Structure & { kind: CombatKey } => s.kind in TURRET_STATS;
+    const isUpgradableStructure = (s: Structure): s is Structure & { kind: UpgradableKey } => isCombatStructure(s) || s.kind === "light";
     const isWall = (s: Structure) => s.kind === "wall" || s.kind === "bastion";
     const isPathBlocking = (s: Structure) => s.kind !== "mine" && s.kind !== "wire" && s.kind !== "trench" && !s.mountedOn;
     const isEntrenched = (m: Marine) => !m.movePath.length && !!m.trenchId && structures.some(s => s.id === m.trenchId && s.kind === "trench" && Math.hypot(s.x - m.x, s.y - m.y) < 0.72);
@@ -700,7 +708,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       visionSources = [{ x: baseCell.x, y: baseCell.y, radius: 4.2 }];
       marines.forEach(m => visionSources.push({ x: m.x, y: m.y, radius: 3.15 }));
       structures.forEach(s => {
-        if (s.kind === "light") visionSources.push({ x: s.x, y: s.y, radius: 7.2 });
+        if (s.kind === "light") visionSources.push({ x: s.x, y: s.y, radius: LIGHT_VISION_BASE + (s.level - 1) * LIGHT_VISION_PER_LEVEL });
         else if (isCombatStructure(s)) visionSources.push({ x: s.x, y: s.y, radius: 3.7 + (s.level - 1) * 0.35 });
         else if (s.kind === "barracks") visionSources.push({ x: s.x, y: s.y, radius: 3.2 });
       });
@@ -799,13 +807,14 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       if (s.level >= 3) return null;
       return Math.round((ASSETS[s.kind].cost * (s.level === 1 ? 0.68 : 0.94)) / 5) * 5;
     }
-    function getStructureInfo(s: Structure & { kind: CombatKey }): SelectedUnit {
+    function getStructureInfo(s: Structure & { kind: UpgradableKey }): SelectedUnit {
+      if (s.kind === "light") return { id: s.id, kind: s.kind, name: ASSETS[s.kind].name, level: s.level, maxLevel: 3, upgradeCost: getUpgradeCost(s), damage: 100 + (s.level - 1) * 40, range: Math.round((LIGHT_VISION_BASE + (s.level - 1) * LIGHT_VISION_PER_LEVEL) * 10) / 10, maxHp: s.maxHp, support: true };
       const stats = TURRET_STATS[s.kind], damageBoost = 1 + (s.level - 1) * 0.42;
-      return { id: s.id, kind: s.kind, name: ASSETS[s.kind].name, level: s.level, maxLevel: 3, upgradeCost: getUpgradeCost(s), damage: Math.round(stats.damage * damageBoost * 10) / 10, range: Math.round((ASSETS[s.kind].range + (s.level - 1) * 0.65) * 10) / 10, maxHp: s.maxHp };
+      return { id: s.id, kind: s.kind, name: ASSETS[s.kind].name, level: s.level, maxLevel: 3, upgradeCost: getUpgradeCost(s), damage: Math.round(stats.damage * damageBoost * 10) / 10, range: Math.round((ASSETS[s.kind].range + (s.level - 1) * 0.65) * 10) / 10, maxHp: s.maxHp, support: false };
     }
     function publishStructureSelection() {
       const chosen = structures.find(s => selectedEmplacements.has(s.id));
-      callbacks.current.onUnitSelected(chosen && isCombatStructure(chosen) && selectedEmplacements.size === 1 && selectedMarines.size === 0 ? getStructureInfo(chosen) : null);
+      callbacks.current.onUnitSelected(chosen && isUpgradableStructure(chosen) && selectedEmplacements.size === 1 && selectedMarines.size === 0 ? getStructureInfo(chosen) : null);
     }
     function publishBarracksSelection() {
       const barracks = structures.find(s => s.id === selectedBarracksId && s.kind === "barracks");
@@ -817,12 +826,20 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       ring.rotation.x = Math.PI / 2; ring.position.y = 0.3 + s.level * 0.08; s.group.add(ring);
       if (s.level === 3) { const light = new THREE.PointLight(color, 1.1, 2.8); light.position.y = 1.1; s.group.add(light); }
     }
+    function updateLightUpgradeVisual(s: Structure) {
+      if (s.kind !== "light") return;
+      const power = 1 + (s.level - 1) * 0.4;
+      (s.group.userData.searchlights as THREE.SpotLight[] | undefined)?.forEach(light => { light.intensity = 7.5 * power; light.distance = 11 + (s.level - 1) * 2.5; light.angle = Math.PI / (5.5 - (s.level - 1) * 0.45); });
+      const halo = s.group.userData.lightHalo as THREE.PointLight | undefined; if (halo) { halo.intensity = 2.8 * power; halo.distance = 8.5 + (s.level - 1) * 2; }
+      const beacon = s.group.userData.lightBeacon as THREE.Mesh | undefined, material = beacon?.material as THREE.MeshStandardMaterial | undefined; if (material) material.emissiveIntensity = 2.8 * power;
+    }
     function upgradeSelected() {
-      const s = structures.find(item => selectedEmplacements.has(item.id) && isCombatStructure(item));
+      const s = structures.find(item => selectedEmplacements.has(item.id) && isUpgradableStructure(item));
       if (!s || selectedEmplacements.size !== 1 || selectedMarines.size) return message("SELECT ONE DEFENSIVE UNIT TO UPGRADE");
       const cost = getUpgradeCost(s); if (cost === null) return message(`${ASSETS[s.kind].name.toUpperCase()} IS AT MAXIMUM LEVEL`);
       if (credits < cost) return message(`UPGRADE REQUIRES ${cost} COMMAND CREDITS`);
       credits -= cost; const oldMax = s.maxHp; s.level++; s.maxHp = Math.round(STRUCTURE_HP[s.kind] * (1 + (s.level - 1) * 0.35)); s.hp = Math.min(s.maxHp, s.hp + (s.maxHp - oldMax) + Math.round(oldMax * 0.2));
+      if (s.kind === "light") updateLightUpgradeVisual(s);
       setHealthVisual(s.group, s.hp, s.maxHp); updateTierBadge(s.group, s.level); addUpgradeVisual(s); publishStructureSelection(); emitHud(true);
       burst(s.group.position.clone().add(new THREE.Vector3(0, 0.8, 0)), s.level === 3 ? 0xffd36a : 0x62e8ff, 14); message(`${ASSETS[s.kind].name.toUpperCase()} UPGRADED TO TIER ${s.level}`);
     }
@@ -832,7 +849,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       const mountCount = mountedOn ? structures.filter(s => s.mountedOn === mountedOn).length : 0;
       const lift = mountedWall ? wallTopLift(mountedWall) : kind === "wall" || kind === "bastion" ? stackLevel * WALL_STACK_HEIGHT : 0;
       group.position.copy(worldPos(x + (mountedOn ? (mountCount - 1) * 0.26 : 0), y, lift)); group.rotation.y = kind === "wall" || kind === "bastion" || kind === "wire" || kind === "trench" ? Math.PI / 2 : -0.35; group.scale.multiplyScalar(mountedOn ? 0.58 : 0.72); attachHealthBar(group, kind === "wall" || kind === "bastion" ? 1.25 : kind === "barracks" ? 2 : 1.65); world.add(group);
-      if (kind in TURRET_STATS) {
+      if (kind in TURRET_STATS || kind === "light") {
         const radius = kind === "howitzer" || kind === "missile" || kind === "railgun" ? 1.04 : 0.9;
         const ring = new THREE.Mesh(new THREE.RingGeometry(radius * 0.82, radius, 28), new THREE.MeshBasicMaterial({ color: 0x7dff92, transparent: true, opacity: 0.95, side: THREE.DoubleSide })); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.035; ring.visible = false; group.add(ring); group.userData.selectionRing = ring;
         updateTierBadge(group, 1);
@@ -910,12 +927,12 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     }
     function refreshSelection() {
       marines.forEach(m => { const ring = m.group.userData.selectionRing as THREE.Mesh; if (ring) ring.visible = selectedMarines.has(m.id); });
-      structures.filter(isCombatStructure).forEach(s => { const ring = s.group.userData.selectionRing as THREE.Mesh; if (ring) ring.visible = selectedEmplacements.has(s.id); });
+      structures.filter(isUpgradableStructure).forEach(s => { const ring = s.group.userData.selectionRing as THREE.Mesh; if (ring) ring.visible = selectedEmplacements.has(s.id); });
     }
     function selectUnitAt(x: number, y: number, additive = false) {
       const candidates = [
         ...marines.map(m => ({ id: m.id, x: m.x, y: m.y, type: "marine" as const })),
-        ...structures.filter(isCombatStructure).map(s => ({ id: s.id, x: s.x, y: s.y, type: "emplacement" as const })),
+        ...structures.filter(isUpgradableStructure).map(s => ({ id: s.id, x: s.x, y: s.y, type: "emplacement" as const })),
       ].filter(unit => Math.hypot(unit.x - x, unit.y - y) < 0.72).sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y));
       const clicked = candidates[0];
       if (!clicked) { if (!additive) { selectedMarines.clear(); selectedEmplacements.clear(); refreshSelection(); publishStructureSelection(); } return false; }
@@ -988,7 +1005,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       const stats = ENEMY_STATS[kind], scale = 1 + wave * 0.055, hp = stats.hp * scale, offset = assaultOffsets[formationIndex % assaultOffsets.length];
       const spawnX = clamp(spawnCell.x + offset.x, 0, GRID_W - 1), spawnY = clamp(spawnCell.y + offset.y, 0, GRID_H - 1);
       const group = makeAlien(kind), p = worldPos(spawnX, spawnY); group.position.copy(p); group.rotation.y = (Math.random() - 0.5) * 0.7; attachHealthBar(group, stats.barHeight); world.add(group);
-      enemies.push({ id: nextId++, kind, x: spawnX, y: spawnY, hp, maxHp: hp, speed: stats.speed * ALIEN_SPEED_MULTIPLIER * (1 + wave * 0.008), damage: stats.damage * (1 + wave * 0.022), reward: stats.reward, path: [], index: 0, group, hitFlash: 0, attackCooldown: Math.random() * 0.35, pathTimer: 0, targetId: null, targetType: "base" });
+      enemies.push({ id: nextId++, kind, x: spawnX, y: spawnY, hp, maxHp: hp, speed: stats.speed * ALIEN_SPEED_MULTIPLIER * (1 + wave * 0.008), damage: stats.damage * (1 + wave * 0.022), reward: stats.reward, path: [], index: 0, group, hitFlash: 0, attackCooldown: Math.random() * 0.35, pathTimer: 0, targetBiasSeed: Math.random(), targetId: null, targetType: "base" });
     }
     function spawnAssaultGroup() {
       const groupSize = Math.min(spawnLeft, MAX_ACTIVE_ENEMIES - enemies.length, Math.min(8, 4 + Math.floor(wave / 4)));
@@ -1121,7 +1138,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       if (drag > 5) {
         const minX = Math.min(downX, e.clientX), maxX = Math.max(downX, e.clientX), minY = Math.min(downY, e.clientY), maxY = Math.max(downY, e.clientY), r = renderer.domElement.getBoundingClientRect(); if (!e.shiftKey) { selectedMarines.clear(); selectedEmplacements.clear(); }
         marines.forEach(m => { const p = m.group.getWorldPosition(new THREE.Vector3()).project(camera), sx = r.left + (p.x + 1) * r.width / 2, sy = r.top + (-p.y + 1) * r.height / 2; if (sx >= minX && sx <= maxX && sy >= minY && sy <= maxY) selectedMarines.add(m.id); });
-        structures.filter(isCombatStructure).forEach(s => { const p = s.group.getWorldPosition(new THREE.Vector3()).project(camera), sx = r.left + (p.x + 1) * r.width / 2, sy = r.top + (-p.y + 1) * r.height / 2; if (sx >= minX && sx <= maxX && sy >= minY && sy <= maxY) selectedEmplacements.add(s.id); }); selectedBarracksId = null; refreshSelection(); publishStructureSelection(); publishBarracksSelection(); const count = selectedMarines.size + selectedEmplacements.size; message(`${count} UNIT${count === 1 ? "" : "S"} BOX-SELECTED · RIGHT-CLICK FOR COMPACT FORMATION`); return;
+        structures.filter(isUpgradableStructure).forEach(s => { const p = s.group.getWorldPosition(new THREE.Vector3()).project(camera), sx = r.left + (p.x + 1) * r.width / 2, sy = r.top + (-p.y + 1) * r.height / 2; if (sx >= minX && sx <= maxX && sy >= minY && sy <= maxY) selectedEmplacements.add(s.id); }); selectedBarracksId = null; refreshSelection(); publishStructureSelection(); publishBarracksSelection(); const count = selectedMarines.size + selectedEmplacements.size; message(`${count} UNIT${count === 1 ? "" : "S"} BOX-SELECTED · RIGHT-CLICK FOR COMPACT FORMATION`); return;
       }
       const tile = pick(e); if (!tile) return; const x = tile.userData.x, y = tile.userData.y;
       const stackOrder = (selectedRef.current === "wall" || selectedRef.current === "bastion") && !!topWallAt(x, y);
@@ -1162,6 +1179,11 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       const wallTraversalHeights = new Map<string, number>();
       structures.filter(isWall).forEach(wall => wallTraversalHeights.set(keyOf(wall.x, wall.y), Math.max(wallTraversalHeights.get(keyOf(wall.x, wall.y)) ?? 0, wallTopLift(wall))));
       const wallLiftAt = (cell: Cell) => wallTraversalHeights.get(keyOf(Math.round(cell.x), Math.round(cell.y))) ?? 0;
+      const targetPreferenceMultiplier = (enemy: Enemy, target: EnemyTargetChoice) => {
+        const typeCode = target.type === "base" ? 3 : target.type === "marine" ? 11 : 23, targetCode = (target.id ?? 0) * 31 + typeCode;
+        const raw = Math.sin((enemy.id + 1) * 12.9898 + enemy.targetBiasSeed * 104729 + targetCode * 78.233) * 43758.5453, preference = raw - Math.floor(raw);
+        return 1 + (preference - 0.5) * TARGET_SELECTION_VARIANCE;
+      };
       const enemyStepTime = (enemy: Enemy, from: Cell, to: Cell) => {
         const groundTime = Math.hypot(to.x - from.x, to.y - from.y) / Math.max(0.01, enemy.speed * terrainSpeedMultiplier(from, to));
         const terrainClimbTime = Math.max(0, heights[to.y][to.x] - heights[from.y][from.x]) / ENEMY_TERRAIN_CLIMB_SPEED;
@@ -1199,10 +1221,11 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         structures.forEach(s => { if ((isPathBlocking(s) && (!climbsWalls || !isWall(s))) || isCombatStructure(s)) targets.push({ type: "structure", id: s.id, x: s.x, y: s.y, group: s.group, directDistance: Math.hypot(s.x - e.x, s.y - e.y) }); });
         let targetChoice = targets.find(target => target.type === e.targetType && target.id === e.targetId);
         if (!targetChoice || e.pathTimer <= 0 || !e.path.length) {
-          let bestRoute: EnemyRoute | undefined, bestTarget: EnemyTargetChoice | undefined;
+          let bestRoute: EnemyRoute | undefined, bestTarget: EnemyTargetChoice | undefined, bestTargetScore = Infinity;
           for (const candidate of [...targets].sort((a, b) => a.directDistance - b.directDistance)) {
-            const fastestPossibleTime = candidate.directDistance / Math.max(0.01, e.speed * 1.65); if (bestRoute && fastestPossibleTime >= bestRoute.travelTime) break;
-            const route = routeFor(e, candidate); if (route.path.length && (!bestRoute || route.travelTime < bestRoute.travelTime)) { bestRoute = route; bestTarget = candidate; }
+            const fastestPossibleScore = candidate.directDistance / Math.max(0.01, e.speed * 1.65) * (1 - TARGET_SELECTION_VARIANCE * 0.5); if (fastestPossibleScore >= bestTargetScore) break;
+            const route = routeFor(e, candidate), targetScore = route.travelTime * targetPreferenceMultiplier(e, candidate);
+            if (route.path.length && targetScore < bestTargetScore) { bestRoute = route; bestTarget = candidate; bestTargetScore = targetScore; }
           }
           targetChoice = bestTarget ?? targets[0]; e.targetType = targetChoice.type; e.targetId = targetChoice.id; e.path = bestRoute?.path ?? routeFor(e, targetChoice).path; e.index = 0; e.pathTimer = (targetChoice.type === "marine" ? 0.42 : 0.82) + (e.id % 7) * 0.025;
         }
@@ -1384,9 +1407,9 @@ export default function Home() {
         <div className="status-feed"><i />{message}</div>
         {selectedUnit && <div className="upgrade-card" style={{ "--upgrade-color": ASSETS[selectedUnit.kind].accent } as React.CSSProperties}>
           <small>SELECTED DEFENSE</small><div className="upgrade-heading"><b>{selectedUnit.name}</b><em>TIER {selectedUnit.level}/{selectedUnit.maxLevel}</em></div>
-          <div className="upgrade-stats"><span><small>DAMAGE</small><b>{selectedUnit.damage}</b></span><span><small>RANGE</small><b>{selectedUnit.range}</b></span><span><small>ARMOR</small><b>{selectedUnit.maxHp}</b></span></div>
+          <div className="upgrade-stats"><span><small>{selectedUnit.support ? "LIGHT POWER" : "DAMAGE"}</small><b>{selectedUnit.support ? `${selectedUnit.damage}%` : selectedUnit.damage}</b></span><span><small>{selectedUnit.support ? "VISION" : "RANGE"}</small><b>{selectedUnit.range}</b></span><span><small>ARMOR</small><b>{selectedUnit.maxHp}</b></span></div>
           <button disabled={selectedUnit.upgradeCost === null || hud.credits < selectedUnit.upgradeCost} onClick={() => apiRef.current?.upgradeSelected()}>{selectedUnit.upgradeCost === null ? "MAXIMUM TIER" : `UPGRADE TO TIER ${selectedUnit.level + 1} · ¤ ${selectedUnit.upgradeCost}`}</button>
-          <p>Upgrade increases damage, range, fire rate, and armor.</p>
+          <p>{selectedUnit.support ? "Upgrade increases vision radius, searchlight power, and armor." : "Upgrade increases damage, range, fire rate, and armor."}</p>
         </div>}
         {selectedBarracks && <div className="barracks-card">
           <small>SELECTED BUILDING</small><div className="barracks-heading"><div><b>FIELD BARRACKS</b><span>INFANTRY TRAINING BAY</span></div><em>{selectedBarracks.busy ? `READY IN ${selectedBarracks.readyIn}S` : "READY"}</em></div>

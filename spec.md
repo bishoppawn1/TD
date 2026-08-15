@@ -42,6 +42,7 @@ Protect the command post through all 25 enemy waves.
 - Enemies travel between adjacent grid cells and dynamically recalculate their route around structures.
 - Enemies choose targets by estimated travel time rather than straight-line distance. The estimate uses the actual route, terrain grade, movement speed, and any wall ascent or descent required.
 - Ascending natural terrain adds substantial vertical climb time to both movement and route estimates, while downhill travel retains its speed advantage.
+- Each alien applies a stable individual preference of up to 17 percent in either direction to those travel-time estimates, spreading a swarm across near-equivalent targets without making obviously bad routes attractive.
 - Friendly infantry and mobile crewed weapons use grid routes around walls and other solid fortifications instead of moving through them.
 - Every wall has visible access stairs. A move order onto a wall routes units to a stair approach, animates the climb, and leaves them stationed on top.
 - Construction may redirect or completely seal the route to the command post. Blocked ground enemies attack fortifications to reopen a path.
@@ -82,7 +83,7 @@ A static four-tube missile launcher with the longest base range and widest blast
 
 ### Sentinel Light Tower — 135 credits
 
-A non-attacking reconnaissance structure with rotating searchlights. It reveals a broad circle of fogged terrain so distant defenses can acquire enemies approaching through the darkness.
+A non-attacking reconnaissance structure with rotating searchlights. It reveals a broad circle of fogged terrain so distant defenses can acquire enemies approaching through the darkness. Light towers can be selected and upgraded through three tiers; each upgrade increases vision radius, searchlight brightness and reach, and armor.
 
 ### Hesco Wall — 70 credits
 
