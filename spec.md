@@ -2,7 +2,7 @@
 
 ## Game Overview
 
-**Vanguard: Exoplanetary Defense** is a single-player, real-time 3D tower-defense game. The player commands humanity's last defensive position on an alien world and must hold a command post against eight escalating waves of hostile creatures.
+**Vanguard: Exoplanetary Defense** is a single-player, real-time 3D tower-defense game. The player commands humanity's last defensive position on an alien world and must hold a command post against 25 escalating waves of hostile creatures.
 
 The game combines quick defensive construction with terrain-aware tactics. Players spend command credits to place weapons, walls, mines, and support buildings on a grid-based battlefield. Enemy routes update when the player builds fortifications, allowing carefully placed walls to funnel the swarm into overlapping fields of fire.
 
@@ -12,9 +12,9 @@ The player is a field commander directing a desperate military defense from an e
 
 ## Core Objective
 
-Protect the command post through all eight enemy waves.
+Protect the command post through all 25 enemy waves.
 
-- The player wins when every hostile in wave eight has been destroyed.
+- The player wins when every hostile in wave 25 has been destroyed.
 - The player loses when command-post integrity reaches zero.
 - Any enemy that reaches the command post deals damage based on its class and is then removed from the battlefield.
 
@@ -34,7 +34,7 @@ Protect the command post through all eight enemy waves.
 - The alien portal is located in the northeast; the command post is in the southwest.
 - The battlefield is covered by dynamic fog of war. Friendly infantry, combat defenses, the barracks, and the command post reveal limited areas around themselves.
 - Hostiles outside all friendly vision radii are hidden and cannot be targeted by weapons until they enter a revealed area.
-- Sentinel light towers project sweeping searchlights and reveal a substantially wider area than ordinary units.
+- Sentinel light towers project sweeping searchlights and reveal a substantially wider area than ordinary units. They can be mounted on top of Hesco or Bastion walls.
 - Enemies travel between adjacent grid cells and dynamically recalculate their route around structures.
 - Enemies choose the closest soldier, combat emplacement, or wall with equal targeting priority and will reroute to attack it.
 - Friendly infantry and mobile crewed weapons use grid routes around walls and other solid fortifications instead of moving through them.
@@ -89,7 +89,13 @@ A single-use proximity explosive. It detonates when an enemy comes close and dea
 
 ### Field Barracks — 425 credits
 
-A support structure where the player can recruit riflemen for 60 credits after a short training cooldown.
+A support structure where the player can recruit riflemen, heavy gunners, combat medics, and rocketeers after a short training cooldown.
+
+## Friendly Units
+
+### Rocketeer — 155 credits
+
+A slow infantry specialist carrying a shoulder launcher. Rocketeers fire arcing rockets at long range, dealing heavy splash damage to clustered enemies, and can be ordered onto walls like other infantry.
 
 ## Unit Upgrades
 
@@ -115,11 +121,15 @@ An upgraded alien introduced after the opening wave. Spitters have more health a
 
 A heavy enemy introduced in later waves. Brutes are slow but have very high health, inflict severe command-post damage, and provide the largest bounty.
 
+### Broodmother
+
+A durable ranged alien introduced in wave 12. Broodmothers launch slow, high-arcing egg sacs from behind the swarm and award a large bounty when destroyed.
+
 Enemy health and movement speed scale upward as the operation advances. Wave size also increases, creating steadily greater pressure on the player's defenses.
 
 ## Wave Structure
 
-- The operation contains eight waves.
+- The operation contains 25 waves.
 - The player manually starts each wave, allowing time to build and reconsider the defense.
 - Each new wave contains more enemies than the last.
 - Advanced enemy classes enter the possible spawn pool as waves progress.
@@ -130,7 +140,7 @@ Enemy health and movement speed scale upward as the operation advances. Wave siz
 
 - **Left click:** Select a rifleman or combat structure; otherwise place the selected asset on a tile.
 - **Left drag:** Box-select riflemen and combat structures.
-- **Right click with units selected:** Move the selected units in a line formation.
+- **Right click with units selected:** Move the selected units in a compact, near-square formation that rotates to face its travel direction.
 - **Right drag:** Pan the camera.
 - **Mouse wheel:** Zoom in or out.
 - **Shift + right click:** Salvage an asset.
