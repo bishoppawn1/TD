@@ -120,35 +120,78 @@ function Battlefield({ selected, onHud, onMessage, apiRef }: { selected: AssetKe
 
     function makeSoldier(scale = 1) {
       const g = new THREE.Group();
-      const olive = 0x52664b, fabric = 0x29362c, skin = 0x9b735a, gun = 0x1a211f;
-      box(g, [0.25, 0.42, 0.18], [0, 0.57, 0], olive);
-      box(g, [0.09, 0.34, 0.11], [-0.075, 0.2, 0], fabric); box(g, [0.09, 0.34, 0.11], [0.075, 0.2, 0], fabric);
-      const head = new THREE.Mesh(new THREE.SphereGeometry(0.115, 10, 7), new THREE.MeshStandardMaterial({ color: skin, roughness: 0.9 })); head.position.y = 0.88; g.add(head);
-      const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.135, 12, 7, 0, Math.PI * 2, 0, Math.PI * 0.56), new THREE.MeshStandardMaterial({ color: 0x3f5040, roughness: 0.9 })); helmet.position.y = 0.91; g.add(helmet);
-      box(g, [0.07, 0.07, 0.66], [0.17, 0.62, -0.18], gun, 0.3).rotation.x = Math.PI * 0.04;
+      const olive = 0x59694c, fabric = 0x26332d, skinTone = 0xa77b5e, gun = 0x151b1a, boot = 0x171d1b;
+      const uniformMat = new THREE.MeshStandardMaterial({ color: olive, roughness: 0.88 });
+      const skinMat = new THREE.MeshStandardMaterial({ color: skinTone, roughness: 0.92 });
+      const legPivots: THREE.Group[] = [];
+
+      const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.17, 0.25, 4, 8), uniformMat); torso.position.y = 0.62; torso.scale.set(1.08, 1, 0.82); g.add(torso);
+      box(g, [0.34, 0.3, 0.2], [0, 0.63, -0.035], 0x3c4b3d);
+      box(g, [0.26, 0.09, 0.055], [0, 0.67, -0.145], 0x687250);
+      box(g, [0.3, 0.28, 0.13], [0, 0.62, 0.13], 0x344238);
+      box(g, [0.29, 0.13, 0.2], [0, 0.4, 0], fabric);
+
+      for (const side of [-1, 1]) {
+        const leg = new THREE.Group(); leg.position.set(side * 0.095, 0.4, 0); g.add(leg); legPivots.push(leg);
+        beam(leg, new THREE.Vector3(), new THREE.Vector3(side * 0.018, -0.2, 0.015), 0.065, fabric);
+        beam(leg, new THREE.Vector3(side * 0.018, -0.2, 0.015), new THREE.Vector3(side * 0.025, -0.4, -0.025), 0.055, olive);
+        const foot = box(leg, [0.115, 0.075, 0.2], [side * 0.025, -0.42, -0.07], boot); foot.rotation.x = -0.08;
+      }
+
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.12, 12, 9), skinMat); head.scale.set(0.88, 1.04, 0.92); head.position.set(0, 0.94, -0.015); g.add(head);
+      const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.145, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.6), new THREE.MeshStandardMaterial({ color: 0x3d4c3d, roughness: 0.82 })); helmet.position.set(0, 0.97, 0); g.add(helmet);
+      box(g, [0.32, 0.035, 0.12], [0, 0.965, -0.075], 0x344137);
+      const visor = box(g, [0.17, 0.045, 0.025], [0, 0.95, -0.12], 0x182321, 0.18); visor.material = new THREE.MeshStandardMaterial({ color: 0x1b2926, metalness: 0.5, roughness: 0.18 });
+
+      const receiver = box(g, [0.11, 0.11, 0.36], [0.13, 0.64, -0.25], gun, 0.24);
+      const stock = box(g, [0.12, 0.13, 0.2], [0.13, 0.65, -0.01], 0x2a342f); stock.rotation.x = -0.12;
+      beam(g, new THREE.Vector3(0.13, 0.65, -0.41), new THREE.Vector3(0.13, 0.66, -0.73), 0.026, gun);
+      const muzzle = new THREE.Object3D(); muzzle.position.set(0.13, 0.66, -0.75); g.add(muzzle);
+      beam(g, new THREE.Vector3(-0.18, 0.76, -0.01), new THREE.Vector3(0.06, 0.66, -0.28), 0.055, olive);
+      beam(g, new THREE.Vector3(0.18, 0.75, -0.01), new THREE.Vector3(0.16, 0.61, -0.36), 0.055, olive);
+      addHand(g, new THREE.Vector3(0.06, 0.66, -0.28)); addHand(g, new THREE.Vector3(0.16, 0.61, -0.36));
+
+      function addHand(parent: THREE.Object3D, position: THREE.Vector3) {
+        const hand = new THREE.Mesh(new THREE.SphereGeometry(0.055, 8, 6), skinMat); hand.position.copy(position); parent.add(hand);
+      }
+      g.userData.legs = legPivots; g.userData.muzzle = muzzle;
       g.scale.setScalar(scale); shadowify(g); return g;
     }
     function makeRifleTeam() {
       const g = new THREE.Group();
       const bags = 0xa48b61;
       for (let i = -2; i <= 2; i++) cyl(g, [0.16, 0.2, 0.48, 8], [i * 0.3, 0.2, -0.15], bags, [0, 0, Math.PI / 2]);
-      const a = makeSoldier(); a.position.set(-0.38, 0.22, 0.28); a.rotation.y = -0.3; g.add(a);
-      const b = makeSoldier(); b.position.set(0.45, 0.22, 0.34); b.rotation.y = -0.05; g.add(b);
-      const receiver = box(g, [0.16, 0.18, 0.58], [0, 0.61, -0.18], 0x202724, 0.22);
-      receiver.rotation.x = -0.08;
-      const barrel = cyl(g, [0.025, 0.035, 0.82, 9], [0, 0.68, -0.76], 0x151b19, [Math.PI / 2, 0, 0]); barrel.rotation.x = Math.PI / 2;
-      beam(g, new THREE.Vector3(0, 0.55, -0.12), new THREE.Vector3(-0.35, 0.1, -0.38), 0.025, 0x252d29);
-      beam(g, new THREE.Vector3(0, 0.55, -0.12), new THREE.Vector3(0.35, 0.1, -0.38), 0.025, 0x252d29);
-      box(g, [0.32, 0.3, 0.28], [0.28, 0.34, -0.2], 0x5d6244); box(g, [0.25, 0.12, 0.22], [0.28, 0.56, -0.2], 0xb48d42);
+      const a = makeSoldier(0.92); a.position.set(-0.42, 0.22, 0.35); a.rotation.y = -0.28; g.add(a);
+      const b = makeSoldier(0.92); b.position.set(0.46, 0.22, 0.4); b.rotation.y = 0.08; g.add(b);
+      box(g, [0.17, 0.18, 0.5], [0, 0.61, -0.22], 0x202724, 0.22);
+      beam(g, new THREE.Vector3(0, 0.62, -0.44), new THREE.Vector3(0, 0.64, -1.2), 0.034, 0x151b19);
+      cyl(g, [0.055, 0.055, 0.13, 8], [0, 0.64, -1.24], 0x121716, [Math.PI / 2, 0, 0]);
+      beam(g, new THREE.Vector3(0, 0.55, -0.1), new THREE.Vector3(-0.38, 0.1, -0.38), 0.03, 0x252d29);
+      beam(g, new THREE.Vector3(0, 0.55, -0.1), new THREE.Vector3(0.38, 0.1, -0.38), 0.03, 0x252d29);
+      beam(g, new THREE.Vector3(0, 0.55, -0.1), new THREE.Vector3(0, 0.1, 0.3), 0.03, 0x252d29);
+      box(g, [0.32, 0.3, 0.28], [0.28, 0.34, -0.18], 0x5d6244); box(g, [0.25, 0.12, 0.22], [0.28, 0.56, -0.18], 0xb48d42);
+      const muzzle = new THREE.Object3D(); muzzle.position.set(0, 0.64, -1.31); g.add(muzzle); g.userData.muzzle = muzzle;
       return g;
     }
     function makeHowitzer() {
       const g = new THREE.Group();
-      box(g, [1.35, 0.14, 0.72], [0, 0.18, 0], 0x4e5d49);
-      for (const z of [-0.48, 0.48]) cyl(g, [0.31, 0.31, 0.16, 16], [-0.1, 0.31, z], 0x171c1b, [Math.PI / 2, 0, 0]);
-      cyl(g, [0.19, 0.24, 0.34, 14], [0.2, 0.58, 0], 0x596952, [0, 0, Math.PI / 2]);
-      const barrel = cyl(g, [0.075, 0.11, 1.65, 14], [-0.45, 1.12, 0], 0x465549, [0, 0, -Math.PI * 0.38]); barrel.position.x = -0.46;
-      box(g, [0.17, 0.13, 0.85], [0.62, 0.25, 0.28], 0x3d493d); box(g, [0.17, 0.13, 0.85], [0.62, 0.25, -0.28], 0x3d493d);
+      box(g, [0.72, 0.16, 1.1], [0, 0.22, 0.12], 0x4e5d49);
+      beam(g, new THREE.Vector3(-0.45, 0.34, 0), new THREE.Vector3(0.45, 0.34, 0), 0.1, 0x303a35);
+      for (const x of [-0.5, 0.5]) {
+        cyl(g, [0.34, 0.34, 0.18, 18], [x, 0.35, 0.05], 0x171c1b, [0, 0, Math.PI / 2]);
+        cyl(g, [0.14, 0.14, 0.19, 12], [x, 0.35, 0.05], 0x667064, [0, 0, Math.PI / 2]);
+      }
+      cyl(g, [0.22, 0.22, 0.5, 14], [0, 0.66, -0.08], 0x596952, [0, 0, Math.PI / 2]);
+      box(g, [1.04, 0.72, 0.1], [0, 0.7, -0.04], 0x53604f);
+      box(g, [0.42, 0.22, 0.12], [0, 0.72, -0.22], 0x3b4640);
+      const breech = new THREE.Vector3(0, 0.77, -0.18), barrelStart = new THREE.Vector3(0, 0.86, -0.35), muzzlePoint = new THREE.Vector3(0, 1.34, -1.58);
+      beam(g, breech, barrelStart, 0.135, 0x3d4842); beam(g, barrelStart, muzzlePoint, 0.085, 0x465549);
+      beam(g, new THREE.Vector3(0, 1.28, -1.42), new THREE.Vector3(0, 1.38, -1.68), 0.12, 0x303934);
+      for (const x of [-0.26, 0.26]) {
+        beam(g, new THREE.Vector3(x, 0.24, 0.35), new THREE.Vector3(x * 1.7, 0.1, 1.18), 0.065, 0x3d493d);
+        box(g, [0.32, 0.12, 0.28], [x * 1.72, 0.09, 1.23], 0x303a35);
+      }
+      const muzzle = new THREE.Object3D(); muzzle.position.copy(muzzlePoint).add(new THREE.Vector3(0, 0.05, -0.13)); g.add(muzzle); g.userData.muzzle = muzzle;
       return g;
     }
     function makeWall() {
@@ -473,15 +516,16 @@ function Battlefield({ selected, onHud, onMessage, apiRef }: { selected: AssetKe
         }
         if (s.kind !== "rifle" && s.kind !== "howitzer") continue;
         const range = ASSETS[s.kind].range + heights[s.y][s.x] * 0.9; const target = enemies.filter(e => e.hp > 0 && Math.hypot(e.x - s.x, e.y - s.y) <= range).sort((a, b) => b.index - a.index)[0];
-        if (target && s.cooldown <= 0) { const from = s.group.position.clone().add(new THREE.Vector3(s.kind === "howitzer" ? -0.55 : 0, s.kind === "howitzer" ? 1.5 : 1.05, 0)); fire(from, target, s.kind === "howitzer" ? 105 : 5.8, s.kind === "howitzer" ? 1.25 : 0, s.kind === "howitzer" ? 0xffa64d : 0xd6ff81, s.kind === "howitzer"); s.cooldown = s.kind === "howitzer" ? 2.35 : 0.15; }
+        if (target && s.cooldown <= 0) { const muzzle = s.group.userData.muzzle as THREE.Object3D | undefined; const from = muzzle ? muzzle.getWorldPosition(new THREE.Vector3()) : s.group.position.clone().add(new THREE.Vector3(0, 1.05, 0)); fire(from, target, s.kind === "howitzer" ? 105 : 5.8, s.kind === "howitzer" ? 1.25 : 0, s.kind === "howitzer" ? 0xffa64d : 0xd6ff81, s.kind === "howitzer"); s.cooldown = s.kind === "howitzer" ? 2.35 : 0.15; }
       }
       for (const m of marines) {
         m.cooldown -= dt; const mdx = m.targetX - m.x, mdy = m.targetY - m.y, moveDist = Math.hypot(mdx, mdy);
         if (moveDist > 0.035) { const accel = 5.2; m.vx += mdx / moveDist * accel * dt; m.vy += mdy / moveDist * accel * dt; const speed = Math.hypot(m.vx, m.vy), max = 1.65; if (speed > max) { m.vx *= max / speed; m.vy *= max / speed; } m.x += m.vx * dt; m.y += m.vy * dt; m.group.rotation.y = Math.atan2(-m.vx, -m.vy); }
         else { m.x = m.targetX; m.y = m.targetY; m.vx *= Math.exp(-dt * 10); m.vy *= Math.exp(-dt * 10); }
         m.vx *= Math.exp(-dt * 3.2); m.vy *= Math.exp(-dt * 3.2); const settledOnWall = m.mountedOn && moveDist < 0.12; m.group.position.lerp(worldPos(m.x, m.y, settledOnWall ? 0.62 : 0), Math.min(1, dt * 14));
+        const soldierLegs = m.group.userData.legs as THREE.Group[] | undefined; if (soldierLegs) soldierLegs.forEach((leg, i) => { leg.rotation.x = moveDist > 0.06 ? Math.sin(elapsed * 11 + i * Math.PI) * 0.5 : 0; });
         const target = enemies.find(e => e.hp > 0 && Math.hypot(e.x - m.x, e.y - m.y) < (settledOnWall ? 4.2 : 3.25));
-        if (target && m.cooldown <= 0) { m.group.rotation.y = Math.atan2(-(target.x - m.x), -(target.y - m.y)); fire(m.group.position.clone().add(new THREE.Vector3(0, 0.72, 0)), target, settledOnWall ? 12 : 9, 0, 0xbaff77); m.cooldown = 0.55; }
+        if (target && m.cooldown <= 0) { m.group.rotation.y = Math.atan2(-(target.x - m.x), -(target.y - m.y)); const muzzle = m.group.userData.muzzle as THREE.Object3D | undefined; fire(muzzle ? muzzle.getWorldPosition(new THREE.Vector3()) : m.group.position.clone().add(new THREE.Vector3(0, 0.72, 0)), target, settledOnWall ? 12 : 9, 0, 0xbaff77); m.cooldown = 0.55; }
       }
       for (const s of [...structures]) if (s.kind === "mine") {
         const target = enemies.find(e => e.hp > 0 && Math.hypot(e.x - s.x, e.y - s.y) < 1.25); if (target) { enemies.forEach(e => { if (Math.hypot(e.x - s.x, e.y - s.y) < 1.75) damageEnemy(e, 145); }); burst(s.group.position.clone().add(new THREE.Vector3(0, 0.3, 0)), 0x6ffff3, 25); destroyStructure(s); message("SHOCK MINE DETONATED"); }
