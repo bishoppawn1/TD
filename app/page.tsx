@@ -140,12 +140,34 @@ const steppedHeight = (height: number) => Math.max(0.04, Math.round(height / 0.1
 
 const MAPS: Record<MapKey, MapConfig> = {
   ridge: {
-    key: "ridge", operation: "NIGHTFALL", sector: "E-7", name: "Razorback Expanse", objective: "Hold the open frontier", terrain: "VAST · OPEN GROUND",
-    description: "A huge open frontier with long sightlines, gentle rises, and room to build a defense in depth before the swarm crosses the plain.",
+    key: "ridge", operation: "LAST BASTION", sector: "HQ-1", name: "HQ Command", objective: "Defend humanity's headquarters", terrain: "FORTIFIED HQ · HEAVY ASSAULT",
+    description: "Humanity's vast field headquarters begins behind layered walls with a full defensive network and reinforced garrison, but five invasion fronts answer with an overwhelming assault.",
     background: 0x07120f, ground: 0x0b1713, fog: 0x010705, hue: 0.29, saturation: 0.24,
-    baseCell: { x: 5, y: 37 }, spawnCells: [{ x: 43, y: 4 }, { x: 43, y: 39 }, { x: 23, y: 0 }, { x: 0, y: 8 }],
-    startingStructures: [{ kind: "barracks", x: 8, y: 34 }, { kind: "rifle", x: 12, y: 34 }, { kind: "wall", x: 9, y: 36 }, { kind: "howitzer", x: 15, y: 36 }, { kind: "wire", x: 12, y: 39 }, { kind: "sentry", x: 14, y: 32 }, { kind: "light", x: 10, y: 30 }, { kind: "trench", x: 8, y: 30 }],
-    startingMarines: [{ kind: "rifleman", x: 8, y: 33 }, { kind: "medic", x: 9, y: 34 }, { kind: "rifleman", x: 9, y: 33 }, { kind: "gunner", x: 11, y: 33 }, { kind: "rocketeer", x: 14, y: 34 }],
+    baseCell: { x: 10, y: 35 }, spawnCells: [{ x: 43, y: 4 }, { x: 43, y: 39 }, { x: 23, y: 0 }, { x: 0, y: 8 }, { x: 0, y: 41 }],
+    startingStructures: [
+      { kind: "barracks", x: 8, y: 35 }, { kind: "barracks", x: 12, y: 35 },
+      { kind: "rifle", x: 7, y: 33 }, { kind: "rifle", x: 10, y: 33 }, { kind: "rifle", x: 13, y: 33 },
+      { kind: "sentry", x: 6, y: 36 }, { kind: "sentry", x: 14, y: 36 },
+      { kind: "flak", x: 9, y: 30 }, { kind: "flak", x: 15, y: 32 },
+      { kind: "flame", x: 7, y: 37 }, { kind: "flame", x: 13, y: 37 },
+      { kind: "laser", x: 16, y: 34 }, { kind: "railgun", x: 17, y: 37 },
+      { kind: "howitzer", x: 10, y: 28 }, { kind: "howitzer", x: 18, y: 35 }, { kind: "missile", x: 18, y: 31 },
+      { kind: "light", x: 6, y: 30 }, { kind: "light", x: 14, y: 29 }, { kind: "light", x: 18, y: 39 },
+      { kind: "bastion", x: 7, y: 32 }, { kind: "bastion", x: 8, y: 32 }, { kind: "bastion", x: 9, y: 32 }, { kind: "bastion", x: 10, y: 32 }, { kind: "bastion", x: 11, y: 32 }, { kind: "bastion", x: 12, y: 32 }, { kind: "bastion", x: 13, y: 32 },
+      { kind: "wall", x: 5, y: 34 }, { kind: "wall", x: 5, y: 35 }, { kind: "wall", x: 5, y: 36 }, { kind: "wall", x: 5, y: 37 }, { kind: "wall", x: 5, y: 38 },
+      { kind: "wall", x: 7, y: 40 }, { kind: "wall", x: 8, y: 40 }, { kind: "wall", x: 9, y: 40 }, { kind: "wall", x: 10, y: 40 }, { kind: "wall", x: 11, y: 40 }, { kind: "wall", x: 12, y: 40 }, { kind: "wall", x: 13, y: 40 },
+      { kind: "trench", x: 7, y: 30 }, { kind: "trench", x: 8, y: 30 }, { kind: "trench", x: 11, y: 30 }, { kind: "trench", x: 12, y: 30 },
+      { kind: "wire", x: 7, y: 28 }, { kind: "wire", x: 13, y: 28 }, { kind: "wire", x: 15, y: 39 },
+      { kind: "mine", x: 5, y: 32 }, { kind: "mine", x: 15, y: 34 }, { kind: "mine", x: 15, y: 38 },
+    ],
+    startingMarines: [
+      { kind: "rifleman", x: 8, y: 34 }, { kind: "rifleman", x: 9, y: 34 }, { kind: "rifleman", x: 11, y: 34 }, { kind: "rifleman", x: 12, y: 34 },
+      { kind: "rifleman", x: 7, y: 29 }, { kind: "rifleman", x: 8, y: 29 }, { kind: "rifleman", x: 11, y: 29 }, { kind: "rifleman", x: 12, y: 29 },
+      { kind: "gunner", x: 6, y: 33 }, { kind: "gunner", x: 14, y: 33 }, { kind: "gunner", x: 9, y: 37 }, { kind: "gunner", x: 11, y: 37 },
+      { kind: "medic", x: 9, y: 36 }, { kind: "medic", x: 11, y: 36 },
+      { kind: "rocketeer", x: 16, y: 32 }, { kind: "rocketeer", x: 16, y: 36 },
+    ],
+    activeEnemyCap: 170, waveMultiplier: 1.75, burstScale: 1.15, spawnIntervalMultiplier: 0.62,
     heightAt: (x, y) => {
       const rolling = Math.max(0, Math.sin(x * 0.31) + Math.cos(y * 0.37) - 0.7) * 0.12;
       const broadRise = Math.max(0, 1 - Math.hypot(x - 28, y - 17) / 13) * 0.34;
@@ -1685,7 +1707,7 @@ export default function Home() {
   const [hud, setHud] = useState<Hud>({ credits: 750, integrity: 100, wave: 0, enemies: 0, kills: 0, active: false, buildSeconds: null, gameOver: false, victory: false });
   const [selectedUnit, setSelectedUnit] = useState<SelectedUnit | null>(null);
   const [selectedBarracks, setSelectedBarracks] = useState<BarracksInfo | null>(null);
-  const [message, setMessage] = useState("OPERATION NIGHTFALL · BUILD YOUR PERIMETER");
+  const [message, setMessage] = useState("OPERATION LAST BASTION · HQ COMMAND ONLINE");
   const [briefing, setBriefing] = useState(true);
   const apiRef = useRef<BattlefieldApi | null>(null);
   const messageTimer = useRef<ReturnType<typeof setTimeout> | null>(null);

@@ -33,8 +33,10 @@ Protect the command post through all 25 enemy waves.
 - Every battlefield uses a square 44-by-44 construction grid with varied elevation, providing 1,936 playable cells and long, wide approaches.
 - The player selects a battlefield during the opening briefing and can return to the selector between waves.
 - Each map changes terrain elevation, ground palette, command-post position, invasion-portal positions, and the opening friendly deployment.
-- Every map begins with five infantry and eight free structures tailored to its terrain and invasion pattern.
-- Razorback Expanse is a vast open frontier with long sightlines; Cinder Basin exposes a low defense to encirclement; and Blackglass Divide uses sheer multi-level mesas and deep approach channels.
+- Most maps begin with five infantry and eight free structures tailored to their terrain and invasion pattern.
+- HQ Command is the initial map and represents humanity's vast fortified field headquarters. It begins with 48 structures—including layered walls, two barracks, artillery, anti-air, heavy weapons, trenches, mines, wire, and lights—plus a 16-soldier garrison.
+- HQ Command is attacked from five land fronts, schedules 75 percent more aliens per wave, supports up to 170 simultaneous hostiles, launches larger bursts, and replenishes attackers faster than standard maps. Its extensive starting defenses are necessary rather than decorative.
+- Cinder Basin exposes a low defense to encirclement, while Blackglass Divide uses sheer multi-level mesas and deep approach channels.
 - Temple of Dust places the command post in the center of an ancient ruin maze. Staggered openings across concentric high walls and broken corridor baffles force eight invasion routes to bend through distinct approaches.
 - The Breeding World is an alien homeworld with organic ridges, luminous growths, and twelve perimeter spawning pits surrounding a central command post.
 - Portal counts vary by battlefield. The homeworld more than doubles the usual wave population, deploys it at a faster cadence, and permits up to 170 simultaneous hostiles; the temple divides smaller bursts among its eight fronts.
@@ -162,6 +164,7 @@ Enemy health and movement speed scale upward as the operation advances. Wave siz
 - The player manually starts each wave, allowing time to build and reconsider the defense.
 - Each new wave contains more enemies than the last.
 - Swarm density is six times the original deployment strength: wave one contains 96 hostiles and the count rises to 432 by wave 25.
+- HQ Command increases those totals to 168 hostiles on wave one and 756 by wave 25, with as many as 170 enemies active at once.
 - Assault groups arrive at a proportionally faster cadence, concentrating the larger population into intense mass attacks instead of merely extending wave duration.
 - Advanced enemy classes enter the possible spawn pool as waves progress, with Skyrazors joining from wave three onward.
 - A wave ends after all scheduled enemies have spawned and no living enemies remain.
