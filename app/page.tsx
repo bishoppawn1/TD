@@ -441,8 +441,10 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       const stepCount = 4;
       for (const side of [-1, 1]) for (let i = 0; i < stepCount; i++) {
         const height = top * (i + 1) / stepCount;
-        const step = box(g, [0.62, height, 0.24], [0, height / 2, side * (1.12 - i * 0.22)], 0x807560, 0.92);
-        const tread = box(step, [0.64, 0.035, 0.27], [0, 0.5, 0], 0xb9aa8b, 0.72); tread.position.y = height / 2 + 0.018;
+        const zStep = box(g, [0.62, height, 0.24], [0, height / 2, side * (1.12 - i * 0.22)], 0x807560, 0.92);
+        const zTread = box(zStep, [0.64, 0.035, 0.27], [0, 0.5, 0], 0xb9aa8b, 0.72); zTread.position.y = height / 2 + 0.018;
+        const xStep = box(g, [0.24, height, 0.62], [side * (1.12 - i * 0.22), height / 2, 0], 0x807560, 0.92);
+        const xTread = box(xStep, [0.27, 0.035, 0.64], [0, 0.5, 0], 0xb9aa8b, 0.72); xTread.position.y = height / 2 + 0.018;
       }
     }
     function makeWall() {
@@ -800,7 +802,10 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       return out.reverse();
     }
     const friendlyBlocked = () => new Set(structures.filter(s => isPathBlocking(s) && !isMobileEmplacement(s)).map(s => keyOf(Math.round(s.x), Math.round(s.y))));
-    const wallStairs = (wall: Structure) => [{ x: wall.x + 1, y: wall.y }, { x: wall.x - 1, y: wall.y }]
+    const wallStairs = (wall: Structure) => [
+      { x: wall.x + 1, y: wall.y }, { x: wall.x - 1, y: wall.y },
+      { x: wall.x, y: wall.y + 1 }, { x: wall.x, y: wall.y - 1 },
+    ]
       .filter(cell => cell.x >= 0 && cell.y >= 0 && cell.x < GRID_W && cell.y < GRID_H);
     function groundRoute(from: Cell, to: Cell, ban = friendlyBlocked()) {
       if (ban.has(keyOf(Math.round(to.x), Math.round(to.y)))) return [];

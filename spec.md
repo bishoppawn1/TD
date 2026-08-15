@@ -44,7 +44,7 @@ Protect the command post through all 25 enemy waves.
 - Ascending natural terrain adds substantial vertical climb time to both movement and route estimates, while downhill travel retains its speed advantage.
 - Each alien applies a stable individual preference of up to 17 percent in either direction to those travel-time estimates, spreading a swarm across near-equivalent targets without making obviously bad routes attractive.
 - Friendly infantry and mobile crewed weapons use grid routes around walls and other solid fortifications instead of moving through them.
-- Every wall has visible access stairs. A move order onto a wall routes units to a stair approach, animates the climb, and leaves them stationed on top.
+- Every wall has visible access stairs on all four sides. A move order onto a wall chooses the shortest safe north, south, east, or west stair approach, animates the climb, and leaves units stationed on top.
 - Construction may redirect or completely seal the route to the command post. Blocked ground enemies attack fortifications to reopen a path.
 - Stalkers and razortails can climb directly over walls, including stacked wall sections, but taller climbs take proportionally longer and may make another route or target more attractive.
 - Elevated weapon positions gain additional range, rewarding control of ridges and high ground.
@@ -87,7 +87,7 @@ A non-attacking reconnaissance structure with rotating searchlights. It reveals 
 
 ### Hesco Wall — 70 credits
 
-A non-attacking fortification used to alter enemy paths and create kill zones. Walls can be stacked vertically without a height limit and include access stairs for friendly units ordered onto the top section.
+A non-attacking fortification used to alter enemy paths and create kill zones. Walls can be stacked vertically without a height limit and include access stairs on all four sides for friendly units ordered onto the top section.
 
 ### Infantry Trench — 85 credits
 
