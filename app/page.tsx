@@ -904,6 +904,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     let structures: Structure[] = [], enemies: Enemy[] = [], marines: Marine[] = [], bullets: Bullet[] = [], hostileProjectiles: HostileProjectile[] = [], particles: Particle[] = [];
     type EnemyRoute = { path: Cell[]; travelTime: number };
     const enemyRouteCache = new Map<string, EnemyRoute>();
+    const incomingDamageCache = new Map<number, number>();
     const lightProjectilePool: THREE.Mesh[] = [], heavyProjectilePool: THREE.Mesh[] = [], rocketProjectilePool: THREE.Group[] = [];
     const lightProjectileGeometry = new THREE.SphereGeometry(0.045, 7, 5), heavyProjectileGeometry = new THREE.SphereGeometry(0.11, 7, 5);
     const rocketBodyGeometry = new THREE.CylinderGeometry(0.055, 0.072, 0.32, 8), rocketNoseGeometry = new THREE.ConeGeometry(0.058, 0.16, 8), rocketExhaustGeometry = new THREE.SphereGeometry(0.055, 7, 5);
@@ -1370,15 +1371,37 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       if (rocket) mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), to.clone().sub(from).normalize());
       mesh.position.copy(from); world.add(mesh);
       bullets.push({ mesh, pool, from: from.clone(), to, impactX: target.x, impactY: target.y, t: 0, speed: heavy ? 1.35 : 4.8, target: target.id, damage, splash: aoeRadius(splash), arcHeight, color, sourceStructureId });
+      incomingDamageCache.clear();
     }
     function incomingDamageAt(enemy: Enemy) {
-      return bullets.reduce((total, shot) => {
+      const cached = incomingDamageCache.get(enemy.id);
+      if (cached !== undefined) return cached;
+      const incoming = bullets.reduce((total, shot) => {
         if (!shot.splash) return total + (shot.target === enemy.id ? shot.damage : 0);
         const trackedTarget = enemies.find(candidate => candidate.id === shot.target && candidate.hp > 0);
         const impactX = trackedTarget?.x ?? shot.impactX, impactY = trackedTarget?.y ?? shot.impactY;
         const distance = Math.hypot(enemy.x - impactX, enemy.y - impactY);
         return distance <= shot.splash ? total + shot.damage * (1 - distance / (shot.splash * 1.8)) : total;
       }, 0);
+      incomingDamageCache.set(enemy.id, incoming);
+      return incoming;
+    }
+    function targetPreference(unitId: number, enemyId: number) {
+      const raw = Math.sin(unitId * 12.9898 + enemyId * 78.233) * 43758.5453;
+      return raw - Math.floor(raw);
+    }
+    function chooseDistributedTarget(candidates: Enemy[], unitId: number) {
+      const uncovered = candidates.filter(enemy => enemy.hp - incomingDamageAt(enemy) > 0);
+      const options = uncovered.length ? uncovered : candidates;
+      let bestTarget: Enemy | undefined, bestScore = Infinity;
+      for (const enemy of options) {
+        const reservedDamage = incomingDamageAt(enemy) / Math.max(1, enemy.maxHp);
+        const progressBias = Math.min(0.34, enemy.index * 0.018);
+        const preference = targetPreference(unitId, enemy.id) * 0.42;
+        const score = reservedDamage - progressBias - preference;
+        if (score < bestScore) { bestScore = score; bestTarget = enemy; }
+      }
+      return bestTarget;
     }
     function chooseArtilleryTarget(candidates: Enemy[], damage: number, splash: number) {
       const remainingHp = new Map(candidates.map(enemy => [enemy.id, Math.max(0, enemy.hp - incomingDamageAt(enemy))]));
@@ -1491,6 +1514,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
 
     function update(dt: number) {
       elapsed += dt; spawnBeacons.forEach(beacon => { beacon.portal.rotation.z += dt * 0.7; beacon.inner.rotation.z -= dt * 0.42; beacon.light.intensity = 2.6 + Math.sin(elapsed * 3.2 + beacon.phase) * 0.7; });
+      incomingDamageCache.clear();
       if (!active && !gameOver && wave > 0 && wave < MAX_WAVES && buildTimer > 0) {
         buildTimer = Math.max(0, buildTimer - dt);
         if (buildTimer === 0) { message("BUILD WINDOW CLOSED · NEXT WAVE DEPLOYING"); startWave(); }
@@ -1640,7 +1664,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         const stats = TURRET_STATS[s.kind], levelDamage = 1 + (s.level - 1) * 0.42, levelSpeed = 1 + (s.level - 1) * 0.18;
         const range = ASSETS[s.kind].range + (s.level - 1) * 0.65 + heights[terrainY][terrainX] * 0.9;
         const candidates = enemies.filter(e => e.hp > 0 && isRevealed(e.x, e.y) && Math.hypot(e.x - s.x, e.y - s.y) <= range);
-        const target = s.kind === "howitzer" || s.kind === "missile" ? chooseArtilleryTarget(candidates, stats.damage * levelDamage, aoeRadius(stats.splash)) : candidates.sort((a, b) => b.index - a.index)[0];
+        const target = s.kind === "howitzer" || s.kind === "missile" ? chooseArtilleryTarget(candidates, stats.damage * levelDamage, aoeRadius(stats.splash)) : chooseDistributedTarget(candidates, s.id);
         if (target) {
           turnToward(s.group, Math.atan2(-(target.x - s.x), -(target.y - s.y)), stats.turnSpeed, dt);
           if (s.cooldown <= 0) { const muzzle = s.group.userData.muzzle as THREE.Object3D | undefined, targetMultiplier = FLYING_ENEMIES.has(target.kind) ? stats.airDamageMultiplier ?? AIR_DAMAGE_MULTIPLIER : 1, shotDamage = stats.damage * levelDamage * targetMultiplier; const from = muzzle ? muzzle.getWorldPosition(new THREE.Vector3()) : s.group.position.clone().add(new THREE.Vector3(0, 1.05, 0)); if (stats.beam) laserStrike(from, target, shotDamage, stats.color); else fire(from, target, shotDamage, stats.splash, stats.color, stats.heavy, stats.arcHeight, false, s.kind === "howitzer" || s.kind === "missile" ? s.id : undefined); s.cooldown = stats.cooldown / levelSpeed; }
@@ -1657,7 +1681,8 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
           const patient = marines.filter(other => other.id !== m.id && other.hp < other.maxHp && Math.hypot(other.x - m.x, other.y - m.y) < 2.4).sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0];
           if (patient) { patient.hp = Math.min(patient.maxHp, patient.hp + 18); setHealthVisual(patient.group, patient.hp, patient.maxHp); burst(patient.group.position.clone().add(new THREE.Vector3(0, 0.65, 0)), 0x63e9ff, 5); m.supportCooldown = 1.6; }
         }
-        const target = enemies.find(e => e.hp > 0 && isRevealed(e.x, e.y) && Math.hypot(e.x - m.x, e.y - m.y) < (settledOnWall ? stats.range + 0.95 : stats.range));
+        const candidates = enemies.filter(e => e.hp > 0 && isRevealed(e.x, e.y) && Math.hypot(e.x - m.x, e.y - m.y) < (settledOnWall ? stats.range + 0.95 : stats.range));
+        const target = chooseDistributedTarget(candidates, m.id);
         if (target && !isMoving) {
           turnToward(m.group, Math.atan2(-(target.x - m.x), -(target.y - m.y)), 10, dt);
           if (m.cooldown <= 0) { const muzzle = m.group.userData.muzzle as THREE.Object3D | undefined, targetMultiplier = FLYING_ENEMIES.has(target.kind) ? AIR_DAMAGE_MULTIPLIER : 1; fire(muzzle ? muzzle.getWorldPosition(new THREE.Vector3()) : m.group.position.clone().add(new THREE.Vector3(0, 0.72, 0)), target, stats.damage * (settledOnWall ? 1.32 : 1) * targetMultiplier, stats.splash ?? 0, stats.projectileColor, stats.heavy, stats.arcHeight, m.kind === "rocketeer", undefined, m.kind !== "rocketeer"); m.cooldown = stats.cooldown; }
