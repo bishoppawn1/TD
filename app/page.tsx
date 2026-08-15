@@ -24,6 +24,7 @@ const PROJECTILE_POOL_LIMIT = 80;
 const ENEMY_COLLISION_BUCKET_SIZE = 1.12;
 const WALL_STACK_HEIGHT = 0.62;
 const WALL_CLIMB_SPEED = 0.46;
+const WALL_LIFT_SPEED = 3.6;
 const BASE_VISION_RADIUS = 7.5;
 const MARINE_VISION_RADIUS = 5.5;
 const STRUCTURE_VISION_RADIUS = 4.8;
@@ -565,14 +566,16 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       g.userData.searchlights = searchlights; g.userData.lightHalo = halo; g.userData.lightBeacon = beacon;
       shadowify(g); return g;
     }
-    function addWallStairs(g: THREE.Group, top = 0.72) {
-      const stepCount = 4;
-      for (const side of [-1, 1]) for (let i = 0; i < stepCount; i++) {
-        const height = top * (i + 1) / stepCount;
-        const zStep = box(g, [0.62, height, 0.24], [0, height / 2, side * (1.12 - i * 0.22)], 0x807560, 0.92);
-        const zTread = box(zStep, [0.64, 0.035, 0.27], [0, 0.5, 0], 0xb9aa8b, 0.72); zTread.position.y = height / 2 + 0.018;
-        const xStep = box(g, [0.24, height, 0.62], [side * (1.12 - i * 0.22), height / 2, 0], 0x807560, 0.92);
-        const xTread = box(xStep, [0.27, 0.035, 0.64], [0, 0.5, 0], 0xb9aa8b, 0.72); xTread.position.y = height / 2 + 0.018;
+    function addWallElevators(g: THREE.Group, top = 0.72) {
+      for (const side of [-1, 1]) {
+        const lift = new THREE.Group(); lift.position.set(side * 1.08, 0, 0); g.add(lift);
+        box(lift, [0.12, top + 0.16, 0.62], [-0.24, (top + 0.16) / 2, 0], 0x3b4544, 0.42);
+        box(lift, [0.12, top + 0.16, 0.62], [0.24, (top + 0.16) / 2, 0], 0x3b4544, 0.42);
+        const platform = box(lift, [0.56, 0.09, 0.66], [0, 0.09, 0], 0x6b746f, 0.5);
+        box(platform, [0.46, 0.025, 0.54], [0, 0.06, 0], 0x91a69b, 0.36);
+        const callPanel = box(lift, [0.06, 0.16, 0.03], [side * -0.31, 0.43, -0.34], 0x4bcfa3, 0.22); callPanel.material = new THREE.MeshStandardMaterial({ color: 0x4bcfa3, emissive: 0x17634f, emissiveIntensity: 1.3, roughness: 0.25 });
+        beam(lift, new THREE.Vector3(-0.24, top + 0.12, -0.28), new THREE.Vector3(0.24, top + 0.12, -0.28), 0.028, 0xa9b9ae);
+        beam(lift, new THREE.Vector3(-0.24, top + 0.12, 0.28), new THREE.Vector3(0.24, top + 0.12, 0.28), 0.028, 0xa9b9ae);
       }
     }
     function makeWall() {
@@ -581,7 +584,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         const cage = box(g, [0.58, 0.72, 1.65], [i * 0.59, 0.38, 0], 0xb2a284);
         const edges = new THREE.LineSegments(new THREE.EdgesGeometry(cage.geometry), new THREE.LineBasicMaterial({ color: 0x615b4e, transparent: true, opacity: 0.65 })); cage.add(edges);
       }
-      addWallStairs(g);
+      addWallElevators(g);
       return g;
     }
     function makeBastion() {
@@ -592,7 +595,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       }
       for (const x of [-0.87, 0.87]) box(g, [0.12, 1.02, 1.82], [x, 0.5, 0], 0x343d42, 0.45);
       for (const z of [-0.72, 0.72]) beam(g, new THREE.Vector3(-0.86, 0.96, z), new THREE.Vector3(0.86, 0.96, z), 0.035, 0x9aa7ad);
-      addWallStairs(g, 0.96);
+      addWallElevators(g, 0.96);
       return g;
     }
     function makeTrench() {
@@ -1001,7 +1004,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       return out.reverse();
     }
     const friendlyBlocked = () => new Set(structures.filter(s => isPathBlocking(s) && !isMobileEmplacement(s)).map(s => keyOf(Math.round(s.x), Math.round(s.y))));
-    const wallStairs = (wall: Structure) => [
+    const wallLiftDocks = (wall: Structure) => [
       { x: wall.x + 1, y: wall.y }, { x: wall.x - 1, y: wall.y },
       { x: wall.x, y: wall.y + 1 }, { x: wall.x, y: wall.y - 1 },
     ]
@@ -1012,16 +1015,23 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     }
     function planFriendlyMove(unit: Marine | Structure, destination: Cell, wall?: Structure, wallOffset: Cell = { x: 0, y: 0 }, destinationLift = 0) {
       const ban = friendlyBlocked(), currentWall = structures.find(s => s.id === unit.mountedOn && isWall(s));
-      const departures = currentWall ? wallStairs(currentWall) : [{ x: unit.x, y: unit.y }];
-      const arrivals = wall ? wallStairs(wall) : [destination];
+      const departures = currentWall ? wallLiftDocks(currentWall) : [{ x: unit.x, y: unit.y }];
+      const arrivals = wall ? wallLiftDocks(wall) : [destination];
       let best: MoveWaypoint[] = [];
       for (const departure of departures) for (const arrival of arrivals) {
         if (ban.has(keyOf(departure.x, departure.y)) || ban.has(keyOf(Math.round(arrival.x), Math.round(arrival.y)))) continue;
         const middle = groundRoute(departure, arrival, ban); if (!middle.length) continue;
         const route: MoveWaypoint[] = [{ x: unit.x, y: unit.y, lift: unit.lift }];
-        if (currentWall) route.push({ ...departure, lift: 0 });
-        route.push(...middle.slice(currentWall ? 1 : 0).map(cell => ({ ...cell, lift: 0 })));
-        if (wall) route.push({ x: wall.x + wallOffset.x, y: wall.y + wallOffset.y, lift: wallTopLift(wall) });
+        if (currentWall) {
+          route.push({ x: unit.x, y: unit.y, lift: 0 });
+          route.push({ ...departure, lift: 0 });
+        }
+        route.push(...middle.slice(1).map(cell => ({ ...cell, lift: 0 })));
+        if (wall) {
+          const liftX = wall.x + wallOffset.x, liftY = wall.y + wallOffset.y;
+          route.push({ x: liftX, y: liftY, lift: 0 });
+          route.push({ x: liftX, y: liftY, lift: wallTopLift(wall) });
+        }
         else if (Math.hypot(route[route.length - 1].x - destination.x, route[route.length - 1].y - destination.y) > 0.01) route.push({ ...destination, lift: destinationLift });
         else route[route.length - 1].lift = destinationLift;
         if (!best.length || route.length < best.length) best = route;
@@ -1034,16 +1044,16 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     function advanceFriendly(unit: Marine | Structure, speed: number, turnSpeed: number, dt: number) {
       const waypoint = unit.movePath[unit.pathIndex];
       if (!waypoint) return false;
-      const dx = waypoint.x - unit.x, dy = waypoint.y - unit.y, distance = Math.hypot(dx, dy);
-      if (distance <= 0.025) {
+      const dx = waypoint.x - unit.x, dy = waypoint.y - unit.y, distance = Math.hypot(dx, dy), liftDistance = Math.abs(waypoint.lift - unit.lift);
+      if (distance <= 0.025 && liftDistance <= 0.025) {
         unit.x = waypoint.x; unit.y = waypoint.y; unit.lift = waypoint.lift; unit.pathIndex++;
         if (unit.pathIndex >= unit.movePath.length) { unit.movePath = []; unit.pathIndex = 0; unit.mountedOn = unit.mountTarget; unit.mountTarget = undefined; }
         return unit.movePath.length > 0;
       }
-      const step = Math.min(distance, speed * dt), ratio = step / distance;
+      const travelDistance = Math.hypot(distance, liftDistance), step = Math.min(travelDistance, (distance <= 0.025 ? WALL_LIFT_SPEED : speed) * dt), ratio = step / travelDistance;
       unit.x += dx * ratio; unit.y += dy * ratio; unit.lift += (waypoint.lift - unit.lift) * ratio;
-      turnToward(unit.group, Math.atan2(-dx, -dy), turnSpeed, dt);
-      if ("vx" in unit) { unit.vx = dx / distance * speed; unit.vy = dy / distance * speed; }
+      if (distance > 0.025) turnToward(unit.group, Math.atan2(-dx, -dy), turnSpeed, dt);
+      if ("vx" in unit) { unit.vx = distance > 0.025 ? dx / distance * speed : 0; unit.vy = distance > 0.025 ? dy / distance * speed : 0; }
       return true;
     }
     function emitHud(force = false) {
@@ -1242,7 +1252,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         if (planFriendlyMove(member.unit, destination, wall, wall ? { x: offsetX * wallScale, y: offsetY * wallScale } : undefined)) { if (member.type === "marine") member.unit.trenchId = undefined; routed++; }
       });
       if (!routed) { message("NO SAFE ROUTE · WALLS AND FORTIFICATIONS BLOCK THE FORMATION"); return true; }
-      message(`${routed}-UNIT COMPACT ${columns}×${rows} FORMATION ${wall ? "ROUTING TO WALL STAIRS" : "ROUTING AROUND FORTIFICATIONS"} · CREWED WEAPONS MOVE SLOWLY`); return true;
+      message(`${routed}-UNIT COMPACT ${columns}×${rows} FORMATION ${wall ? "ROUTING TO WALL ELEVATORS" : "ROUTING AROUND FORTIFICATIONS"} · CREWED WEAPONS MOVE SLOWLY`); return true;
     }
     function selectBarracksAt(x: number, y: number) {
       const barracks = structures.find(s => s.kind === "barracks" && s.x === x && s.y === y); if (!barracks) return false;
