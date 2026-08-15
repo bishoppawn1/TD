@@ -531,7 +531,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     function makeAlien(kind: AlienKind) {
       const g = new THREE.Group();
       const bodyRig = new THREE.Group(); g.add(bodyRig);
-      const legs: THREE.Group[] = [], legPhases: number[] = [], tails: THREE.Group[] = [], wings: THREE.Group[] = [];
+      const legs: THREE.Group[] = [], legPhases: number[] = [], tails: THREE.Group[] = [], wings: THREE.Group[] = [], creepSegments: THREE.Group[] = [];
       const brute = kind === "brute", spitter = kind === "spitter", broodmother = kind === "broodmother", razortail = kind === "razortail", stalker = kind === "stalker", strider = kind === "strider";
       const shellColor = brute ? 0x673832 : broodmother ? 0x5d3548 : spitter ? 0x28654b : razortail ? 0x57305f : stalker ? 0x27536b : strider ? 0x62572d : 0x334d42;
       const skinColor = brute ? 0x2c1c1b : broodmother ? 0x271824 : spitter ? 0x172e25 : razortail ? 0x29162f : stalker ? 0x102832 : strider ? 0x292614 : 0x192a24;
@@ -633,16 +633,25 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         const emitterLight = new THREE.PointLight(0xffe56d, 1.5, 2.8); emitterLight.position.copy(emitter.position); bodyRig.add(emitterLight);
         [-0.05, 0.18, 0.38].forEach((z, i) => addSpine(0, 1.58 - i * 0.025, z, 0.18 - i * 0.018, 0xa08d43));
       } else if (kind === "stalker") {
-        addOrb(bodyRig, 0.31, [0, 0.34, 0.14], [0.66, 0.42, 1.55], shell);
-        addOrb(bodyRig, 0.2, [0, 0.31, -0.45], [0.82, 0.48, 1.12], skin);
-        addPlate([0, 0.48, 0.08], [0.58, 0.21, 1.18], 0x397a92);
+        [0.76, 0.52, 0.28, 0.04, -0.2].forEach((z, i) => {
+          const segment = new THREE.Group(); segment.position.set(0, 0.3 + (i % 2) * 0.025, z); bodyRig.add(segment); creepSegments.push(segment);
+          addOrb(segment, 0.2, [0, 0, 0], [0.9 - i * 0.055, 0.52, 0.95], i % 2 ? skin : shell);
+          const ridge = new THREE.Mesh(new THREE.DodecahedronGeometry(0.18, 0), shell); ridge.position.y = 0.1; ridge.scale.set(0.72, 0.28, 0.82); segment.add(ridge);
+        });
+        addOrb(bodyRig, 0.24, [0, 0.3, -0.47], [0.92, 0.62, 1.18], skin);
+        addOrb(bodyRig, 0.18, [0, 0.29, -0.76], [1.08, 0.72, 0.9], shell);
         for (const side of [-1, 1]) {
-          addEye(side * 0.07, 0.34, -0.66, 0.035);
-          addAntenna(side, new THREE.Vector3(side * 0.07, 0.35, -0.64), new THREE.Vector3(side * 0.2, 0.5, -0.84), new THREE.Vector3(side * 0.42, 0.35, -1.1), 0.012);
-          addScythe(side, new THREE.Vector3(side * 0.13, 0.34, -0.28), new THREE.Vector3(side * 0.46, 0.22, -0.62), new THREE.Vector3(side * 0.7, 0.04, -1.0), 0.035);
+          addEye(side * 0.055, 0.33, -0.91, 0.034); addEye(side * 0.115, 0.36, -0.85, 0.028); addEye(side * 0.15, 0.29, -0.82, 0.022);
+          addAntenna(side, new THREE.Vector3(side * 0.09, 0.34, -0.82), new THREE.Vector3(side * 0.25, 0.52, -1.04), new THREE.Vector3(side * 0.5, 0.28, -1.32), 0.012);
+          addScythe(side, new THREE.Vector3(side * 0.12, 0.34, -0.42), new THREE.Vector3(side * 0.62, 0.25, -0.72), new THREE.Vector3(side * 0.98, 0.02, -1.18), 0.04);
+          addScythe(side, new THREE.Vector3(side * 0.14, 0.3, -0.18), new THREE.Vector3(side * 0.5, 0.11, -0.46), new THREE.Vector3(side * 0.76, 0.025, -0.84), 0.026);
         }
-        [-0.18, 0.04, 0.25, 0.42].forEach((z, i) => { addLeg(-1, z, i * Math.PI * 0.58, 0.48, 0.46, 0.025, 0.3); addLeg(1, z, Math.PI + i * Math.PI * 0.58, 0.48, 0.46, 0.025, 0.3); });
-        [-0.04, 0.18, 0.38].forEach((z, i) => addSpine(0, 0.62 - i * 0.025, z, 0.15, 0x56b4d1));
+        [-0.34, -0.14, 0.06, 0.26, 0.46, 0.66, 0.86].forEach((z, i) => {
+          const reach = 0.44 + (i % 3) * 0.055, phase = i * 1.37;
+          addLeg(-1, z, phase, reach, 0.42 + (i % 2) * 0.08, 0.024 + (i % 2) * 0.005, 0.28 + (i % 2) * 0.025);
+          addLeg(1, z, Math.PI + phase + (i % 2) * 0.24, reach + (i % 2) * 0.04, 0.46, 0.024, 0.28);
+        });
+        [-0.18, 0.06, 0.3, 0.54, 0.78].forEach((z, i) => addSpine((i % 2 ? 1 : -1) * 0.04, 0.56 - i * 0.012, z, 0.14 + (i % 2) * 0.035, 0x56b4d1));
       } else if (kind === "razortail") {
         addOrb(bodyRig, 0.57, [0, 0.78, 0.18], [1.08, 0.72, 1.48], shell);
         addOrb(bodyRig, 0.38, [0, 0.66, -0.58], [1.2, 0.68, 1.02], skin);
@@ -677,9 +686,9 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         for (const side of [-1, 1]) addOrb(bodyRig, 0.25, [side * 0.6, 1.12, -0.2], [1.2, 0.7, 1], shell);
       }
 
-      const classScale = brute ? 0.9 : broodmother ? 0.82 : spitter ? 0.68 : razortail ? 0.74 : strider ? 0.72 : stalker ? 0.4 : 0.52;
+      const classScale = brute ? 0.9 : broodmother ? 0.82 : spitter ? 0.68 : razortail ? 0.74 : strider ? 0.72 : stalker ? 0.46 : 0.52;
       g.scale.setScalar(classScale * (0.94 + Math.random() * 0.12));
-      g.userData.legs = legs; g.userData.legPhases = legPhases; g.userData.tails = tails; g.userData.wings = wings; g.userData.bodyRig = bodyRig; g.userData.kind = kind;
+      g.userData.legs = legs; g.userData.legPhases = legPhases; g.userData.tails = tails; g.userData.wings = wings; g.userData.creepSegments = creepSegments; g.userData.bodyRig = bodyRig; g.userData.kind = kind;
       g.traverse(o => { if (o instanceof THREE.Mesh) { o.castShadow = false; o.receiveShadow = false; } }); return g;
     }
     function makeBase() {
@@ -1349,13 +1358,26 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         const gait = elapsed * gaitSpeed * Math.max(0.65, movementRate) + e.id * 0.73;
         const legs = e.group.userData.legs as THREE.Group[] | undefined;
         const phases = e.group.userData.legPhases as number[] | undefined;
-        if (legs) legs.forEach((leg, i) => { leg.rotation.x = Math.sin(gait + (phases?.[i] ?? i * Math.PI)) * (isMoving ? (e.kind === "brute" ? 0.23 : 0.42) : 0.045); });
+        if (legs) legs.forEach((leg, i) => {
+          const irregularCrawl = e.kind === "stalker" ? Math.sin(gait * 0.37 + i * 0.91) * 0.48 : 0;
+          leg.rotation.x = Math.sin(gait + (phases?.[i] ?? i * Math.PI) + irregularCrawl) * (isMoving ? (e.kind === "brute" ? 0.23 : e.kind === "stalker" ? 0.64 : 0.42) : 0.045);
+          leg.rotation.z = e.kind === "stalker" ? Math.sin(gait * 0.61 + i * 1.73) * (isMoving ? 0.16 : 0.035) : 0;
+        });
         const bodyRig = e.group.userData.bodyRig as THREE.Group | undefined;
         if (bodyRig) {
           bodyRig.position.y = Math.sin(gait * 2) * (isMoving ? (e.kind === "brute" ? 0.035 : 0.055) : 0.012);
           bodyRig.position.z = isAttacking ? Math.max(0, Math.sin(gait * 1.4)) * (e.kind === "brute" ? -0.11 : -0.06) : 0;
-          bodyRig.rotation.z = Math.sin(gait) * (isMoving ? 0.035 : 0.012);
+          bodyRig.rotation.z = Math.sin(gait) * (isMoving ? (e.kind === "stalker" ? 0.11 : 0.035) : 0.012);
+          bodyRig.rotation.y = e.kind === "stalker" ? Math.sin(gait * 0.34) * (isMoving ? 0.14 : 0.035) : 0;
         }
+        const creepSegments = e.group.userData.creepSegments as THREE.Group[] | undefined;
+        if (creepSegments) creepSegments.forEach((segment, i) => {
+          const ripple = gait * 0.42 - i * 0.72;
+          segment.position.x = Math.sin(ripple) * (isMoving ? 0.12 : 0.025);
+          segment.position.y = 0.3 + (i % 2) * 0.025 + Math.cos(ripple * 1.3) * (isMoving ? 0.035 : 0.008);
+          segment.rotation.y = Math.sin(ripple) * (isMoving ? 0.28 : 0.06);
+          segment.rotation.z = Math.cos(ripple * 0.8) * (isMoving ? 0.08 : 0.018);
+        });
         const tails = e.group.userData.tails as THREE.Group[] | undefined;
         if (tails) tails.forEach((tail, i) => { tail.rotation.y = Math.sin(gait * 0.42 + i * 0.72) * (isMoving ? 0.24 : 0.1); tail.rotation.x = Math.sin(gait * 0.34 + i * 0.85) * (isMoving ? 0.11 : 0.045); });
         const wings = e.group.userData.wings as THREE.Group[] | undefined;
