@@ -13,10 +13,10 @@ type AlienKind = "drone" | "spitter" | "brute" | "razortail" | "stalker" | "stri
 const MAX_WAVES = 25;
 const BETWEEN_WAVE_BUILD_SECONDS = 30;
 const ALIEN_SPEED_MULTIPLIER = 1.8;
-const ENEMY_SWARM_MULTIPLIER = 5;
-const MAX_ACTIVE_ENEMIES = 90;
-const MIN_ALIENS_PER_GATE_BURST = 10;
-const MAX_ALIENS_PER_GATE_BURST = 18;
+const ENEMY_SWARM_MULTIPLIER = 6;
+const MAX_ACTIVE_ENEMIES = 120;
+const MIN_ALIENS_PER_GATE_BURST = 20;
+const MAX_ALIENS_PER_GATE_BURST = 30;
 const TARGET_FRAME_RATE = 45;
 const ENEMY_SEPARATION_DISTANCE = 0.48;
 const WALL_STACK_HEIGHT = 0.62;
@@ -1081,17 +1081,19 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       if (credits < stats.cost) return message(`${stats.name.toUpperCase()} REQUIRES ${stats.cost} COMMAND CREDITS`);
       credits -= stats.cost; const n = marines.length; spawnMarine(kind, clamp(barracks.x + 0.6 + (n % 3) * 0.28, 0, GRID_W - 1), clamp(barracks.y - 0.7 + (n % 2) * 0.45, 0, GRID_H - 1)); publishBarracksSelection(); message(`${stats.name.toUpperCase()} DEPLOYED INSTANTLY · DRAG A BOX TO ADD THEM TO A SQUAD`); emitHud(true);
     }
-    const assaultOffsets: Cell[] = [
-      { x: 0, y: 0 }, { x: 0.28, y: 0.16 }, { x: -0.28, y: 0.16 }, { x: 0.18, y: -0.27 }, { x: -0.18, y: -0.27 },
-      { x: 0.52, y: 0.34 }, { x: -0.52, y: 0.34 }, { x: 0.48, y: -0.34 }, { x: -0.48, y: -0.34 }, { x: 0, y: 0.5 },
-      { x: 0.72, y: 0 }, { x: -0.72, y: 0 }, { x: 0.3, y: 0.62 }, { x: -0.3, y: 0.62 }, { x: 0, y: -0.62 },
-      { x: 0.68, y: 0.58 }, { x: -0.68, y: 0.58 }, { x: 0.66, y: -0.56 },
-    ];
+    function assaultOffset(spawnCell: Cell, formationIndex: number): Cell {
+      const column = formationIndex % 6, rank = Math.floor(formationIndex / 6);
+      const lateral = (column - 2.5) * 0.28, inward = rank * 0.34;
+      if (spawnCell.x === 0) return { x: inward, y: lateral };
+      if (spawnCell.x === GRID_W - 1) return { x: -inward, y: lateral };
+      if (spawnCell.y === 0) return { x: lateral, y: inward };
+      return { x: lateral, y: -inward };
+    }
     function spawnEnemy(spawnCell: Cell, formationIndex = 0) {
       const weights: Array<[AlienKind, number]> = [
         ["drone", Math.max(30, 82 - wave * 2)],
         ["spitter", wave >= 3 ? 18 + wave * 0.8 : 0],
-        ["stalker", 10 + wave * 0.45],
+        ["stalker", 62 + wave * 1.25],
         ["prowler", wave >= 6 ? 9 + wave * 0.48 : 0],
         ["brute", wave >= 7 ? 7 + wave * 0.55 : 0],
         ["strider", wave >= 8 ? 7 + wave * 0.42 : 0],
@@ -1100,7 +1102,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       ];
       let roll = Math.random() * weights.reduce((sum, [, weight]) => sum + weight, 0), kind: AlienKind = "drone";
       for (const [candidate, weight] of weights) { roll -= weight; if (roll <= 0) { kind = candidate; break; } }
-      const stats = ENEMY_STATS[kind], scale = 1 + wave * 0.055, hp = stats.hp * scale, offset = assaultOffsets[formationIndex % assaultOffsets.length];
+      const stats = ENEMY_STATS[kind], scale = 1 + wave * 0.055, hp = stats.hp * scale, offset = assaultOffset(spawnCell, formationIndex);
       const spawnX = clamp(spawnCell.x + offset.x, 0, GRID_W - 1), spawnY = clamp(spawnCell.y + offset.y, 0, GRID_H - 1);
       const group = makeAlien(kind), p = worldPos(spawnX, spawnY); group.position.copy(p); group.rotation.y = (Math.random() - 0.5) * 0.7; attachHealthBar(group, stats.barHeight); world.add(group);
       enemies.push({ id: nextId++, kind, x: spawnX, y: spawnY, hp, maxHp: hp, speed: stats.speed * ALIEN_SPEED_MULTIPLIER * (1 + wave * 0.008), damage: stats.damage * (1 + wave * 0.022), reward: stats.reward, path: [], index: 0, group, hitFlash: 0, attackCooldown: Math.random() * 0.35, pathTimer: 0, targetBiasSeed: Math.random(), targetId: null, targetType: "base" });
@@ -1277,7 +1279,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       const cameraStep = cameraVelocity.clone().multiplyScalar(dt); camera.position.add(cameraStep); controls.target.add(cameraStep); controls.target.x = clamp(controls.target.x, -21, 21); controls.target.z = clamp(controls.target.z, -16, 16);
       if (active && spawnLeft > 0 && enemies.length < MAX_ACTIVE_ENEMIES) {
         spawnTimer -= dt;
-        if (spawnTimer <= 0) { spawnAssaultGroup(); spawnTimer = Math.max(1.8, 3.15 - wave * 0.045) + Math.random() * 0.55; }
+        if (spawnTimer <= 0) { spawnAssaultGroup(); spawnTimer = Math.max(1.15, 2.1 - wave * 0.025) + Math.random() * 0.35; }
       }
       updateFogOfWar(dt);
       const enemyBuckets = new Map<string, Enemy[]>();

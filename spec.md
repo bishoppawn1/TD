@@ -36,7 +36,7 @@ Protect the command post through all 25 enemy waves.
 - Every map begins with five infantry and eight free structures: Ridge favors a balanced sentry screen, Basin starts with long-range fire support, and Divide receives close-range chokepoint defenses.
 - Razorback Ridge is the balanced high-ground map, Cinder Basin exposes a low central defense to encirclement, and Blackglass Divide uses sheer multi-level mesas and deep approach channels.
 - Every battlefield has three alien portals that pressure distinct approaches to the command post.
-- Alien portals release synchronized mass surges instead of single-file trickles: opening waves deploy at least ten hostiles per gate in each burst, and later waves increase the per-gate burst size.
+- Alien portals release synchronized mass surges instead of single-file trickles: opening waves deploy at least twenty hostiles per gate in each burst, and later waves increase the per-gate burst size to thirty.
 - The battlefield is covered by dynamic fog of war. Friendly infantry, combat defenses, the barracks, and the command post reveal limited areas around themselves.
 - Hostiles outside all friendly vision radii are hidden and cannot be targeted by weapons until they enter a revealed area.
 - Sentinel light towers project sweeping searchlights and reveal a substantially wider area than ordinary units. They can be mounted on top of Hesco or Bastion walls.
@@ -147,7 +147,7 @@ Enemy health and movement speed scale upward as the operation advances. Wave siz
 - The operation contains 25 waves.
 - The player manually starts each wave, allowing time to build and reconsider the defense.
 - Each new wave contains more enemies than the last.
-- Swarm density is five times the original deployment strength: wave one contains 80 hostiles and the count rises to 360 by wave 25.
+- Swarm density is six times the original deployment strength: wave one contains 96 hostiles and the count rises to 432 by wave 25.
 - Assault groups arrive at a proportionally faster cadence, concentrating the larger population into intense mass attacks instead of merely extending wave duration.
 - Advanced enemy classes enter the possible spawn pool as waves progress.
 - A wave ends after all scheduled enemies have spawned and no living enemies remain.
