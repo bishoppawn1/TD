@@ -17,6 +17,7 @@ const TARGET_FRAME_RATE = 45;
 const ENEMY_SEPARATION_DISTANCE = 0.48;
 const WALL_STACK_HEIGHT = 0.62;
 const WALL_CLIMB_SPEED = 0.46;
+const ENEMY_TERRAIN_CLIMB_SPEED = 0.08;
 const RAZOR_WIRE_RADIUS = 1.05;
 const RAZOR_WIRE_SLOW_MULTIPLIER = 0.32;
 const RAZOR_WIRE_ENTRY_DAMAGE = 18;
@@ -1163,8 +1164,9 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       const wallLiftAt = (cell: Cell) => wallTraversalHeights.get(keyOf(Math.round(cell.x), Math.round(cell.y))) ?? 0;
       const enemyStepTime = (enemy: Enemy, from: Cell, to: Cell) => {
         const groundTime = Math.hypot(to.x - from.x, to.y - from.y) / Math.max(0.01, enemy.speed * terrainSpeedMultiplier(from, to));
+        const terrainClimbTime = Math.max(0, heights[to.y][to.x] - heights[from.y][from.x]) / ENEMY_TERRAIN_CLIMB_SPEED;
         const climbTime = WALL_CLIMBERS.has(enemy.kind) ? Math.abs(wallLiftAt(to) - wallLiftAt(from)) / WALL_CLIMB_SPEED : 0;
-        return groundTime + climbTime;
+        return groundTime + terrainClimbTime + climbTime;
       };
       const routeFor = (enemy: Enemy, target: EnemyTargetChoice) => {
         const startX = Math.round(enemy.x), startY = Math.round(enemy.y), goalX = Math.round(target.x), goalY = Math.round(target.y), climbsWalls = WALL_CLIMBERS.has(enemy.kind);
@@ -1229,8 +1231,8 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
           if (targetCell) {
             const dx = targetCell.x - e.x, dy = targetCell.y - e.y, dist = Math.hypot(dx, dy);
             const segmentStart = e.path[Math.min(e.index, e.path.length - 1)] ?? targetCell, segmentLength = Math.max(0.01, Math.hypot(targetCell.x - segmentStart.x, targetCell.y - segmentStart.y));
-            const groundRate = e.speed * terrainSpeedMultiplier(segmentStart, targetCell), wallClimbDistance = climbsWalls ? Math.abs(wallLiftAt(targetCell) - wallLiftAt(segmentStart)) : 0;
-            movementRate = segmentLength / (segmentLength / Math.max(0.01, groundRate) + wallClimbDistance / WALL_CLIMB_SPEED) * (wire ? RAZOR_WIRE_SLOW_MULTIPLIER : 1);
+            const groundRate = e.speed * terrainSpeedMultiplier(segmentStart, targetCell), terrainClimbDistance = Math.max(0, heights[targetCell.y][targetCell.x] - heights[segmentStart.y][segmentStart.x]), wallClimbDistance = climbsWalls ? Math.abs(wallLiftAt(targetCell) - wallLiftAt(segmentStart)) : 0;
+            movementRate = segmentLength / (segmentLength / Math.max(0.01, groundRate) + terrainClimbDistance / ENEMY_TERRAIN_CLIMB_SPEED + wallClimbDistance / WALL_CLIMB_SPEED) * (wire ? RAZOR_WIRE_SLOW_MULTIPLIER : 1);
             if (dist < 0.025) e.index++; else { const step = Math.min(dist, movementRate * dt); e.x += dx / dist * step; e.y += dy / dist * step; e.group.rotation.y = Math.atan2(-dx, -dy); isMoving = true; }
           }
         }

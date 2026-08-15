@@ -41,6 +41,7 @@ Protect the command post through all 25 enemy waves.
 - Sentinel light towers project sweeping searchlights and reveal a substantially wider area than ordinary units. They can be mounted on top of Hesco or Bastion walls.
 - Enemies travel between adjacent grid cells and dynamically recalculate their route around structures.
 - Enemies choose targets by estimated travel time rather than straight-line distance. The estimate uses the actual route, terrain grade, movement speed, and any wall ascent or descent required.
+- Ascending natural terrain adds substantial vertical climb time to both movement and route estimates, while downhill travel retains its speed advantage.
 - Friendly infantry and mobile crewed weapons use grid routes around walls and other solid fortifications instead of moving through them.
 - Every wall has visible access stairs. A move order onto a wall routes units to a stair approach, animates the climb, and leaves them stationed on top.
 - Construction may redirect or completely seal the route to the command post. Blocked ground enemies attack fortifications to reopen a path.
