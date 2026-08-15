@@ -835,13 +835,15 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, onBarracksSel
         e.hitFlash = Math.max(0, e.hitFlash - dt); e.attackCooldown -= dt; e.pathTimer -= dt;
         const enemyStats = ENEMY_STATS[e.kind];
         const closestMarine = marines.map(m => ({ type: "marine" as const, id: m.id, x: m.x, y: m.y, group: m.group, marine: m, d: Math.hypot(m.x - e.x, m.y - e.y) })).sort((a, b) => a.d - b.d)[0];
-        const closestDefense = structures.filter(s => isWall(s) || s.kind === "wire" || isCombatStructure(s)).map(s => ({ type: "structure" as const, id: s.id, x: s.x, y: s.y, group: s.group, structure: s, d: Math.hypot(s.x - e.x, s.y - e.y) })).sort((a, b) => a.d - b.d)[0];
+        const closestDefense = structures.filter(s => isWall(s) || isCombatStructure(s)).map(s => ({ type: "structure" as const, id: s.id, x: s.x, y: s.y, group: s.group, structure: s, d: Math.hypot(s.x - e.x, s.y - e.y) })).sort((a, b) => a.d - b.d)[0];
         const combatTarget = closestMarine && closestDefense ? (closestMarine.d <= closestDefense.d ? closestMarine : closestDefense) : closestMarine || closestDefense;
         const targetType = combatTarget?.type ?? "base", targetId = combatTarget?.id ?? null, tx = combatTarget?.x ?? baseCell.x, ty = combatTarget?.y ?? baseCell.y;
         const targetChanged = e.targetType !== targetType || e.targetId !== targetId; e.targetType = targetType; e.targetId = targetId;
         if (targetChanged || e.pathTimer <= 0 || !e.path.length) { e.path = findPathTo(e.x, e.y, { x: tx, y: ty }); e.index = 0; e.pathTimer = targetType === "marine" ? 0.28 : 0.75; }
         const targetDistance = Math.hypot(tx - e.x, ty - e.y), attackRange = enemyStats.attackRange;
-        let isMoving = false, isAttacking = false, movementRate = e.speed;
+        const wire = structures.find(s => s.kind === "wire" && Math.hypot(s.x - e.x, s.y - e.y) < 0.95);
+        let isMoving = false, isAttacking = false, movementRate = e.speed * (wire ? 0.38 : 1);
+        if (wire) { damageEnemy(e, 7.5 * dt); if (Math.random() < dt * 3) burst(e.group.position.clone().add(new THREE.Vector3(0, 0.2, 0)), 0xd8cab0, 1); }
         if (combatTarget && targetDistance <= attackRange) {
           isAttacking = true; e.group.rotation.y = Math.atan2(-(tx - e.x), -(ty - e.y));
           if (e.attackCooldown <= 0) {
@@ -852,8 +854,7 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, onBarracksSel
           const targetCell = e.path[Math.min(e.index + 1, e.path.length - 1)];
           if (targetCell) {
             const dx = targetCell.x - e.x, dy = targetCell.y - e.y, dist = Math.hypot(dx, dy);
-            const segmentStart = e.path[Math.min(e.index, e.path.length - 1)] ?? targetCell, wire = structures.find(s => s.kind === "wire" && Math.hypot(s.x - e.x, s.y - e.y) < 0.95); movementRate = e.speed * terrainSpeedMultiplier(segmentStart, targetCell) * (wire ? 0.38 : 1);
-            if (wire) { damageEnemy(e, 7.5 * dt); if (Math.random() < dt * 3) burst(e.group.position.clone().add(new THREE.Vector3(0, 0.2, 0)), 0xd8cab0, 1); }
+            const segmentStart = e.path[Math.min(e.index, e.path.length - 1)] ?? targetCell; movementRate = e.speed * terrainSpeedMultiplier(segmentStart, targetCell) * (wire ? 0.38 : 1);
             if (dist < 0.025) e.index++; else { const step = Math.min(dist, movementRate * dt); e.x += dx / dist * step; e.y += dy / dist * step; e.group.rotation.y = Math.atan2(-dx, -dy); isMoving = true; }
           }
         }
