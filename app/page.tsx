@@ -21,11 +21,11 @@ const ASSETS: Record<AssetKey, { name: string; role: string; cost: number; range
   barracks: { name: "Field Barracks", role: "Click placed barracks · Recruit ¤60", cost: 425, range: 0, icon: "⌂", accent: "#67c8ff" },
 };
 
-const TURRET_STATS: Record<CombatKey, { damage: number; cooldown: number; splash: number; color: number; heavy: boolean; turnSpeed: number }> = {
-  rifle: { damage: 5.8, cooldown: 0.15, splash: 0, color: 0xd6ff81, heavy: false, turnSpeed: 8 },
-  sentry: { damage: 18, cooldown: 0.31, splash: 0.25, color: 0x61e8ff, heavy: false, turnSpeed: 11 },
-  howitzer: { damage: 105, cooldown: 2.35, splash: 1.25, color: 0xffa64d, heavy: true, turnSpeed: 3.5 },
-  missile: { damage: 165, cooldown: 3.2, splash: 1.75, color: 0xff667d, heavy: true, turnSpeed: 2.8 },
+const TURRET_STATS: Record<CombatKey, { damage: number; cooldown: number; splash: number; arcHeight: number; color: number; heavy: boolean; turnSpeed: number }> = {
+  rifle: { damage: 5.8, cooldown: 0.15, splash: 0, arcHeight: 0, color: 0xd6ff81, heavy: false, turnSpeed: 8 },
+  sentry: { damage: 18, cooldown: 0.31, splash: 0.25, arcHeight: 0, color: 0x61e8ff, heavy: false, turnSpeed: 11 },
+  howitzer: { damage: 105, cooldown: 2.35, splash: 1.25, arcHeight: 2.2, color: 0xffa64d, heavy: true, turnSpeed: 3.5 },
+  missile: { damage: 165, cooldown: 3.2, splash: 1.75, arcHeight: 2.8, color: 0xff667d, heavy: true, turnSpeed: 2.8 },
 };
 
 type Hud = { credits: number; integrity: number; wave: number; enemies: number; kills: number; active: boolean; gameOver: boolean; victory: boolean };
@@ -33,7 +33,7 @@ type Cell = { x: number; y: number };
 type Structure = { id: number; kind: AssetKey; level: number; x: number; y: number; targetX: number; targetY: number; hp: number; maxHp: number; mountedOn?: number; group: THREE.Group; cooldown: number; spawnTimer: number };
 type Enemy = { id: number; kind: AlienKind; x: number; y: number; hp: number; maxHp: number; speed: number; damage: number; reward: number; path: Cell[]; index: number; group: THREE.Group; hitFlash: number; attackCooldown: number; pathTimer: number; targetId: number | null; targetType: "marine" | "structure" | "base" };
 type Marine = { id: number; x: number; y: number; targetX: number; targetY: number; vx: number; vy: number; hp: number; maxHp: number; cooldown: number; mountedOn?: number; group: THREE.Group };
-type Bullet = { mesh: THREE.Mesh; from: THREE.Vector3; to: THREE.Vector3; t: number; speed: number; target: number; damage: number; splash: number; color: number };
+type Bullet = { mesh: THREE.Mesh; from: THREE.Vector3; to: THREE.Vector3; t: number; speed: number; target: number; damage: number; splash: number; arcHeight: number; color: number };
 type Particle = { mesh: THREE.Mesh; velocity: THREE.Vector3; life: number; maxLife: number };
 type SelectedUnit = { id: number; kind: CombatKey; name: string; level: number; maxLevel: number; upgradeCost: number | null; damage: number; range: number; maxHp: number };
 type BattlefieldApi = { start: () => void; restart: () => void; rotate: () => void; upgradeSelected: () => void };
@@ -347,10 +347,9 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, apiRef }: { s
 
     const STRUCTURE_HP: Record<AssetKey, number> = { rifle: 190, sentry: 280, howitzer: 300, missile: 340, wall: 600, mine: 45, barracks: 500 };
     function attachHealthBar(group: THREE.Group, y = 1.75) {
-      const bar = new THREE.Group();
-      const back = new THREE.Mesh(new THREE.PlaneGeometry(1.18, 0.12), new THREE.MeshBasicMaterial({ color: 0x190d0c, depthTest: false, transparent: true, opacity: 0.92 })); back.renderOrder = 30; bar.add(back);
-      const fill = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.072), new THREE.MeshBasicMaterial({ color: 0x7dff79, depthTest: false })); fill.position.z = 0.012; fill.renderOrder = 31; bar.add(fill);
-      bar.position.copy(group.position).add(new THREE.Vector3(0, y * group.scale.y, 0)); world.add(bar); group.userData.healthBar = bar; group.userData.healthFill = fill; group.userData.healthOffset = y * group.scale.y;
+      // Health remains part of the combat simulation, but floating bars are
+      // intentionally disabled because they obscure the battlefield.
+      group.userData.healthBar = undefined; group.userData.healthFill = undefined; group.userData.healthOffset = y * group.scale.y;
     }
     function updateTierBadge(group: THREE.Group, level: number) {
       const bar = group.userData.healthBar as THREE.Group | undefined; if (!bar) return;
@@ -538,9 +537,9 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, apiRef }: { s
       const trace = new THREE.Mesh(new THREE.CylinderGeometry(ranged ? 0.035 : 0.055, ranged ? 0.055 : 0.02, length, 7), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95 }));
       trace.position.copy(mid); trace.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), end.clone().sub(start).normalize()); trace.renderOrder = 15; world.add(trace); particles.push({ mesh: trace, velocity: new THREE.Vector3(), life: ranged ? 0.28 : 0.16, maxLife: ranged ? 0.28 : 0.16 });
     }
-    function fire(from: THREE.Vector3, target: Enemy, damage: number, splash: number, color: number, heavy = false) {
+    function fire(from: THREE.Vector3, target: Enemy, damage: number, splash: number, color: number, heavy = false, arcHeight = 0) {
       const mesh = new THREE.Mesh(new THREE.SphereGeometry(heavy ? 0.11 : 0.045, 7, 5), new THREE.MeshBasicMaterial({ color })); mesh.position.copy(from); world.add(mesh);
-      bullets.push({ mesh, from: from.clone(), to: target.group.position.clone().add(new THREE.Vector3(0, 0.42, 0)), t: 0, speed: heavy ? 1.35 : 4.8, target: target.id, damage, splash, color });
+      bullets.push({ mesh, from: from.clone(), to: target.group.position.clone().add(new THREE.Vector3(0, 0.42, 0)), t: 0, speed: heavy ? 1.35 : 4.8, target: target.id, damage, splash, arcHeight, color });
     }
     function damageEnemy(e: Enemy, amount: number) { e.hp = clamp(e.hp - Math.max(0, amount), 0, e.maxHp); e.hitFlash = 0.09; setHealthVisual(e.group, e.hp, e.maxHp); }
     function restart() {
@@ -652,7 +651,7 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, apiRef }: { s
         const range = ASSETS[s.kind].range + (s.level - 1) * 0.65 + heights[terrainY][terrainX] * 0.9; const target = enemies.filter(e => e.hp > 0 && Math.hypot(e.x - s.x, e.y - s.y) <= range).sort((a, b) => b.index - a.index)[0];
         if (target) {
           turnToward(s.group, Math.atan2(-(target.x - s.x), -(target.y - s.y)), stats.turnSpeed, dt);
-          if (s.cooldown <= 0) { const muzzle = s.group.userData.muzzle as THREE.Object3D | undefined; const from = muzzle ? muzzle.getWorldPosition(new THREE.Vector3()) : s.group.position.clone().add(new THREE.Vector3(0, 1.05, 0)); fire(from, target, stats.damage * levelDamage, stats.splash, stats.color, stats.heavy); s.cooldown = stats.cooldown / levelSpeed; }
+          if (s.cooldown <= 0) { const muzzle = s.group.userData.muzzle as THREE.Object3D | undefined; const from = muzzle ? muzzle.getWorldPosition(new THREE.Vector3()) : s.group.position.clone().add(new THREE.Vector3(0, 1.05, 0)); fire(from, target, stats.damage * levelDamage, stats.splash, stats.color, stats.heavy, stats.arcHeight); s.cooldown = stats.cooldown / levelSpeed; }
         }
       }
       for (const m of marines) {
@@ -671,7 +670,7 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, apiRef }: { s
         const target = enemies.find(e => e.hp > 0 && Math.hypot(e.x - s.x, e.y - s.y) < 1.25); if (target) { enemies.forEach(e => { if (Math.hypot(e.x - s.x, e.y - s.y) < 1.75) damageEnemy(e, 145); }); burst(s.group.position.clone().add(new THREE.Vector3(0, 0.3, 0)), 0x6ffff3, 25); destroyStructure(s); message("SHOCK MINE DETONATED"); }
       }
       for (const b of [...bullets]) {
-        b.t += dt * b.speed; const arc = b.splash ? Math.sin(Math.min(1, b.t) * Math.PI) * 2.2 : 0; b.mesh.position.lerpVectors(b.from, b.to, Math.min(1, b.t)); b.mesh.position.y += arc;
+        b.t += dt * b.speed; const arc = b.arcHeight ? Math.sin(Math.min(1, b.t) * Math.PI) * b.arcHeight : 0; b.mesh.position.lerpVectors(b.from, b.to, Math.min(1, b.t)); b.mesh.position.y += arc;
         if (b.t >= 1) { const target = enemies.find(e => e.id === b.target); if (target) { if (b.splash) enemies.forEach(e => { const d = Math.hypot(e.x - target.x, e.y - target.y); if (d <= b.splash) damageEnemy(e, b.damage * (1 - d / (b.splash * 1.8))); }); else damageEnemy(target, b.damage); burst(b.to, b.color, b.splash ? 18 : 4); } world.remove(b.mesh); bullets.splice(bullets.indexOf(b), 1); }
       }
       for (const e of [...enemies]) {
