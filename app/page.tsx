@@ -44,6 +44,7 @@ const TRENCH_DAMAGE_MULTIPLIER = 0.6;
 const AIR_DAMAGE_MULTIPLIER = 0.45;
 const WALL_CLIMBERS = new Set<AlienKind>(["stalker", "razortail"]);
 const FLYING_ENEMIES = new Set<AlienKind>(["flyer"]);
+const RANGED_ENEMIES = new Set<AlienKind>(["spitter", "strider", "broodmother", "flyer"]);
 const ENEMY_STATS: Record<AlienKind, { hp: number; speed: number; damage: number; reward: number; attackRange: number; attackCooldown: number; gait: number; barHeight: number }> = {
   drone: { hp: 82, speed: 0.9, damage: 6, reward: 24, attackRange: 1.45, attackCooldown: 0.82, gait: 11.5, barHeight: 1.05 },
   spitter: { hp: 125, speed: 0.72, damage: 7, reward: 36, attackRange: 2.45, attackCooldown: 1.4, gait: 7.2, barHeight: 1.45 },
@@ -1568,13 +1569,17 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
           damageEnemy(e, RAZOR_WIRE_DAMAGE_PER_SECOND * dt);
           if (Math.random() < dt * 5) burst(e.group.position.clone().add(new THREE.Vector3(0, 0.2, 0)), 0xd8cab0, 1);
         } else e.wireContactId = undefined;
-        if (combatTarget && targetDistance <= attackRange) {
-          isAttacking = true; e.group.rotation.y = Math.atan2(-(tx - e.x), -(ty - e.y));
+        const inAttackRange = !!combatTarget && targetDistance <= attackRange, rangedEnemy = RANGED_ENEMIES.has(e.kind);
+        let firedThisFrame = false;
+        if (combatTarget && inAttackRange) {
+          e.group.rotation.y = Math.atan2(-(tx - e.x), -(ty - e.y));
           if (e.attackCooldown <= 0) {
             const hit = e.damage * (e.kind === "brute" ? 1.45 : e.kind === "razortail" ? 1.2 : e.kind === "stalker" ? 0.75 : 1); const targetPos = combatTarget.group.position;
-            hostileStrike(e.kind, e.group.position, targetPos, combatTarget.type, combatTarget.id, hit); e.attackCooldown = enemyStats.attackCooldown;
+            hostileStrike(e.kind, e.group.position, targetPos, combatTarget.type, combatTarget.id, hit); e.attackCooldown = enemyStats.attackCooldown; firedThisFrame = true;
           }
-        } else {
+          isAttacking = !rangedEnemy || firedThisFrame;
+        }
+        if (!inAttackRange || (rangedEnemy && !firedThisFrame)) {
           const targetCell = e.path[Math.min(e.index + 1, e.path.length - 1)];
           if (targetCell) {
             const dx = targetCell.x - e.x, dy = targetCell.y - e.y, dist = Math.hypot(dx, dy);
