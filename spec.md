@@ -48,6 +48,7 @@ Protect the command post through all 25 enemy waves.
 - Every wall has visible access stairs on all four sides. A move order onto a wall chooses the shortest safe north, south, east, or west stair approach, animates the climb, and leaves units stationed on top.
 - Construction may redirect or completely seal the route to the command post. Blocked ground enemies attack fortifications to reopen a path.
 - Stalkers and razortails can climb directly over walls, including stacked wall sections, but taller climbs take proportionally longer and may make another route or target more attractive.
+- Flying enemies travel above terrain and fortifications, ignore trenches, razor wire, and mines, and choose valuable exposed targets instead of attacking walls.
 - Elevated weapon positions gain additional range, rewarding control of ridges and high ground.
 - The camera supports orbiting, panning, zooming, and 90-degree rotation.
 
@@ -69,6 +70,10 @@ A rapid-fire, short-to-medium-range emplacement designed to eliminate groups of 
 ### GAU-19 Sentry — 250 credits
 
 A static, fast-tracking autocannon turret with twin barrels. It fires direct-line projectiles with no artillery arc, delivers powerful bursts with modest impact splash, and cannot redeploy after placement.
+
+### Aegis Flak Turret — 300 credits
+
+A dedicated anti-air turret with elevated twin cannons and a glowing tracking radar. It ignores ground targets, rapidly tracks flying enemies, and detonates airburst shells that damage multiple airborne creatures in a tight formation. Like other combat defenses, it supports three upgrade tiers and can mount on walls.
 
 ### Helios Laser Tower — 360 credits
 
@@ -140,6 +145,12 @@ A heavy enemy introduced in later waves. Brutes are slow but have very high heal
 
 A durable ranged alien introduced in wave 12. Broodmothers launch slow, high-arcing egg sacs from behind the swarm and award a large bounty when destroyed.
 
+### Skyrazor
+
+A fast airborne alien introduced in wave three. Skyrazors are the only winged enemy class: their two pairs of translucent wings clearly signal that they fly over walls and difficult terrain. They ignore ground hazards and attack the command post, infantry, weapons, lights, or barracks from above. Flak turrets are the purpose-built counter, though suitable general-purpose direct-fire weapons can also engage them.
+
+All ground alien classes are visually wingless. Their legs, crawling bodies, armor, tails, and other silhouettes communicate how they move across or climb over the battlefield.
+
 Enemy health and movement speed scale upward as the operation advances. Wave size also increases, creating steadily greater pressure on the player's defenses.
 
 ## Wave Structure
@@ -149,7 +160,7 @@ Enemy health and movement speed scale upward as the operation advances. Wave siz
 - Each new wave contains more enemies than the last.
 - Swarm density is six times the original deployment strength: wave one contains 96 hostiles and the count rises to 432 by wave 25.
 - Assault groups arrive at a proportionally faster cadence, concentrating the larger population into intense mass attacks instead of merely extending wave duration.
-- Advanced enemy classes enter the possible spawn pool as waves progress.
+- Advanced enemy classes enter the possible spawn pool as waves progress, with Skyrazors joining from wave three onward.
 - A wave ends after all scheduled enemies have spawned and no living enemies remain.
 - The player receives a resupply award after each cleared wave.
 

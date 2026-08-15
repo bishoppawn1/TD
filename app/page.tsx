@@ -4,11 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
-type AssetKey = "rifle" | "sentry" | "flame" | "laser" | "railgun" | "howitzer" | "missile" | "light" | "wall" | "bastion" | "trench" | "wire" | "mine" | "barracks";
-type CombatKey = "rifle" | "sentry" | "flame" | "laser" | "railgun" | "howitzer" | "missile";
+type AssetKey = "rifle" | "sentry" | "flak" | "flame" | "laser" | "railgun" | "howitzer" | "missile" | "light" | "wall" | "bastion" | "trench" | "wire" | "mine" | "barracks";
+type CombatKey = "rifle" | "sentry" | "flak" | "flame" | "laser" | "railgun" | "howitzer" | "missile";
 type UpgradableKey = CombatKey | "light";
 type MarineKind = "rifleman" | "gunner" | "medic" | "rocketeer";
-type AlienKind = "drone" | "spitter" | "brute" | "razortail" | "stalker" | "strider" | "broodmother" | "prowler";
+type AlienKind = "drone" | "spitter" | "brute" | "razortail" | "stalker" | "strider" | "broodmother" | "flyer" | "prowler";
 
 const MAX_WAVES = 25;
 const BETWEEN_WAVE_BUILD_SECONDS = 30;
@@ -35,6 +35,7 @@ const RAZOR_WIRE_DAMAGE_PER_SECOND = 24;
 const TRENCH_CAPACITY = 4;
 const TRENCH_DAMAGE_MULTIPLIER = 0.6;
 const WALL_CLIMBERS = new Set<AlienKind>(["stalker", "razortail"]);
+const FLYING_ENEMIES = new Set<AlienKind>(["flyer"]);
 const ENEMY_STATS: Record<AlienKind, { hp: number; speed: number; damage: number; reward: number; attackRange: number; attackCooldown: number; gait: number; barHeight: number }> = {
   drone: { hp: 82, speed: 0.9, damage: 6, reward: 24, attackRange: 1.45, attackCooldown: 0.82, gait: 11.5, barHeight: 1.05 },
   spitter: { hp: 125, speed: 0.72, damage: 9, reward: 36, attackRange: 3.1, attackCooldown: 1.15, gait: 7.2, barHeight: 1.45 },
@@ -43,6 +44,7 @@ const ENEMY_STATS: Record<AlienKind, { hp: number; speed: number; damage: number
   stalker: { hp: 64, speed: 1.85, damage: 5, reward: 30, attackRange: 1.25, attackCooldown: 0.48, gait: 18, barHeight: 0.95 },
   strider: { hp: 118, speed: 0.7, damage: 13, reward: 48, attackRange: 6.4, attackCooldown: 1.65, gait: 5.4, barHeight: 1.8 },
   broodmother: { hp: 285, speed: 0.52, damage: 16, reward: 75, attackRange: 5.1, attackCooldown: 2.4, gait: 3.8, barHeight: 2.2 },
+  flyer: { hp: 104, speed: 1.18, damage: 9, reward: 42, attackRange: 3.3, attackCooldown: 1.05, gait: 14, barHeight: 3.25 },
   prowler: { hp: 155, speed: 1.08, damage: 11, reward: 52, attackRange: 1.55, attackCooldown: 0.68, gait: 10.2, barHeight: 1.15 },
 };
 
@@ -52,6 +54,7 @@ const TILE = 1.36;
 const ASSETS: Record<AssetKey, { name: string; role: string; cost: number; range: number; icon: string; accent: string }> = {
   rifle: { name: "M240 Gun Team", role: "Sustained fire · Anti-swarm", cost: 150, range: 4.7, icon: "⌖", accent: "#9fe870" },
   sentry: { name: "GAU-19 Sentry", role: "Fast tracking · Heavy burst", cost: 250, range: 5.6, icon: "◉", accent: "#62e8ff" },
+  flak: { name: "Aegis Flak Turret", role: "Anti-air · Airburst splash", cost: 300, range: 7.1, icon: "✹", accent: "#8fdfff" },
   flame: { name: "Inferno Turret", role: "Short range · Burning splash", cost: 210, range: 3.25, icon: "♨", accent: "#ff875c" },
   laser: { name: "Helios Laser Tower", role: "Instant beam · Precision damage", cost: 360, range: 7.2, icon: "◇", accent: "#ff4ff5" },
   railgun: { name: "M-90 Rail Turret", role: "Long range · Armor piercing", cost: 410, range: 9.6, icon: "↯", accent: "#b889ff" },
@@ -66,13 +69,14 @@ const ASSETS: Record<AssetKey, { name: string; role: string; cost: number; range
   barracks: { name: "Field Barracks", role: "Trains specialized infantry", cost: 425, range: 0, icon: "⌂", accent: "#67c8ff" },
 };
 
-const TURRET_STATS: Record<CombatKey, { damage: number; cooldown: number; splash: number; arcHeight: number; color: number; heavy: boolean; turnSpeed: number; beam?: boolean }> = {
+const TURRET_STATS: Record<CombatKey, { damage: number; cooldown: number; splash: number; arcHeight: number; color: number; heavy: boolean; turnSpeed: number; beam?: boolean; airOnly?: boolean; groundOnly?: boolean }> = {
   rifle: { damage: 5.8, cooldown: 0.15, splash: 0, arcHeight: 0, color: 0xd6ff81, heavy: false, turnSpeed: 8 },
   sentry: { damage: 18, cooldown: 0.31, splash: 0.25, arcHeight: 0, color: 0x61e8ff, heavy: false, turnSpeed: 11 },
-  flame: { damage: 13, cooldown: 0.2, splash: 0.82, arcHeight: 0.18, color: 0xff713d, heavy: false, turnSpeed: 7 },
+  flak: { damage: 54, cooldown: 0.68, splash: 1.35, arcHeight: 0.12, color: 0x8fdfff, heavy: true, turnSpeed: 9, airOnly: true },
+  flame: { damage: 13, cooldown: 0.2, splash: 0.82, arcHeight: 0.18, color: 0xff713d, heavy: false, turnSpeed: 7, groundOnly: true },
   laser: { damage: 68, cooldown: 0.72, splash: 0, arcHeight: 0, color: 0xff4ff5, heavy: false, turnSpeed: 6.5, beam: true },
   railgun: { damage: 185, cooldown: 2.8, splash: 0, arcHeight: 0, color: 0xc090ff, heavy: true, turnSpeed: 4.4 },
-  howitzer: { damage: 105, cooldown: 2.35, splash: 1.25, arcHeight: 2.2, color: 0xffa64d, heavy: true, turnSpeed: 3.5 },
+  howitzer: { damage: 105, cooldown: 2.35, splash: 1.25, arcHeight: 2.2, color: 0xffa64d, heavy: true, turnSpeed: 3.5, groundOnly: true },
   missile: { damage: 165, cooldown: 3.2, splash: 1.75, arcHeight: 2.8, color: 0xff667d, heavy: true, turnSpeed: 2.8 },
 };
 
@@ -89,7 +93,7 @@ type MoveWaypoint = Cell & { lift: number };
 type Structure = { id: number; kind: AssetKey; level: number; x: number; y: number; targetX: number; targetY: number; hp: number; maxHp: number; mountedOn?: number; mountTarget?: number; movePath: MoveWaypoint[]; pathIndex: number; lift: number; stackLevel: number; group: THREE.Group; cooldown: number };
 type Enemy = { id: number; kind: AlienKind; x: number; y: number; hp: number; maxHp: number; speed: number; damage: number; reward: number; path: Cell[]; index: number; group: THREE.Group; hitFlash: number; attackCooldown: number; pathTimer: number; targetBiasSeed: number; targetId: number | null; targetType: "marine" | "structure" | "base"; retaliateAgainstId?: number; wireContactId?: number };
 type Marine = { id: number; kind: MarineKind; x: number; y: number; targetX: number; targetY: number; vx: number; vy: number; hp: number; maxHp: number; cooldown: number; supportCooldown: number; mountedOn?: number; mountTarget?: number; trenchId?: number; movePath: MoveWaypoint[]; pathIndex: number; lift: number; group: THREE.Group };
-type Bullet = { mesh: THREE.Object3D; from: THREE.Vector3; to: THREE.Vector3; impactX: number; impactY: number; t: number; speed: number; target: number; damage: number; splash: number; arcHeight: number; color: number; sourceStructureId?: number };
+type Bullet = { mesh: THREE.Object3D; from: THREE.Vector3; to: THREE.Vector3; impactX: number; impactY: number; t: number; speed: number; target: number; damage: number; splash: number; arcHeight: number; color: number; sourceStructureId?: number; airOnly?: boolean };
 type HostileProjectile = { group: THREE.Group; kind: AlienKind; from: THREE.Vector3; to: THREE.Vector3; t: number; speed: number; arcHeight: number; targetId: number; targetType: "marine" | "structure"; damage: number; color: number; impactCount: number };
 type Particle = { mesh: THREE.Mesh; velocity: THREE.Vector3; life: number; maxLife: number };
 type SelectedUnit = { id: number; kind: UpgradableKey; name: string; level: number; maxLevel: number; upgradeCost: number | null; damage: number; range: number; maxHp: number; support: boolean };
@@ -345,6 +349,22 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       const muzzle = new THREE.Object3D(); muzzle.position.set(0, 0.77, -1.24); g.add(muzzle); g.userData.muzzle = muzzle;
       return g;
     }
+    function makeFlakTurret() {
+      const g = new THREE.Group();
+      cyl(g, [0.7, 0.8, 0.2, 16], [0, 0.12, 0], 0x303c43);
+      cyl(g, [0.43, 0.52, 0.42, 14], [0, 0.42, 0], 0x53636c);
+      box(g, [0.92, 0.46, 0.72], [0, 0.76, -0.02], 0x405561, 0.3);
+      box(g, [0.76, 0.18, 0.58], [0, 1.01, 0.04], 0x657984, 0.26);
+      for (const x of [-0.2, 0.2]) {
+        const breech = new THREE.Vector3(x, 0.83, -0.32), muzzlePoint = new THREE.Vector3(x, 1.34, -1.34);
+        beam(g, breech, muzzlePoint, 0.072, 0x202c31);
+        cyl(g, [0.105, 0.105, 0.2, 9], [x, 1.38, -1.43], 0x172125, [Math.PI / 2.65, 0, 0]);
+      }
+      const radar = new THREE.Mesh(new THREE.OctahedronGeometry(0.15, 0), new THREE.MeshStandardMaterial({ color: 0xa8efff, emissive: 0x26778e, emissiveIntensity: 2, roughness: 0.2 })); radar.position.set(0, 1.34, 0.12); g.add(radar);
+      const radarLight = new THREE.PointLight(0x8fdfff, 1.4, 3); radarLight.position.copy(radar.position); g.add(radarLight);
+      const muzzle = new THREE.Object3D(); muzzle.position.set(0, 1.42, -1.55); g.add(muzzle); g.userData.muzzle = muzzle;
+      return g;
+    }
     function makeFlameTurret() {
       const g = new THREE.Group();
       cyl(g, [0.62, 0.7, 0.18, 16], [0, 0.1, 0], 0x363c36);
@@ -536,10 +556,10 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       const g = new THREE.Group();
       const bodyRig = new THREE.Group(); g.add(bodyRig);
       const legs: THREE.Group[] = [], legPhases: number[] = [], tails: THREE.Group[] = [], wings: THREE.Group[] = [];
-      const brute = kind === "brute", spitter = kind === "spitter", broodmother = kind === "broodmother", razortail = kind === "razortail", stalker = kind === "stalker", strider = kind === "strider", prowler = kind === "prowler";
-      const shellColor = brute ? 0x673832 : broodmother ? 0x5d3548 : spitter ? 0x28654b : razortail ? 0x57305f : stalker ? 0x27536b : strider ? 0x62572d : prowler ? 0x62472f : 0x334d42;
-      const skinColor = brute ? 0x2c1c1b : broodmother ? 0x271824 : spitter ? 0x172e25 : razortail ? 0x29162f : stalker ? 0x102832 : strider ? 0x292614 : prowler ? 0x2a1c16 : 0x192a24;
-      const glowColor = broodmother ? 0xff8bb8 : spitter ? 0x63ff9f : razortail ? 0xe86bff : stalker ? 0x51dfff : strider ? 0xffe56d : prowler ? 0xffb36a : 0xff503f;
+      const brute = kind === "brute", spitter = kind === "spitter", broodmother = kind === "broodmother", razortail = kind === "razortail", stalker = kind === "stalker", strider = kind === "strider", flyer = kind === "flyer", prowler = kind === "prowler";
+      const shellColor = brute ? 0x673832 : broodmother ? 0x5d3548 : spitter ? 0x28654b : razortail ? 0x57305f : stalker ? 0x27536b : strider ? 0x62572d : flyer ? 0x244f68 : prowler ? 0x62472f : 0x334d42;
+      const skinColor = brute ? 0x2c1c1b : broodmother ? 0x271824 : spitter ? 0x172e25 : razortail ? 0x29162f : stalker ? 0x102832 : strider ? 0x292614 : flyer ? 0x102735 : prowler ? 0x2a1c16 : 0x192a24;
+      const glowColor = broodmother ? 0xff8bb8 : spitter ? 0x63ff9f : razortail ? 0xe86bff : stalker ? 0x51dfff : strider ? 0xffe56d : flyer ? 0x79e8ff : prowler ? 0xffb36a : 0xff503f;
       const shell = new THREE.MeshStandardMaterial({ color: shellColor, roughness: 0.48, metalness: 0.18 });
       const skin = new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.82 });
       const glow = new THREE.MeshBasicMaterial({ color: glowColor });
@@ -601,7 +621,6 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
           const mandible = new THREE.Mesh(new THREE.ConeGeometry(0.065, 0.38, 6), skin); mandible.position.set(side * 0.13, 0.26, -0.91); mandible.rotation.set(-Math.PI / 2, 0, side * 0.2); bodyRig.add(mandible);
           addScythe(side, new THREE.Vector3(side * 0.2, 0.42, -0.34), new THREE.Vector3(side * 0.62, 0.29, -0.63), new THREE.Vector3(side * 0.82, 0.08, -1.04), 0.065);
         }
-        addWingPair([0, 0.58, 0.18], 0.54, 0.78, 0x8fc9af);
         [-0.25, 0.08, 0.38].forEach((z, i) => { addLeg(-1, z, i * Math.PI * 0.72, 0.42, 0.34, 0.045, 0.38); addLeg(1, z, Math.PI + i * Math.PI * 0.72, 0.42, 0.34, 0.045, 0.38); });
         [-0.05, 0.22, 0.48].forEach((z, i) => addSpine(0, 0.77 - i * 0.035, z, 0.22 - i * 0.025));
       } else if (kind === "spitter") {
@@ -623,7 +642,6 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
           addAntenna(side, new THREE.Vector3(side * 0.14, 0.84, -1.14), new THREE.Vector3(side * 0.34, 1.08, -1.38), new THREE.Vector3(side * 0.62, 0.88, -1.68), 0.028);
           addScythe(side, new THREE.Vector3(side * 0.3, 0.86, -0.42), new THREE.Vector3(side * 0.86, 0.58, -0.78), new THREE.Vector3(side * 1.08, 0.13, -1.28), 0.09);
         }
-        addWingPair([0, 1.25, 0.08], 1.02, 1.3, 0xd895b8);
         [-0.42, 0.04, 0.46].forEach((z, i) => { addLeg(-1, z, i * Math.PI * 0.72, 0.62, 0.54, 0.075, 0.7); addLeg(1, z, Math.PI + i * Math.PI * 0.72, 0.62, 0.54, 0.075, 0.7); });
         [-0.34, -0.04, 0.27, 0.55].forEach((z, i) => addSpine(0, 1.55 - i * 0.04, z, 0.34 - i * 0.035, 0x9f5574));
         for (const side of [-1, 1]) { const egg = addOrb(bodyRig, 0.14, [side * 0.42, 0.92, 0.58], [0.85, 1.12, 0.85], glow); egg.rotation.z = side * 0.18; }
@@ -639,7 +657,6 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
           addLeg(side, 0.12, side < 0 ? Math.PI * 0.66 : Math.PI * 1.66, 0.84, 0.72, 0.024, 1.12);
           addLeg(side, 0.42, side < 0 ? Math.PI * 1.32 : Math.PI * 0.32, 0.75, 0.65, 0.022, 1.04);
         }
-        addWingPair([0, 1.32, 0.12], 0.76, 1.12, 0xe8d989);
         beam(bodyRig, new THREE.Vector3(0, 1.16, -0.48), new THREE.Vector3(0, 1.17, -1.12), 0.045, 0x282719);
         const emitter = new THREE.Mesh(new THREE.SphereGeometry(0.085, 10, 7), glow); emitter.position.set(0, 1.17, -1.16); bodyRig.add(emitter);
         const emitterLight = new THREE.PointLight(0xffe56d, 1.5, 2.8); emitterLight.position.copy(emitter.position); bodyRig.add(emitterLight);
@@ -657,6 +674,21 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         addUnderLeg(-0.25, -0.38, 0); addUnderLeg(0.25, -0.38, Math.PI);
         addUnderLeg(-0.25, 0.38, Math.PI * 1.08); addUnderLeg(0.25, 0.38, Math.PI * 0.08);
         [-0.2, 0.08, 0.34].forEach((z, i) => addSpine(0, 0.92 - i * 0.04, z, 0.2 - i * 0.024, 0x8a7042));
+      } else if (kind === "flyer") {
+        addOrb(bodyRig, 0.42, [0, 0.64, 0.08], [0.78, 0.62, 1.48], shell);
+        addOrb(bodyRig, 0.3, [0, 0.61, -0.54], [1.1, 0.72, 1.1], skin);
+        addOrb(bodyRig, 0.2, [0, 0.58, -0.87], [1.2, 0.68, 0.92], shell);
+        addPlate([0, 0.83, 0.06], [0.72, 0.28, 1.2], 0x35718d);
+        addWingPair([0, 0.78, 0.08], 1.25, 1.65, 0x83e7f5);
+        addWingPair([0, 0.71, 0.42], 0.72, 0.96, 0x80bddd);
+        for (const side of [-1, 1]) {
+          addEye(side * 0.09, 0.61, -1.06, 0.05);
+          addAntenna(side, new THREE.Vector3(side * 0.09, 0.65, -1.0), new THREE.Vector3(side * 0.25, 0.84, -1.18), new THREE.Vector3(side * 0.5, 0.72, -1.46), 0.016);
+          addScythe(side, new THREE.Vector3(side * 0.18, 0.58, -0.48), new THREE.Vector3(side * 0.42, 0.25, -0.72), new THREE.Vector3(side * 0.58, -0.18, -1.0), 0.04);
+        }
+        beam(bodyRig, new THREE.Vector3(0, 0.65, 0.38), new THREE.Vector3(0, 0.48, 1.08), 0.055, shellColor);
+        const tailBlade = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.48, 6), shell); tailBlade.position.set(0, 0.45, 1.22); tailBlade.rotation.x = Math.PI / 2; bodyRig.add(tailBlade);
+        const flightGlow = new THREE.PointLight(0x79e8ff, 1.6, 3.4); flightGlow.position.set(0, 0.62, -0.72); bodyRig.add(flightGlow);
       } else if (kind === "stalker") {
         addOrb(bodyRig, 0.31, [0, 0.34, 0.14], [0.66, 0.42, 1.55], shell);
         addOrb(bodyRig, 0.2, [0, 0.31, -0.45], [0.82, 0.48, 1.12], skin);
@@ -702,7 +734,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         for (const side of [-1, 1]) addOrb(bodyRig, 0.25, [side * 0.6, 1.12, -0.2], [1.2, 0.7, 1], shell);
       }
 
-      const classScale = brute ? 0.9 : broodmother ? 0.82 : spitter ? 0.68 : razortail ? 0.74 : strider ? 0.72 : prowler ? 0.62 : stalker ? 0.4 : 0.52;
+      const classScale = brute ? 0.9 : broodmother ? 0.82 : spitter ? 0.68 : razortail ? 0.74 : strider ? 0.72 : prowler ? 0.62 : stalker ? 0.4 : flyer ? 0.62 : 0.52;
       g.scale.setScalar(classScale * (0.94 + Math.random() * 0.12));
       g.userData.legs = legs; g.userData.legPhases = legPhases; g.userData.tails = tails; g.userData.wings = wings; g.userData.bodyRig = bodyRig; g.userData.kind = kind;
       g.traverse(o => { if (o instanceof THREE.Mesh) { o.castShadow = false; o.receiveShadow = false; } }); return g;
@@ -728,7 +760,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       return { group, portal, inner, light, phase: index * Math.PI * 0.67 };
     });
 
-    const STRUCTURE_HP: Record<AssetKey, number> = { rifle: 190, sentry: 280, flame: 245, laser: 275, railgun: 310, howitzer: 300, missile: 340, light: 230, wall: 600, bastion: 1050, trench: 360, wire: 180, mine: 45, barracks: 500 };
+    const STRUCTURE_HP: Record<AssetKey, number> = { rifle: 190, sentry: 280, flak: 290, flame: 245, laser: 275, railgun: 310, howitzer: 300, missile: 340, light: 230, wall: 600, bastion: 1050, trench: 360, wire: 180, mine: 45, barracks: 500 };
     function attachHealthBar(group: THREE.Group, y = 1.75) {
       // Health remains part of the combat simulation, but floating bars are
       // intentionally disabled because they obscure the battlefield.
@@ -772,7 +804,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
     const blocked = () => new Set(structures.filter(isPathBlocking).map(s => keyOf(Math.round(s.x), Math.round(s.y))));
     const topWallAt = (x: number, y: number) => structures.filter(s => isWall(s) && s.x === x && s.y === y).sort((a, b) => b.stackLevel - a.stackLevel)[0];
     const wallTopLift = (wall: Structure) => (wall.stackLevel + 1) * WALL_STACK_HEIGHT;
-    const blockedForEnemy = (kind: AlienKind) => new Set(structures.filter(s => isPathBlocking(s) && (!WALL_CLIMBERS.has(kind) || !isWall(s))).map(s => keyOf(Math.round(s.x), Math.round(s.y))));
+    const blockedForEnemy = (kind: AlienKind) => new Set(structures.filter(s => !FLYING_ENEMIES.has(kind) && isPathBlocking(s) && (!WALL_CLIMBERS.has(kind) || !isWall(s))).map(s => keyOf(Math.round(s.x), Math.round(s.y))));
     const terrainSpeedMultiplier = (from: Cell, to: Cell) => clamp(1 - (heights[to.y][to.x] - heights[from.y][from.x]) * 1.45, 0.28, 1.65);
     let visionSources: Array<{ x: number; y: number; radius: number }> = [], fogTimer = 0;
     function rebuildVision() {
@@ -934,7 +966,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       });
     }
     function addStructure(kind: AssetKey, x: number, y: number, free = false, mountedOn?: number, stackLevel = 0) {
-      const group = kind === "rifle" ? makeRifleTeam() : kind === "sentry" ? makeSentry() : kind === "flame" ? makeFlameTurret() : kind === "laser" ? makeLaserTower() : kind === "railgun" ? makeRailgun() : kind === "howitzer" ? makeHowitzer() : kind === "missile" ? makeMissileBattery() : kind === "light" ? makeLightTower() : kind === "wall" ? makeWall() : kind === "bastion" ? makeBastion() : kind === "trench" ? makeTrench() : kind === "wire" ? makeWire() : kind === "mine" ? makeMine() : makeBarracks();
+      const group = kind === "rifle" ? makeRifleTeam() : kind === "sentry" ? makeSentry() : kind === "flak" ? makeFlakTurret() : kind === "flame" ? makeFlameTurret() : kind === "laser" ? makeLaserTower() : kind === "railgun" ? makeRailgun() : kind === "howitzer" ? makeHowitzer() : kind === "missile" ? makeMissileBattery() : kind === "light" ? makeLightTower() : kind === "wall" ? makeWall() : kind === "bastion" ? makeBastion() : kind === "trench" ? makeTrench() : kind === "wire" ? makeWire() : kind === "mine" ? makeMine() : makeBarracks();
       const mountedWall = mountedOn ? structures.find(s => s.id === mountedOn && isWall(s)) : undefined;
       const mountCount = mountedOn ? structures.filter(s => s.mountedOn === mountedOn).length : 0;
       const lift = mountedWall ? wallTopLift(mountedWall) : kind === "wall" || kind === "bastion" ? stackLevel * WALL_STACK_HEIGHT : 0;
@@ -1093,6 +1125,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       const weights: Array<[AlienKind, number]> = [
         ["drone", Math.max(30, 82 - wave * 2)],
         ["spitter", wave >= 3 ? 18 + wave * 0.8 : 0],
+        ["flyer", wave >= 3 ? 13 + wave * 0.65 : 0],
         ["stalker", 62 + wave * 1.25],
         ["prowler", wave >= 6 ? 9 + wave * 0.48 : 0],
         ["brute", wave >= 7 ? 7 + wave * 0.55 : 0],
@@ -1104,7 +1137,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       for (const [candidate, weight] of weights) { roll -= weight; if (roll <= 0) { kind = candidate; break; } }
       const stats = ENEMY_STATS[kind], scale = 1 + wave * 0.055, hp = stats.hp * scale, offset = assaultOffset(spawnCell, formationIndex);
       const spawnX = clamp(spawnCell.x + offset.x, 0, GRID_W - 1), spawnY = clamp(spawnCell.y + offset.y, 0, GRID_H - 1);
-      const group = makeAlien(kind), p = worldPos(spawnX, spawnY); group.position.copy(p); group.rotation.y = (Math.random() - 0.5) * 0.7; attachHealthBar(group, stats.barHeight); world.add(group);
+      const group = makeAlien(kind), p = worldPos(spawnX, spawnY, FLYING_ENEMIES.has(kind) ? 2.65 : 0); group.position.copy(p); group.rotation.y = (Math.random() - 0.5) * 0.7; attachHealthBar(group, stats.barHeight); world.add(group);
       enemies.push({ id: nextId++, kind, x: spawnX, y: spawnY, hp, maxHp: hp, speed: stats.speed * ALIEN_SPEED_MULTIPLIER * (1 + wave * 0.008), damage: stats.damage * (1 + wave * 0.022), reward: stats.reward, path: [], index: 0, group, hitFlash: 0, attackCooldown: Math.random() * 0.35, pathTimer: 0, targetBiasSeed: Math.random(), targetId: null, targetType: "base" });
     }
     function spawnAssaultGroup() {
@@ -1133,7 +1166,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       }
     }
     function hostileStrike(kind: AlienKind, from: THREE.Vector3, to: THREE.Vector3, targetType: "marine" | "structure", targetId: number, damage: number) {
-      const group = new THREE.Group(), startHeight = kind === "brute" ? 0.85 : kind === "broodmother" ? 1.05 : kind === "razortail" ? 0.68 : kind === "spitter" ? 0.66 : kind === "strider" ? 0.92 : kind === "prowler" ? 0.44 : kind === "stalker" ? 0.25 : 0.38;
+      const group = new THREE.Group(), startHeight = kind === "flyer" ? 0.28 : kind === "brute" ? 0.85 : kind === "broodmother" ? 1.05 : kind === "razortail" ? 0.68 : kind === "spitter" ? 0.66 : kind === "strider" ? 0.92 : kind === "prowler" ? 0.44 : kind === "stalker" ? 0.25 : 0.38;
       const start = from.clone().add(new THREE.Vector3(0, startHeight, 0)), end = to.clone().add(new THREE.Vector3(0, 0.58, 0));
       let speed = 7.5, arcHeight = 0.08, color = 0xff9857, impactCount = 5;
       if (kind === "drone") {
@@ -1143,6 +1176,10 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         speed = 8.6; arcHeight = 0.03; color = 0xffb36a; impactCount = 7;
         const bite = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.42, 5), new THREE.MeshStandardMaterial({ color: 0xe7c18e, emissive: 0x7a3517, emissiveIntensity: 1.5, roughness: 0.35 }));
         bite.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), end.clone().sub(start).normalize()); group.add(bite);
+      } else if (kind === "flyer") {
+        speed = 7.2; arcHeight = 0.04; color = 0x79e8ff; impactCount = 8;
+        const dart = new THREE.Mesh(new THREE.OctahedronGeometry(0.11, 0), new THREE.MeshStandardMaterial({ color, emissive: 0x195c75, emissiveIntensity: 2.2, roughness: 0.2 })); dart.scale.z = 2.4; dart.lookAt(end.clone().sub(start)); group.add(dart);
+        const light = new THREE.PointLight(color, 1.5, 2.8); group.add(light);
       } else if (kind === "spitter") {
         speed = 2.15; arcHeight = 0.78; color = 0x63ff9f; impactCount = 11;
         const glob = new THREE.Mesh(new THREE.IcosahedronGeometry(0.15, 1), new THREE.MeshStandardMaterial({ color, emissive: 0x22b862, emissiveIntensity: 2.2, transparent: true, opacity: 0.92, roughness: 0.18 })); group.add(glob);
@@ -1172,7 +1209,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       }
       group.position.copy(start); world.add(group); hostileProjectiles.push({ group, kind, from: start, to: end, t: 0, speed, arcHeight, targetId, targetType, damage, color, impactCount });
     }
-    function fire(from: THREE.Vector3, target: Enemy, damage: number, splash: number, color: number, heavy = false, arcHeight = 0, rocket = false, sourceStructureId?: number) {
+    function fire(from: THREE.Vector3, target: Enemy, damage: number, splash: number, color: number, heavy = false, arcHeight = 0, rocket = false, sourceStructureId?: number, airOnly = false) {
       const to = target.group.position.clone().add(new THREE.Vector3(0, 0.42, 0)); let mesh: THREE.Object3D;
       if (rocket) {
         const projectile = new THREE.Group();
@@ -1182,10 +1219,11 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         projectile.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), to.clone().sub(from).normalize()); mesh = projectile;
       } else mesh = new THREE.Mesh(new THREE.SphereGeometry(heavy ? 0.11 : 0.045, 7, 5), new THREE.MeshBasicMaterial({ color }));
       mesh.position.copy(from); world.add(mesh);
-      bullets.push({ mesh, from: from.clone(), to, impactX: target.x, impactY: target.y, t: 0, speed: heavy ? 1.35 : 4.8, target: target.id, damage, splash, arcHeight, color, sourceStructureId });
+      bullets.push({ mesh, from: from.clone(), to, impactX: target.x, impactY: target.y, t: 0, speed: heavy ? 1.35 : 4.8, target: target.id, damage, splash, arcHeight, color, sourceStructureId, airOnly });
     }
     function incomingDamageAt(enemy: Enemy) {
       return bullets.reduce((total, shot) => {
+        if (shot.airOnly && !FLYING_ENEMIES.has(enemy.kind)) return total;
         if (!shot.splash) return total + (shot.target === enemy.id ? shot.damage : 0);
         const trackedTarget = enemies.find(candidate => candidate.id === shot.target && candidate.hp > 0);
         const impactX = trackedTarget?.x ?? shot.impactX, impactY = trackedTarget?.y ?? shot.impactY;
@@ -1291,7 +1329,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       type EnemyTargetChoice = { type: "marine" | "structure" | "base"; id: number | null; x: number; y: number; group: THREE.Group; directDistance: number };
       type EnemyRoute = { path: Cell[]; travelTime: number };
       const enemyPathCache = new Map<string, EnemyRoute>();
-      const groundEnemyBlocked = blockedForEnemy("drone"), wallClimberBlocked = blockedForEnemy("stalker");
+      const groundEnemyBlocked = blockedForEnemy("drone"), wallClimberBlocked = blockedForEnemy("stalker"), flyingEnemyBlocked = blockedForEnemy("flyer");
       const wallTraversalHeights = new Map<string, number>();
       structures.filter(isWall).forEach(wall => wallTraversalHeights.set(keyOf(wall.x, wall.y), Math.max(wallTraversalHeights.get(keyOf(wall.x, wall.y)) ?? 0, wallTopLift(wall))));
       const wallLiftAt = (cell: Cell) => wallTraversalHeights.get(keyOf(Math.round(cell.x), Math.round(cell.y))) ?? 0;
@@ -1301,6 +1339,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         return 1 + (preference - 0.5) * TARGET_SELECTION_VARIANCE;
       };
       const enemyStepTime = (enemy: Enemy, from: Cell, to: Cell) => {
+        if (FLYING_ENEMIES.has(enemy.kind)) return Math.hypot(to.x - from.x, to.y - from.y) / Math.max(0.01, enemy.speed);
         const terrainRate = terrainSpeedMultiplier(from, to), routeTerrainRate = 1 + (terrainRate - 1) * ENEMY_TERRAIN_ROUTE_SLOPE_WEIGHT;
         const groundTime = Math.hypot(to.x - from.x, to.y - from.y) / Math.max(0.01, enemy.speed * routeTerrainRate);
         const terrainClimbTime = Math.max(0, heights[to.y][to.x] - heights[from.y][from.x]) / ENEMY_TERRAIN_ROUTE_CLIMB_SPEED;
@@ -1308,21 +1347,22 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         return groundTime + terrainClimbTime + climbTime;
       };
       const routeFor = (enemy: Enemy, target: EnemyTargetChoice) => {
-        const startX = Math.round(enemy.x), startY = Math.round(enemy.y), goalX = Math.round(target.x), goalY = Math.round(target.y), climbsWalls = WALL_CLIMBERS.has(enemy.kind);
+        const startX = Math.round(enemy.x), startY = Math.round(enemy.y), goalX = Math.round(target.x), goalY = Math.round(target.y), climbsWalls = WALL_CLIMBERS.has(enemy.kind), flying = FLYING_ENEMIES.has(enemy.kind);
         const pathKey = `${enemy.kind}:${startX},${startY}>${goalX},${goalY}`;
         const cached = enemyPathCache.get(pathKey); if (cached) return cached;
-        const path = findPathTo(enemy.x, enemy.y, { x: target.x, y: target.y }, undefined, climbsWalls ? wallClimberBlocked : groundEnemyBlocked, (from, to) => enemyStepTime(enemy, from, to), enemy.speed * 1.65);
+        const path = findPathTo(enemy.x, enemy.y, { x: target.x, y: target.y }, undefined, flying ? flyingEnemyBlocked : climbsWalls ? wallClimberBlocked : groundEnemyBlocked, (from, to) => enemyStepTime(enemy, from, to), enemy.speed * 1.65);
         let travelTime = path.length ? Math.hypot(enemy.x - path[0].x, enemy.y - path[0].y) / Math.max(0.01, enemy.speed * 1.65) : Infinity;
         for (let i = 1; i < path.length; i++) travelTime += enemyStepTime(enemy, path[i - 1], path[i]);
         const route = { path, travelTime }; enemyPathCache.set(pathKey, route); return route;
       };
       for (const e of enemies) {
         e.hitFlash = Math.max(0, e.hitFlash - dt); e.attackCooldown -= dt; e.pathTimer -= dt;
+        const flying = FLYING_ENEMIES.has(e.kind);
         let separationX = 0, separationY = 0;
         const bucketX = Math.floor(e.x / ENEMY_SEPARATION_DISTANCE), bucketY = Math.floor(e.y / ENEMY_SEPARATION_DISTANCE);
         for (let offsetY = -1; offsetY <= 1; offsetY++) for (let offsetX = -1; offsetX <= 1; offsetX++) {
           for (const other of enemyBuckets.get(keyOf(bucketX + offsetX, bucketY + offsetY)) ?? []) {
-            if (other.id === e.id) continue;
+            if (other.id === e.id || FLYING_ENEMIES.has(other.kind) !== flying) continue;
             const apartX = e.x - other.x, apartY = e.y - other.y, apart = Math.hypot(apartX, apartY);
             if (apart >= ENEMY_SEPARATION_DISTANCE) continue;
             const force = (ENEMY_SEPARATION_DISTANCE - apart) / ENEMY_SEPARATION_DISTANCE;
@@ -1335,7 +1375,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         const enemyStats = ENEMY_STATS[e.kind], climbsWalls = WALL_CLIMBERS.has(e.kind);
         const targets: EnemyTargetChoice[] = [{ type: "base", id: null, x: baseCell.x, y: baseCell.y, group: base, directDistance: Math.hypot(baseCell.x - e.x, baseCell.y - e.y) }];
         marines.forEach(m => targets.push({ type: "marine", id: m.id, x: m.x, y: m.y, group: m.group, directDistance: Math.hypot(m.x - e.x, m.y - e.y) }));
-        structures.forEach(s => { if ((isPathBlocking(s) && (!climbsWalls || !isWall(s))) || isCombatStructure(s)) targets.push({ type: "structure", id: s.id, x: s.x, y: s.y, group: s.group, directDistance: Math.hypot(s.x - e.x, s.y - e.y) }); });
+        structures.forEach(s => { if ((flying ? isCombatStructure(s) || s.kind === "light" || s.kind === "barracks" : (isPathBlocking(s) && (!climbsWalls || !isWall(s))) || isCombatStructure(s))) targets.push({ type: "structure", id: s.id, x: s.x, y: s.y, group: s.group, directDistance: Math.hypot(s.x - e.x, s.y - e.y) }); });
         let targetChoice = targets.find(target => target.type === e.targetType && target.id === e.targetId);
         const retaliationTarget = targets.find(target => target.type === "structure" && target.id === e.retaliateAgainstId);
         if (e.retaliateAgainstId && !retaliationTarget) e.retaliateAgainstId = undefined;
@@ -1364,7 +1404,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         const combatTarget = targetChoice.type === "base" ? undefined : targetChoice as EnemyTargetChoice & { type: "marine" | "structure"; id: number };
         const tx = targetChoice.x, ty = targetChoice.y;
         const targetDistance = Math.hypot(tx - e.x, ty - e.y), attackRange = enemyStats.attackRange;
-        const wire = structures.find(s => s.kind === "wire" && Math.hypot(s.x - e.x, s.y - e.y) < RAZOR_WIRE_RADIUS);
+        const wire = flying ? undefined : structures.find(s => s.kind === "wire" && Math.hypot(s.x - e.x, s.y - e.y) < RAZOR_WIRE_RADIUS);
         let isMoving = false, isAttacking = false, movementRate = e.speed * (wire ? RAZOR_WIRE_SLOW_MULTIPLIER : 1);
         if (wire) {
           if (e.wireContactId !== wire.id) {
@@ -1386,8 +1426,8 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
           if (targetCell) {
             const dx = targetCell.x - e.x, dy = targetCell.y - e.y, dist = Math.hypot(dx, dy);
             const segmentStart = e.path[Math.min(e.index, e.path.length - 1)] ?? targetCell, segmentLength = Math.max(0.01, Math.hypot(targetCell.x - segmentStart.x, targetCell.y - segmentStart.y));
-            const groundRate = e.speed * terrainSpeedMultiplier(segmentStart, targetCell), terrainClimbDistance = Math.max(0, heights[targetCell.y][targetCell.x] - heights[segmentStart.y][segmentStart.x]), wallClimbDistance = climbsWalls ? Math.abs(wallLiftAt(targetCell) - wallLiftAt(segmentStart)) : 0;
-            movementRate = segmentLength / (segmentLength / Math.max(0.01, groundRate) + terrainClimbDistance / ENEMY_TERRAIN_CLIMB_SPEED + wallClimbDistance / WALL_CLIMB_SPEED) * (wire ? RAZOR_WIRE_SLOW_MULTIPLIER : 1);
+            const groundRate = e.speed * terrainSpeedMultiplier(segmentStart, targetCell), terrainClimbDistance = flying ? 0 : Math.max(0, heights[targetCell.y][targetCell.x] - heights[segmentStart.y][segmentStart.x]), wallClimbDistance = climbsWalls ? Math.abs(wallLiftAt(targetCell) - wallLiftAt(segmentStart)) : 0;
+            movementRate = flying ? e.speed : segmentLength / (segmentLength / Math.max(0.01, groundRate) + terrainClimbDistance / ENEMY_TERRAIN_CLIMB_SPEED + wallClimbDistance / WALL_CLIMB_SPEED) * (wire ? RAZOR_WIRE_SLOW_MULTIPLIER : 1);
             if (dist < 0.025) e.index++; else { const step = Math.min(dist, movementRate * dt); e.x += dx / dist * step; e.y += dy / dist * step; e.group.rotation.y = Math.atan2(-dx, -dy); isMoving = true; }
           }
         }
@@ -1407,12 +1447,12 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         const wings = e.group.userData.wings as THREE.Group[] | undefined;
         if (wings) wings.forEach((wing, i) => {
           const side = wing.userData.side as number, restAngle = wing.userData.restAngle as number;
-          wing.rotation.z = restAngle + side * Math.sin(elapsed * (isMoving ? 26 : 5) + i * Math.PI) * (isMoving ? 0.48 : 0.08);
+          wing.rotation.z = restAngle + side * Math.sin(elapsed * (flying ? 34 : isMoving ? 26 : 5) + i * Math.PI) * (flying ? 0.62 : isMoving ? 0.48 : 0.08);
         });
         const climbingWall = climbsWalls ? structures.filter(isWall).filter(wall => Math.hypot(wall.x - e.x, wall.y - e.y) < 1.05).sort((a, b) => Math.hypot(a.x - e.x, a.y - e.y) - Math.hypot(b.x - e.x, b.y - e.y) || b.stackLevel - a.stackLevel)[0] : undefined;
         const climbDistance = climbingWall ? Math.hypot(climbingWall.x - e.x, climbingWall.y - e.y) : Infinity;
         const climbLift = climbingWall ? wallTopLift(climbingWall) * clamp(1 - climbDistance / 1.05, 0, 1) : 0;
-        const p = worldPos(e.x, e.y, climbLift); e.group.position.lerp(p, Math.min(1, dt * 12)); e.group.position.y += Math.sin(elapsed * 9 + e.id) * (e.kind === "brute" ? 0.005 : 0.01); syncHealthBar(e.group);
+        const p = worldPos(e.x, e.y, flying ? 2.65 : climbLift); e.group.position.lerp(p, Math.min(1, dt * 12)); e.group.position.y += Math.sin(elapsed * (flying ? 4.8 : 9) + e.id) * (flying ? 0.16 : e.kind === "brute" ? 0.005 : 0.01); syncHealthBar(e.group);
       }
       for (const s of structures) {
         s.cooldown -= dt;
@@ -1428,11 +1468,11 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         const terrainX = clamp(Math.round(s.x), 0, GRID_W - 1), terrainY = clamp(Math.round(s.y), 0, GRID_H - 1);
         const stats = TURRET_STATS[s.kind], levelDamage = 1 + (s.level - 1) * 0.42, levelSpeed = 1 + (s.level - 1) * 0.18;
         const range = ASSETS[s.kind].range + (s.level - 1) * 0.65 + heights[terrainY][terrainX] * 0.9;
-        const candidates = enemies.filter(e => e.hp > 0 && isRevealed(e.x, e.y) && Math.hypot(e.x - s.x, e.y - s.y) <= range);
+        const candidates = enemies.filter(e => e.hp > 0 && isRevealed(e.x, e.y) && (!stats.airOnly || FLYING_ENEMIES.has(e.kind)) && (!stats.groundOnly || !FLYING_ENEMIES.has(e.kind)) && Math.hypot(e.x - s.x, e.y - s.y) <= range);
         const target = s.kind === "howitzer" || s.kind === "missile" ? chooseArtilleryTarget(candidates, stats.damage * levelDamage, stats.splash) : candidates.sort((a, b) => b.index - a.index)[0];
         if (target) {
           turnToward(s.group, Math.atan2(-(target.x - s.x), -(target.y - s.y)), stats.turnSpeed, dt);
-          if (s.cooldown <= 0) { const muzzle = s.group.userData.muzzle as THREE.Object3D | undefined; const from = muzzle ? muzzle.getWorldPosition(new THREE.Vector3()) : s.group.position.clone().add(new THREE.Vector3(0, 1.05, 0)); if (stats.beam) laserStrike(from, target, stats.damage * levelDamage, stats.color); else fire(from, target, stats.damage * levelDamage, stats.splash, stats.color, stats.heavy, stats.arcHeight, false, s.kind === "howitzer" || s.kind === "missile" ? s.id : undefined); s.cooldown = stats.cooldown / levelSpeed; }
+          if (s.cooldown <= 0) { const muzzle = s.group.userData.muzzle as THREE.Object3D | undefined; const from = muzzle ? muzzle.getWorldPosition(new THREE.Vector3()) : s.group.position.clone().add(new THREE.Vector3(0, 1.05, 0)); if (stats.beam) laserStrike(from, target, stats.damage * levelDamage, stats.color); else fire(from, target, stats.damage * levelDamage, stats.splash, stats.color, stats.heavy, stats.arcHeight, false, s.kind === "howitzer" || s.kind === "missile" ? s.id : undefined, stats.airOnly); s.cooldown = stats.cooldown / levelSpeed; }
         }
       }
       for (const m of marines) {
@@ -1453,7 +1493,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
         }
       }
       for (const s of [...structures]) if (s.kind === "mine") {
-        const target = enemies.find(e => e.hp > 0 && Math.hypot(e.x - s.x, e.y - s.y) < 1.25); if (target) { enemies.forEach(e => { if (Math.hypot(e.x - s.x, e.y - s.y) < 1.75) damageEnemy(e, 145); }); burst(s.group.position.clone().add(new THREE.Vector3(0, 0.3, 0)), 0x6ffff3, 25); destroyStructure(s); message("SHOCK MINE DETONATED"); }
+        const target = enemies.find(e => e.hp > 0 && !FLYING_ENEMIES.has(e.kind) && Math.hypot(e.x - s.x, e.y - s.y) < 1.25); if (target) { enemies.forEach(e => { if (!FLYING_ENEMIES.has(e.kind) && Math.hypot(e.x - s.x, e.y - s.y) < 1.75) damageEnemy(e, 145); }); burst(s.group.position.clone().add(new THREE.Vector3(0, 0.3, 0)), 0x6ffff3, 25); destroyStructure(s); message("SHOCK MINE DETONATED"); }
       }
       for (const shot of [...hostileProjectiles]) {
         shot.t += dt * shot.speed; const progress = Math.min(1, shot.t), arc = Math.sin(progress * Math.PI) * shot.arcHeight;
@@ -1474,7 +1514,7 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
           const target = enemies.find(e => e.id === b.target && e.hp > 0);
           if (b.splash) {
             const impactX = target?.x ?? b.impactX, impactY = target?.y ?? b.impactY;
-            enemies.forEach(e => { const d = Math.hypot(e.x - impactX, e.y - impactY); if (d <= b.splash) { damageEnemy(e, b.damage * (1 - d / (b.splash * 1.8))); provokeEnemy(e, b.sourceStructureId); } });
+            enemies.forEach(e => { const d = Math.hypot(e.x - impactX, e.y - impactY); if (d <= b.splash && (!b.airOnly || FLYING_ENEMIES.has(e.kind))) { damageEnemy(e, b.damage * (1 - d / (b.splash * 1.8))); provokeEnemy(e, b.sourceStructureId); } });
             burst(target?.group.position.clone().add(new THREE.Vector3(0, 0.42, 0)) ?? b.to, b.color, 18);
           } else if (target) { damageEnemy(target, b.damage); provokeEnemy(target, b.sourceStructureId); burst(b.to, b.color, 4); }
           world.remove(b.mesh); bullets.splice(bullets.indexOf(b), 1);
@@ -1482,8 +1522,8 @@ function Battlefield({ selected, mapKey, onHud, onMessage, onUnitSelected, onBar
       }
       for (const e of [...enemies]) {
         if (e.hp <= 0) {
-          const deathColor = e.kind === "broodmother" ? 0xff73aa : e.kind === "spitter" ? 0x58ff96 : e.kind === "razortail" ? 0xe66bff : e.kind === "stalker" ? 0x58ddff : e.kind === "strider" ? 0xffe56d : e.kind === "prowler" ? 0xffb36a : 0xff573e;
-          const deathCount = e.kind === "brute" ? 24 : e.kind === "broodmother" ? 22 : e.kind === "razortail" ? 20 : e.kind === "strider" ? 14 : e.kind === "prowler" ? 13 : e.kind === "stalker" ? 9 : 12;
+          const deathColor = e.kind === "flyer" ? 0x79e8ff : e.kind === "broodmother" ? 0xff73aa : e.kind === "spitter" ? 0x58ff96 : e.kind === "razortail" ? 0xe66bff : e.kind === "stalker" ? 0x58ddff : e.kind === "strider" ? 0xffe56d : e.kind === "prowler" ? 0xffb36a : 0xff573e;
+          const deathCount = e.kind === "brute" ? 24 : e.kind === "broodmother" ? 22 : e.kind === "razortail" ? 20 : e.kind === "flyer" ? 15 : e.kind === "strider" ? 14 : e.kind === "prowler" ? 13 : e.kind === "stalker" ? 9 : 12;
           credits += e.reward; kills++; burst(e.group.position.clone().add(new THREE.Vector3(0, 0.4, 0)), deathColor, deathCount); removeHealthBar(e.group); world.remove(e.group); enemies.splice(enemies.indexOf(e), 1); continue;
         }
         if (e.targetType === "base" && Math.hypot(e.x - baseCell.x, e.y - baseCell.y) < 0.22) { integrity = Math.max(0, integrity - e.damage); burst(base.position.clone().add(new THREE.Vector3(0, 1, 0)), 0xff4a31, 14); removeHealthBar(e.group); world.remove(e.group); enemies.splice(enemies.indexOf(e), 1); if (integrity <= 0) { gameOver = true; active = false; message("COMMAND POST OVERRUN · SECTOR LOST"); } }
@@ -1558,7 +1598,7 @@ export default function Home() {
       <aside className={`build-panel ${hud.active || hud.gameOver ? "locked" : ""}`}>
         <div className="panel-title"><small>{hud.active ? "CONSTRUCTION LOCKED · WAVE ACTIVE" : hud.gameOver ? "OPERATION ENDED" : hud.buildSeconds === null ? "FORWARD ENGINEERING · STAGING" : `FORWARD ENGINEERING · ${formatBuildTime(hud.buildSeconds)} LEFT`}</small><b>DEPLOYABLE ASSETS</b></div>
         {(Object.keys(ASSETS) as AssetKey[]).map(key => { const a = ASSETS[key]; return <button key={key} disabled={hud.active || hud.gameOver} className={`asset ${selected === key ? "active" : ""}`} onClick={() => setSelected(key)} style={{ "--asset-color": a.accent } as React.CSSProperties}><span>{a.icon}</span><div><b>{a.name}</b><small>{a.role}</small></div><em>{a.cost}</em></button>; })}
-        <div className="intel"><span>FIELD INTEL</span><p>Buildings may be placed only before a wave or during the 30-second build window after it. Field Barracks can still recruit infantry at any time. Sentinel lights and weapons may mount on walls. Shift + right-click salvages.</p></div>
+        <div className="intel"><span>FIELD INTEL</span><p>Buildings may be placed only before a wave or during the 30-second build window after it. Field Barracks can still recruit infantry at any time. Winged Skyrazors fly over terrain and ground hazards, so counter them with Aegis flak. Sentinel lights and weapons may mount on walls. Shift + right-click salvages.</p></div>
       </aside>
       <footer className="controls"><span><kbd>DRAG BOX</kbd> SELECT UNITS</span><span><kbd>RIGHT CLICK</kbd> FORMATION MOVE</span><span><kbd>MIDDLE DRAG</kbd> ORBIT</span><span><kbd>WASD</kbd> GLIDE CAMERA</span><span><kbd>SPACE</kbd> START WAVE</span><span className="online">● GITHUB PAGES</span></footer>
     </main>
