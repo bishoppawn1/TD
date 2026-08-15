@@ -6,7 +6,16 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 type AssetKey = "rifle" | "sentry" | "howitzer" | "missile" | "wall" | "mine" | "barracks";
 type CombatKey = "rifle" | "sentry" | "howitzer" | "missile";
-type AlienKind = "drone" | "spitter" | "brute";
+type AlienKind = "drone" | "spitter" | "brute" | "razortail" | "stalker";
+
+const MAX_WAVES = 25;
+const ENEMY_STATS: Record<AlienKind, { hp: number; speed: number; damage: number; reward: number; attackRange: number; attackCooldown: number; gait: number; barHeight: number }> = {
+  drone: { hp: 82, speed: 0.9, damage: 6, reward: 24, attackRange: 1.45, attackCooldown: 0.82, gait: 11.5, barHeight: 1.05 },
+  spitter: { hp: 125, speed: 0.72, damage: 9, reward: 36, attackRange: 3.1, attackCooldown: 1.15, gait: 7.2, barHeight: 1.45 },
+  brute: { hp: 340, speed: 0.48, damage: 18, reward: 65, attackRange: 1.7, attackCooldown: 1.35, gait: 4.2, barHeight: 2.05 },
+  razortail: { hp: 245, speed: 0.68, damage: 14, reward: 56, attackRange: 2.05, attackCooldown: 1.05, gait: 6.2, barHeight: 1.75 },
+  stalker: { hp: 64, speed: 1.85, damage: 5, reward: 30, attackRange: 1.25, attackCooldown: 0.48, gait: 18, barHeight: 0.95 },
+};
 
 const GRID_W = 24;
 const GRID_H = 18;
@@ -34,6 +43,7 @@ type Structure = { id: number; kind: AssetKey; level: number; x: number; y: numb
 type Enemy = { id: number; kind: AlienKind; x: number; y: number; hp: number; maxHp: number; speed: number; damage: number; reward: number; path: Cell[]; index: number; group: THREE.Group; hitFlash: number; attackCooldown: number; pathTimer: number; targetId: number | null; targetType: "marine" | "structure" | "base" };
 type Marine = { id: number; x: number; y: number; targetX: number; targetY: number; vx: number; vy: number; hp: number; maxHp: number; cooldown: number; mountedOn?: number; group: THREE.Group };
 type Bullet = { mesh: THREE.Mesh; from: THREE.Vector3; to: THREE.Vector3; t: number; speed: number; target: number; damage: number; splash: number; arcHeight: number; color: number };
+type HostileProjectile = { group: THREE.Group; kind: AlienKind; from: THREE.Vector3; to: THREE.Vector3; t: number; speed: number; arcHeight: number; targetId: number; targetType: "marine" | "structure"; damage: number; color: number; impactCount: number };
 type Particle = { mesh: THREE.Mesh; velocity: THREE.Vector3; life: number; maxLife: number };
 type SelectedUnit = { id: number; kind: CombatKey; name: string; level: number; maxLevel: number; upgradeCost: number | null; damage: number; range: number; maxHp: number };
 type BattlefieldApi = { start: () => void; restart: () => void; rotate: () => void; upgradeSelected: () => void };
@@ -264,11 +274,11 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, apiRef }: { s
     function makeAlien(kind: AlienKind) {
       const g = new THREE.Group();
       const bodyRig = new THREE.Group(); g.add(bodyRig);
-      const legs: THREE.Group[] = [], legPhases: number[] = [];
-      const brute = kind === "brute", spitter = kind === "spitter";
-      const shellColor = brute ? 0x673832 : spitter ? 0x28654b : 0x334d42;
-      const skinColor = brute ? 0x2c1c1b : spitter ? 0x172e25 : 0x192a24;
-      const glowColor = spitter ? 0x63ff9f : 0xff503f;
+      const legs: THREE.Group[] = [], legPhases: number[] = [], tails: THREE.Group[] = [];
+      const brute = kind === "brute", spitter = kind === "spitter", razortail = kind === "razortail", stalker = kind === "stalker";
+      const shellColor = brute ? 0x673832 : spitter ? 0x28654b : razortail ? 0x57305f : stalker ? 0x27536b : 0x334d42;
+      const skinColor = brute ? 0x2c1c1b : spitter ? 0x172e25 : razortail ? 0x29162f : stalker ? 0x102832 : 0x192a24;
+      const glowColor = spitter ? 0x63ff9f : razortail ? 0xe86bff : stalker ? 0x51dfff : 0xff503f;
       const shell = new THREE.MeshStandardMaterial({ color: shellColor, roughness: 0.48, metalness: 0.18 });
       const skin = new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.82 });
       const glow = new THREE.MeshBasicMaterial({ color: glowColor });
@@ -291,14 +301,24 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, apiRef }: { s
       const addSpine = (x: number, y: number, z: number, size: number, color = shellColor) => {
         const spine = new THREE.Mesh(new THREE.ConeGeometry(size * 0.34, size, 6), new THREE.MeshStandardMaterial({ color, roughness: 0.55 })); spine.position.set(x, y, z); bodyRig.add(spine);
       };
+      const addPlate = (position: [number, number, number], scale: [number, number, number], color = shellColor) => {
+        const plate = new THREE.Mesh(new THREE.DodecahedronGeometry(0.42, 0), new THREE.MeshStandardMaterial({ color, roughness: 0.42, metalness: 0.2 })); plate.position.set(...position); plate.scale.set(...scale); plate.rotation.x = 0.12; bodyRig.add(plate); return plate;
+      };
+      const addScythe = (side: number, start: THREE.Vector3, joint: THREE.Vector3, tip: THREE.Vector3, thickness: number) => {
+        beam(g, start, joint, thickness, shellColor); beam(g, joint, tip, thickness * 0.58, skinColor);
+        const direction = tip.clone().sub(joint), blade = new THREE.Mesh(new THREE.ConeGeometry(thickness * 1.7, direction.length() * 0.9, 6), new THREE.MeshStandardMaterial({ color: 0x1b201d, roughness: 0.48, metalness: 0.22 }));
+        blade.position.copy(joint).lerp(tip, 0.68); blade.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize()); blade.rotation.z += side * 0.08; g.add(blade);
+      };
 
       if (kind === "drone") {
         addOrb(bodyRig, 0.42, [0, 0.42, 0.18], [0.9, 0.56, 1.35], shell);
         addOrb(bodyRig, 0.3, [0, 0.37, -0.42], [1.05, 0.62, 0.9], skin);
         addOrb(bodyRig, 0.19, [0, 0.33, -0.7], [1.18, 0.56, 0.95], shell);
+        addPlate([0, 0.59, 0.28], [0.82, 0.32, 1.22]); addPlate([0, 0.5, -0.42], [0.72, 0.26, 0.66], 0x465c4e);
         for (const side of [-1, 1]) {
           addEye(side * 0.105, 0.38, -0.85, 0.045);
           const mandible = new THREE.Mesh(new THREE.ConeGeometry(0.065, 0.38, 6), skin); mandible.position.set(side * 0.13, 0.26, -0.91); mandible.rotation.set(-Math.PI / 2, 0, side * 0.2); bodyRig.add(mandible);
+          addScythe(side, new THREE.Vector3(side * 0.2, 0.42, -0.34), new THREE.Vector3(side * 0.62, 0.29, -0.63), new THREE.Vector3(side * 0.82, 0.08, -1.04), 0.065);
         }
         [-0.25, 0.08, 0.38].forEach((z, i) => { addLeg(-1, z, i * Math.PI * 0.72, 0.42, 0.34, 0.045, 0.38); addLeg(1, z, Math.PI + i * Math.PI * 0.72, 0.42, 0.34, 0.045, 0.38); });
         [-0.05, 0.22, 0.48].forEach((z, i) => addSpine(0, 0.77 - i * 0.035, z, 0.22 - i * 0.025));
@@ -306,26 +326,56 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, apiRef }: { s
         const sac = addOrb(bodyRig, 0.48, [0, 0.62, 0.35], [0.88, 0.9, 1.35], new THREE.MeshStandardMaterial({ color: 0x2f9861, emissive: 0x145e39, emissiveIntensity: 1.1, roughness: 0.32, transparent: true, opacity: 0.92 }));
         addOrb(bodyRig, 0.4, [0, 0.72, -0.28], [1.12, 0.82, 1.05], shell);
         addOrb(bodyRig, 0.27, [0, 0.67, -0.72], [1.22, 0.68, 1.05], skin);
-        for (const side of [-1, 1]) { addEye(side * 0.12, 0.71, -0.93, 0.055); addEye(side * 0.2, 0.67, -0.86, 0.035); }
+        addPlate([0, 0.92, -0.22], [1.0, 0.34, 0.92], 0x347b59); addPlate([0, 0.86, 0.38], [0.72, 0.25, 1.04], 0x2e684d);
+        for (const side of [-1, 1]) { addEye(side * 0.12, 0.71, -0.93, 0.055); addEye(side * 0.2, 0.67, -0.86, 0.035); addScythe(side, new THREE.Vector3(side * 0.24, 0.65, -0.38), new THREE.Vector3(side * 0.7, 0.44, -0.65), new THREE.Vector3(side * 0.9, 0.12, -1.04), 0.07); }
         [-0.3, 0.18, 0.48].forEach((z, i) => { addLeg(-1, z, i * Math.PI * 0.8, 0.5, 0.45, 0.05, 0.56); addLeg(1, z, Math.PI + i * Math.PI * 0.8, 0.5, 0.45, 0.05, 0.56); });
         for (const z of [-0.32, -0.05, 0.22]) addSpine(0, 1.12, z, 0.3, 0x3f9e70);
         const mouthGlow = new THREE.PointLight(0x55ff99, 1.6, 2.6); mouthGlow.position.set(0, 0.61, -0.96); bodyRig.add(mouthGlow); sac.userData.pulse = true;
+      } else if (kind === "stalker") {
+        addOrb(bodyRig, 0.31, [0, 0.34, 0.14], [0.66, 0.42, 1.55], shell);
+        addOrb(bodyRig, 0.2, [0, 0.31, -0.45], [0.82, 0.48, 1.12], skin);
+        addPlate([0, 0.48, 0.08], [0.58, 0.21, 1.18], 0x397a92);
+        for (const side of [-1, 1]) {
+          addEye(side * 0.07, 0.34, -0.66, 0.035);
+          addScythe(side, new THREE.Vector3(side * 0.13, 0.34, -0.28), new THREE.Vector3(side * 0.46, 0.22, -0.62), new THREE.Vector3(side * 0.7, 0.04, -1.0), 0.035);
+        }
+        [-0.18, 0.04, 0.25, 0.42].forEach((z, i) => { addLeg(-1, z, i * Math.PI * 0.58, 0.48, 0.46, 0.025, 0.3); addLeg(1, z, Math.PI + i * Math.PI * 0.58, 0.48, 0.46, 0.025, 0.3); });
+        [-0.04, 0.18, 0.38].forEach((z, i) => addSpine(0, 0.62 - i * 0.025, z, 0.15, 0x56b4d1));
+      } else if (kind === "razortail") {
+        addOrb(bodyRig, 0.57, [0, 0.78, 0.18], [1.08, 0.72, 1.48], shell);
+        addOrb(bodyRig, 0.38, [0, 0.66, -0.58], [1.2, 0.68, 1.02], skin);
+        addOrb(bodyRig, 0.25, [0, 0.57, -0.94], [1.28, 0.61, 0.92], shell);
+        addPlate([0, 1.02, 0.18], [1.16, 0.42, 1.38], 0x72407c); addPlate([0, 0.89, -0.5], [0.94, 0.34, 0.82], 0x64336e);
+        for (const side of [-1, 1]) {
+          addEye(side * 0.13, 0.61, -1.16, 0.052);
+          addScythe(side, new THREE.Vector3(side * 0.3, 0.68, -0.54), new THREE.Vector3(side * 0.82, 0.46, -0.88), new THREE.Vector3(side * 1.05, 0.12, -1.38), 0.09);
+        }
+        [-0.38, 0.08, 0.45].forEach((z, i) => { addLeg(-1, z, i * Math.PI * 0.72, 0.57, 0.46, 0.075, 0.63); addLeg(1, z, Math.PI + i * Math.PI * 0.72, 0.57, 0.46, 0.075, 0.63); });
+        for (let i = -2; i <= 2; i++) {
+          const tail = new THREE.Group(); tail.position.set(i * 0.12, 0.76, 0.58); tail.rotation.z = i * 0.13; g.add(tail);
+          const mid = new THREE.Vector3(i * 0.11, 0.18 + Math.abs(i) * 0.035, 0.72 + Math.abs(i) * 0.08), tip = new THREE.Vector3(i * 0.25, 0.08, 1.52 + Math.abs(i) * 0.12);
+          beam(tail, new THREE.Vector3(), mid, 0.075, shellColor); beam(tail, mid, tip, 0.045, skinColor);
+          for (const t of [0.38, 0.64, 0.88]) { const p = mid.clone().lerp(tip, t), spike = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.32, 6), new THREE.MeshStandardMaterial({ color: 0xd58ce0, roughness: 0.48, metalness: 0.16 })); spike.position.copy(p).add(new THREE.Vector3(i * 0.025, 0.17, 0)); spike.rotation.z = i * -0.12; tail.add(spike); }
+          const barbDirection = tip.clone().sub(mid).normalize(), barb = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.55, 7), new THREE.MeshStandardMaterial({ color: 0xe3a1ec, roughness: 0.4, metalness: 0.2 })); barb.position.copy(tip); barb.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), barbDirection); tail.add(barb); tails.push(tail);
+        }
       } else {
         addOrb(bodyRig, 0.68, [0, 1.0, 0.12], [1.15, 0.94, 1.35], shell);
         addOrb(bodyRig, 0.54, [0, 0.88, -0.7], [1.32, 0.78, 1.08], skin);
         addOrb(bodyRig, 0.36, [0, 0.78, -1.12], [1.38, 0.72, 1.0], shell);
+        addPlate([0, 1.34, 0.22], [1.38, 0.58, 1.46], 0x79443a); addPlate([0, 1.17, -0.58], [1.18, 0.46, 0.92], 0x865044); addPlate([0, 1.03, -1.06], [0.92, 0.36, 0.62], 0x6d382f);
         for (const side of [-1, 1]) {
           addEye(side * 0.17, 0.83, -1.43, 0.065);
           const tusk = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.7, 7), new THREE.MeshStandardMaterial({ color: 0xc6b78e, roughness: 0.78 })); tusk.position.set(side * 0.33, 0.7, -1.47); tusk.rotation.set(-Math.PI / 2, 0, side * 0.28); bodyRig.add(tusk);
+          addScythe(side, new THREE.Vector3(side * 0.4, 0.98, -0.62), new THREE.Vector3(side * 1.0, 0.67, -1.02), new THREE.Vector3(side * 1.28, 0.16, -1.72), 0.13);
         }
-        [-0.42, 0.42].forEach((z, i) => { addLeg(-1, z, i * Math.PI, 0.58, 0.48, 0.1, 0.72); addLeg(1, z, Math.PI + i * Math.PI, 0.58, 0.48, 0.1, 0.72); });
+        [-0.5, 0, 0.5].forEach((z, i) => { addLeg(-1, z, i * Math.PI * 0.72, 0.62, 0.5, 0.1, 0.78); addLeg(1, z, Math.PI + i * Math.PI * 0.72, 0.62, 0.5, 0.1, 0.78); });
         [-0.42, -0.08, 0.26, 0.56].forEach((z, i) => addSpine(0, 1.66 - i * 0.05, z, 0.44 - i * 0.045, 0x8a4c3f));
         for (const side of [-1, 1]) addOrb(bodyRig, 0.25, [side * 0.6, 1.12, -0.2], [1.2, 0.7, 1], shell);
       }
 
-      const classScale = brute ? 1.42 : spitter ? 1.08 : 0.82;
+      const classScale = brute ? 1.42 : spitter ? 1.08 : razortail ? 1.18 : stalker ? 0.62 : 0.82;
       g.scale.setScalar(classScale * (0.94 + Math.random() * 0.12));
-      g.userData.legs = legs; g.userData.legPhases = legPhases; g.userData.bodyRig = bodyRig; g.userData.kind = kind;
+      g.userData.legs = legs; g.userData.legPhases = legPhases; g.userData.tails = tails; g.userData.bodyRig = bodyRig; g.userData.kind = kind;
       shadowify(g); return g;
     }
     function makeBase() {
@@ -376,25 +426,37 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, apiRef }: { s
     }
     let credits = 750, integrity = 100, wave = 0, kills = 0, active = false, gameOver = false, victory = false;
     let spawnLeft = 0, spawnTimer = 0, nextId = 1, elapsed = 0, lastHud = -1;
-    let structures: Structure[] = [], enemies: Enemy[] = [], marines: Marine[] = [], bullets: Bullet[] = [], particles: Particle[] = [];
+    let structures: Structure[] = [], enemies: Enemy[] = [], marines: Marine[] = [], bullets: Bullet[] = [], hostileProjectiles: HostileProjectile[] = [], particles: Particle[] = [];
     const selectedMarines = new Set<number>();
     const selectedEmplacements = new Set<number>();
     const isMobileEmplacement = (s: Structure) => s.kind === "rifle" || s.kind === "howitzer";
     const isCombatStructure = (s: Structure): s is Structure & { kind: CombatKey } => s.kind in TURRET_STATS;
     const blocked = () => new Set(structures.filter(s => s.kind !== "mine" && !s.mountedOn).map(s => keyOf(Math.round(s.x), Math.round(s.y))));
+    const terrainSpeedMultiplier = (from: Cell, to: Cell) => clamp(1 - (heights[to.y][to.x] - heights[from.y][from.x]) * 1.45, 0.55, 1.45);
     function findPathTo(sx: number, sy: number, target: Cell, extra?: Cell): Cell[] {
       const ban = blocked(); if (extra) ban.add(keyOf(extra.x, extra.y));
       const start = { x: clamp(Math.round(sx), 0, GRID_W - 1), y: clamp(Math.round(sy), 0, GRID_H - 1) };
       const goal = { x: clamp(Math.round(target.x), 0, GRID_W - 1), y: clamp(Math.round(target.y), 0, GRID_H - 1) }; ban.delete(keyOf(start.x, start.y)); ban.delete(keyOf(goal.x, goal.y));
-      const queue: Cell[] = [start], prev = new Map<string, string>(); prev.set(keyOf(start.x, start.y), "");
-      for (let qi = 0; qi < queue.length; qi++) {
-        const cur = queue[qi]; if (cur.x === goal.x && cur.y === goal.y) break;
-        const next = [{ x: cur.x + 1, y: cur.y }, { x: cur.x - 1, y: cur.y }, { x: cur.x, y: cur.y + 1 }, { x: cur.x, y: cur.y - 1 }];
-        next.sort((a, b) => (Math.abs(a.x - goal.x) + Math.abs(a.y - goal.y)) - (Math.abs(b.x - goal.x) + Math.abs(b.y - goal.y)));
-        for (const n of next) if (n.x >= 0 && n.y >= 0 && n.x < GRID_W && n.y < GRID_H && !ban.has(keyOf(n.x, n.y)) && !prev.has(keyOf(n.x, n.y))) { prev.set(keyOf(n.x, n.y), keyOf(cur.x, cur.y)); queue.push(n); }
+      const startKey = keyOf(start.x, start.y), goalKey = keyOf(goal.x, goal.y), open = new Set([startKey]), prev = new Map<string, string>(), cost = new Map<string, number>([[startKey, 0]]), cells = new Map<string, Cell>([[startKey, start]]);
+      const directions = [-1, 0, 1].flatMap(dy => [-1, 0, 1].map(dx => ({ dx, dy }))).filter(d => d.dx || d.dy);
+      while (open.size) {
+        let currentKey = "", bestScore = Infinity;
+        for (const candidate of open) {
+          const cell = cells.get(candidate)!; const heuristic = Math.hypot(goal.x - cell.x, goal.y - cell.y) / 1.45, score = (cost.get(candidate) ?? Infinity) + heuristic;
+          if (score < bestScore) { bestScore = score; currentKey = candidate; }
+        }
+        if (currentKey === goalKey) break;
+        open.delete(currentKey); const cur = cells.get(currentKey)!;
+        for (const { dx, dy } of directions) {
+          const n = { x: cur.x + dx, y: cur.y + dy }, nKey = keyOf(n.x, n.y); if (n.x < 0 || n.y < 0 || n.x >= GRID_W || n.y >= GRID_H || ban.has(nKey)) continue;
+          if (dx && dy && (ban.has(keyOf(cur.x + dx, cur.y)) || ban.has(keyOf(cur.x, cur.y + dy)))) continue;
+          const travelCost = Math.hypot(dx, dy) / terrainSpeedMultiplier(cur, n), nextCost = (cost.get(currentKey) ?? 0) + travelCost;
+          if (nextCost >= (cost.get(nKey) ?? Infinity)) continue;
+          prev.set(nKey, currentKey); cost.set(nKey, nextCost); cells.set(nKey, n); open.add(nKey);
+        }
       }
-      const endKey = keyOf(goal.x, goal.y); if (!prev.has(endKey)) return [];
-      const out: Cell[] = []; let k = endKey;
+      if (goalKey !== startKey && !prev.has(goalKey)) return [];
+      const out: Cell[] = []; let k = goalKey;
       while (k) { const [x, y] = k.split(",").map(Number); out.push({ x, y }); k = prev.get(k) || ""; }
       return out.reverse();
     }
@@ -532,10 +594,23 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, apiRef }: { s
         particles.push({ mesh, velocity: new THREE.Vector3((Math.random() - 0.5) * 2.8, Math.random() * 2.3, (Math.random() - 0.5) * 2.8), life: 0.5 + Math.random() * 0.5, maxLife: 1 });
       }
     }
-    function hostileStrike(from: THREE.Vector3, to: THREE.Vector3, color: number, ranged: boolean) {
-      const start = from.clone().add(new THREE.Vector3(0, ranged ? 1.15 : 0.85, 0)), end = to.clone().add(new THREE.Vector3(0, 0.58, 0)), mid = start.clone().add(end).multiplyScalar(0.5), length = start.distanceTo(end);
-      const trace = new THREE.Mesh(new THREE.CylinderGeometry(ranged ? 0.035 : 0.055, ranged ? 0.055 : 0.02, length, 7), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95 }));
-      trace.position.copy(mid); trace.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), end.clone().sub(start).normalize()); trace.renderOrder = 15; world.add(trace); particles.push({ mesh: trace, velocity: new THREE.Vector3(), life: ranged ? 0.28 : 0.16, maxLife: ranged ? 0.28 : 0.16 });
+    function hostileStrike(kind: AlienKind, from: THREE.Vector3, to: THREE.Vector3, targetType: "marine" | "structure", targetId: number, damage: number) {
+      const group = new THREE.Group(), start = from.clone().add(new THREE.Vector3(0, kind === "brute" ? 1.28 : kind === "spitter" ? 1.05 : 0.62, 0)), end = to.clone().add(new THREE.Vector3(0, 0.58, 0));
+      let speed = 7.5, arcHeight = 0.08, color = 0xff9857, impactCount = 5;
+      if (kind === "drone") {
+        const needle = new THREE.Mesh(new THREE.ConeGeometry(0.065, 0.46, 6), new THREE.MeshStandardMaterial({ color: 0xe6b56d, emissive: 0x6d2816, emissiveIntensity: 0.7, roughness: 0.38 }));
+        needle.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), end.clone().sub(start).normalize()); needle.castShadow = true; group.add(needle);
+      } else if (kind === "spitter") {
+        speed = 2.15; arcHeight = 0.78; color = 0x63ff9f; impactCount = 11;
+        const glob = new THREE.Mesh(new THREE.IcosahedronGeometry(0.15, 1), new THREE.MeshStandardMaterial({ color, emissive: 0x22b862, emissiveIntensity: 2.2, transparent: true, opacity: 0.92, roughness: 0.18 })); group.add(glob);
+        for (const side of [-1, 1]) { const droplet = new THREE.Mesh(new THREE.SphereGeometry(0.055, 7, 5), new THREE.MeshBasicMaterial({ color: 0xa4ffc2 })); droplet.position.set(side * 0.13, side * 0.04, 0.06); group.add(droplet); }
+        const light = new THREE.PointLight(color, 2.2, 3.4); group.add(light);
+      } else {
+        speed = 3.25; arcHeight = 0.38; color = 0xff493c; impactCount = 15;
+        const chunk = new THREE.Mesh(new THREE.OctahedronGeometry(0.22, 0), new THREE.MeshStandardMaterial({ color: 0x5c211d, emissive: 0x7e1812, emissiveIntensity: 1.1, roughness: 0.46, metalness: 0.15 })); chunk.scale.set(0.85, 0.85, 1.8); chunk.castShadow = true; group.add(chunk);
+        for (const side of [-1, 1]) { const barb = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.34, 5), new THREE.MeshStandardMaterial({ color: 0xd16a4d, roughness: 0.5 })); barb.position.x = side * 0.18; barb.rotation.z = side * 0.9; group.add(barb); }
+      }
+      group.position.copy(start); world.add(group); hostileProjectiles.push({ group, kind, from: start, to: end, t: 0, speed, arcHeight, targetId, targetType, damage, color, impactCount });
     }
     function fire(from: THREE.Vector3, target: Enemy, damage: number, splash: number, color: number, heavy = false, arcHeight = 0) {
       const mesh = new THREE.Mesh(new THREE.SphereGeometry(heavy ? 0.11 : 0.045, 7, 5), new THREE.MeshBasicMaterial({ color })); mesh.position.copy(from); world.add(mesh);
@@ -543,8 +618,8 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, apiRef }: { s
     }
     function damageEnemy(e: Enemy, amount: number) { e.hp = clamp(e.hp - Math.max(0, amount), 0, e.maxHp); e.hitFlash = 0.09; setHealthVisual(e.group, e.hp, e.maxHp); }
     function restart() {
-      [...structures, ...enemies, ...marines].forEach(o => { removeHealthBar(o.group); world.remove(o.group); }); bullets.forEach(b => world.remove(b.mesh)); particles.forEach(p => world.remove(p.mesh));
-      structures = []; enemies = []; marines = []; bullets = []; particles = []; selectedMarines.clear(); selectedEmplacements.clear(); callbacks.current.onUnitSelected(null); credits = 750; integrity = 100; wave = 0; kills = 0; active = false; gameOver = false; victory = false; spawnLeft = 0;
+      [...structures, ...enemies, ...marines].forEach(o => { removeHealthBar(o.group); world.remove(o.group); }); bullets.forEach(b => world.remove(b.mesh)); hostileProjectiles.forEach(p => world.remove(p.group)); particles.forEach(p => world.remove(p.mesh));
+      structures = []; enemies = []; marines = []; bullets = []; hostileProjectiles = []; particles = []; selectedMarines.clear(); selectedEmplacements.clear(); callbacks.current.onUnitSelected(null); credits = 750; integrity = 100; wave = 0; kills = 0; active = false; gameOver = false; victory = false; spawnLeft = 0;
       addStructure("barracks", 3, 14, true); addStructure("rifle", 6, 14, true); addStructure("wall", 4, 15, true); addStructure("howitzer", 8, 15, true); spawnMarine(3, 13); spawnMarine(4, 14); message("COMMAND SYSTEMS RESET · AWAITING DEPLOYMENT"); emitHud(true);
     }
     function rotate() {
@@ -594,31 +669,29 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, apiRef }: { s
       for (const e of enemies) {
         e.hitFlash = Math.max(0, e.hitFlash - dt); e.attackCooldown -= dt; e.pathTimer -= dt;
         const closestMarine = marines.map(m => ({ type: "marine" as const, id: m.id, x: m.x, y: m.y, group: m.group, marine: m, d: Math.hypot(m.x - e.x, m.y - e.y) })).sort((a, b) => a.d - b.d)[0];
-        const closestEmplacement = structures.filter(isCombatStructure).map(s => ({ type: "structure" as const, id: s.id, x: s.x, y: s.y, group: s.group, structure: s, d: Math.hypot(s.x - e.x, s.y - e.y) })).sort((a, b) => a.d - b.d)[0];
-        const combatTarget = closestMarine && closestEmplacement ? (closestMarine.d <= closestEmplacement.d ? closestMarine : closestEmplacement) : closestMarine || closestEmplacement;
+        const closestDefense = structures.filter(s => s.kind === "wall" || isCombatStructure(s)).map(s => ({ type: "structure" as const, id: s.id, x: s.x, y: s.y, group: s.group, structure: s, d: Math.hypot(s.x - e.x, s.y - e.y) })).sort((a, b) => a.d - b.d)[0];
+        const combatTarget = closestMarine && closestDefense ? (closestMarine.d <= closestDefense.d ? closestMarine : closestDefense) : closestMarine || closestDefense;
         const targetType = combatTarget?.type ?? "base", targetId = combatTarget?.id ?? null, tx = combatTarget?.x ?? baseCell.x, ty = combatTarget?.y ?? baseCell.y;
         const targetChanged = e.targetType !== targetType || e.targetId !== targetId; e.targetType = targetType; e.targetId = targetId;
         if (targetChanged || e.pathTimer <= 0 || !e.path.length) { e.path = findPathTo(e.x, e.y, { x: tx, y: ty }); e.index = 0; e.pathTimer = targetType === "marine" ? 0.28 : 0.75; }
         const targetDistance = Math.hypot(tx - e.x, ty - e.y), attackRange = e.kind === "spitter" ? 3.1 : e.kind === "brute" ? 1.7 : 1.45;
-        let isMoving = false, isAttacking = false;
+        let isMoving = false, isAttacking = false, movementRate = e.speed;
         if (combatTarget && targetDistance <= attackRange) {
           isAttacking = true; e.group.rotation.y = Math.atan2(-(tx - e.x), -(ty - e.y));
           if (e.attackCooldown <= 0) {
             const hit = e.damage * (e.kind === "brute" ? 1.45 : 1); const targetPos = combatTarget.group.position;
-            hostileStrike(e.group.position, targetPos, e.kind === "spitter" ? 0x58ff9a : e.kind === "brute" ? 0xff493c : 0xff8b52, e.kind === "spitter");
-            if (combatTarget.type === "structure") { const s = combatTarget.structure; s.hp = clamp(s.hp - hit, 0, s.maxHp); setHealthVisual(s.group, s.hp, s.maxHp); if (s.hp <= 0) { message(`${ASSETS[s.kind].name.toUpperCase()} DESTROYED BY HOSTILES`); destroyStructure(s); } }
-            else { const m = combatTarget.marine; m.hp = clamp(m.hp - hit, 0, m.maxHp); setHealthVisual(m.group, m.hp, m.maxHp); }
-            burst(targetPos.clone().add(new THREE.Vector3(0, 0.55, 0)), e.kind === "spitter" ? 0x65ffac : 0xff694d, e.kind === "brute" ? 8 : 4); e.attackCooldown = e.kind === "brute" ? 1.35 : e.kind === "spitter" ? 1.15 : 0.82;
+            hostileStrike(e.kind, e.group.position, targetPos, combatTarget.type, combatTarget.id, hit); e.attackCooldown = e.kind === "brute" ? 1.35 : e.kind === "spitter" ? 1.15 : 0.82;
           }
         } else {
           const targetCell = e.path[Math.min(e.index + 1, e.path.length - 1)];
           if (targetCell) {
             const dx = targetCell.x - e.x, dy = targetCell.y - e.y, dist = Math.hypot(dx, dy);
-            if (dist < 0.025) e.index++; else { const step = Math.min(dist, e.speed * dt); e.x += dx / dist * step; e.y += dy / dist * step; e.group.rotation.y = Math.atan2(-dx, -dy); isMoving = true; }
+            const segmentStart = e.path[Math.min(e.index, e.path.length - 1)] ?? targetCell; movementRate = e.speed * terrainSpeedMultiplier(segmentStart, targetCell);
+            if (dist < 0.025) e.index++; else { const step = Math.min(dist, movementRate * dt); e.x += dx / dist * step; e.y += dy / dist * step; e.group.rotation.y = Math.atan2(-dx, -dy); isMoving = true; }
           }
         }
         const gaitSpeed = e.kind === "brute" ? 4.2 : e.kind === "spitter" ? 7.2 : 11.5;
-        const gait = elapsed * gaitSpeed * Math.max(0.65, e.speed) + e.id * 0.73;
+        const gait = elapsed * gaitSpeed * Math.max(0.65, movementRate) + e.id * 0.73;
         const legs = e.group.userData.legs as THREE.Group[] | undefined;
         const phases = e.group.userData.legPhases as number[] | undefined;
         if (legs) legs.forEach((leg, i) => { leg.rotation.x = Math.sin(gait + (phases?.[i] ?? i * Math.PI)) * (isMoving ? (e.kind === "brute" ? 0.23 : 0.42) : 0.045); });
@@ -668,6 +741,19 @@ function Battlefield({ selected, onHud, onMessage, onUnitSelected, apiRef }: { s
       }
       for (const s of [...structures]) if (s.kind === "mine") {
         const target = enemies.find(e => e.hp > 0 && Math.hypot(e.x - s.x, e.y - s.y) < 1.25); if (target) { enemies.forEach(e => { if (Math.hypot(e.x - s.x, e.y - s.y) < 1.75) damageEnemy(e, 145); }); burst(s.group.position.clone().add(new THREE.Vector3(0, 0.3, 0)), 0x6ffff3, 25); destroyStructure(s); message("SHOCK MINE DETONATED"); }
+      }
+      for (const shot of [...hostileProjectiles]) {
+        shot.t += dt * shot.speed; const progress = Math.min(1, shot.t), arc = Math.sin(progress * Math.PI) * shot.arcHeight;
+        shot.group.position.lerpVectors(shot.from, shot.to, progress); shot.group.position.y += arc; shot.group.rotateX(dt * (shot.kind === "spitter" ? 2.5 : 8)); shot.group.rotateZ(dt * (shot.kind === "brute" ? 5 : 11));
+        if (shot.kind === "spitter") shot.group.scale.setScalar(0.9 + Math.sin(elapsed * 20) * 0.12);
+        if (shot.t >= 1) {
+          if (shot.targetType === "structure") {
+            const target = structures.find(s => s.id === shot.targetId); if (target) { target.hp = clamp(target.hp - shot.damage, 0, target.maxHp); setHealthVisual(target.group, target.hp, target.maxHp); if (target.hp <= 0) { message(`${ASSETS[target.kind].name.toUpperCase()} DESTROYED BY HOSTILES`); destroyStructure(target); } }
+          } else {
+            const target = marines.find(m => m.id === shot.targetId); if (target) { target.hp = clamp(target.hp - shot.damage, 0, target.maxHp); setHealthVisual(target.group, target.hp, target.maxHp); }
+          }
+          burst(shot.to, shot.color, shot.impactCount); world.remove(shot.group); hostileProjectiles.splice(hostileProjectiles.indexOf(shot), 1);
+        }
       }
       for (const b of [...bullets]) {
         b.t += dt * b.speed; const arc = b.arcHeight ? Math.sin(Math.min(1, b.t) * Math.PI) * b.arcHeight : 0; b.mesh.position.lerpVectors(b.from, b.to, Math.min(1, b.t)); b.mesh.position.y += arc;
