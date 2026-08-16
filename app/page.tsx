@@ -88,7 +88,7 @@ const ASSETS: Record<AssetKey, { name: string; role: string; cost: number; range
   rifle: { name: "M240 Gun Team", role: "Sustained fire · Anti-swarm", cost: 150, range: 4.7, icon: "⌖", accent: "#9fe870" },
   sentry: { name: "GAU-19 Sentry", role: "Fast tracking · Heavy burst", cost: 250, range: 5.6, icon: "◉", accent: "#62e8ff" },
   flak: { name: "Aegis Flak Turret", role: "Air dominance · Ground fallback", cost: 300, range: 7.1, icon: "✹", accent: "#8fdfff" },
-  flame: { name: "Inferno Turret", role: "Short range · Burning splash", cost: 210, range: 3.25, icon: "♨", accent: "#ff875c" },
+  flame: { name: "Inferno Turret", role: "Close cone · Heavy burn", cost: 210, range: 2.45, icon: "♨", accent: "#ff875c" },
   laser: { name: "Helios Laser Tower", role: "Instant beam · Precision damage", cost: 360, range: 7.2, icon: "◇", accent: "#ff4ff5" },
   railgun: { name: "M-90 Rail Turret", role: "Long range · Armor piercing", cost: 410, range: 9.6, icon: "↯", accent: "#b889ff" },
   tank: { name: "Tank", role: "Armored mobile cannon", cost: 600, range: 6.4, icon: "▱", accent: "#b8d16f" },
@@ -106,11 +106,11 @@ const ASSETS: Record<AssetKey, { name: string; role: string; cost: number; range
 
 const DEPLOYABLE_ASSET_KEYS = (Object.keys(ASSETS) as AssetKey[]).filter((key): key is DeployableAssetKey => key !== "tank" && key !== "howitzer");
 
-const TURRET_STATS: Record<CombatKey, { damage: number; cooldown: number; splash: number; arcHeight: number; color: number; heavy: boolean; turnSpeed: number; beam?: boolean; airDamageMultiplier?: number }> = {
+const TURRET_STATS: Record<CombatKey, { damage: number; cooldown: number; splash: number; arcHeight: number; color: number; heavy: boolean; turnSpeed: number; beam?: boolean; flameCone?: boolean; airDamageMultiplier?: number }> = {
   rifle: { damage: 5.8, cooldown: 0.15, splash: 0, arcHeight: 0, color: 0xd6ff81, heavy: false, turnSpeed: 8 },
   sentry: { damage: 18, cooldown: 0.31, splash: 0.25, arcHeight: 0, color: 0x61e8ff, heavy: false, turnSpeed: 11 },
   flak: { damage: 54, cooldown: 0.68, splash: 1.35, arcHeight: 0.12, color: 0x8fdfff, heavy: true, turnSpeed: 9, airDamageMultiplier: 2.2 },
-  flame: { damage: 13, cooldown: 0.2, splash: 0.82, arcHeight: 0.18, color: 0xff713d, heavy: false, turnSpeed: 7 },
+  flame: { damage: 34, cooldown: 0.3, splash: 0, arcHeight: 0, color: 0xff713d, heavy: false, turnSpeed: 7, flameCone: true },
   laser: { damage: 68, cooldown: 0.72, splash: 0, arcHeight: 0, color: 0xff4ff5, heavy: false, turnSpeed: 6.5, beam: true },
   railgun: { damage: 185, cooldown: 2.8, splash: 0, arcHeight: 0, color: 0xc090ff, heavy: true, turnSpeed: 4.4 },
   tank: { damage: 92, cooldown: 1.15, splash: 0.42, arcHeight: 0, color: 0xd8ef83, heavy: true, turnSpeed: 4.8 },
@@ -2014,6 +2014,23 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       }
       return bestTarget;
     }
+    function infernoCone(origin: THREE.Vector3, turret: Structure, range: number, damage: number, sourceCell: string, obstacles: Map<string, number>) {
+      const forward = new THREE.Vector2(-Math.sin(turret.group.rotation.y), -Math.cos(turret.group.rotation.y));
+      const coneThreshold = Math.cos(0.68);
+      const victims = enemies.filter(enemy => {
+        if (enemy.hp <= 0 || FLYING_ENEMIES.has(enemy.kind)) return false;
+        const offset = new THREE.Vector2(enemy.x - turret.x, enemy.y - turret.y), distance = offset.length();
+        return distance > 0.18 && distance <= range && offset.normalize().dot(forward) >= coneThreshold && hasDirectLineOfFire(origin, enemy, sourceCell, obstacles);
+      });
+      victims.forEach(enemy => {
+        const distance = Math.hypot(enemy.x - turret.x, enemy.y - turret.y);
+        damageEnemy(enemy, damage * (1 - distance / range * 0.28)); provokeEnemy(enemy, turret.id);
+      });
+      const direction = new THREE.Vector3(forward.x, 0, forward.y), plume = new THREE.Mesh(new THREE.ConeGeometry(range * 0.42, range, 12, 1, true), new THREE.MeshBasicMaterial({ color: 0xff6b2d, transparent: true, opacity: 0.44, depthWrite: false, blending: THREE.AdditiveBlending }));
+      plume.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction); plume.position.copy(origin).addScaledVector(direction, range * 0.5); plume.renderOrder = 17; world.add(plume);
+      particles.push({ mesh: plume, velocity: new THREE.Vector3(), life: 0.12, maxLife: 0.12 });
+      burst(origin.clone().addScaledVector(direction, range * 0.46), 0xffbd57, 4, 0.45);
+    }
     function laserStrike(from: THREE.Vector3, target: Enemy, damage: number, color: number) {
       const to = target.group.position.clone().add(new THREE.Vector3(0, 0.48, 0)), direction = to.clone().sub(from), length = direction.length(), midpoint = from.clone().add(to).multiplyScalar(0.5);
       for (const [radius, opacity] of [[0.035, 1], [0.11, 0.24]] as const) {
@@ -2287,14 +2304,14 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
         if (isMoving) continue;
         const terrainX = clamp(Math.round(s.x), 0, GRID_W - 1), terrainY = clamp(Math.round(s.y), 0, GRID_H - 1);
         const stats = TURRET_STATS[s.kind], levelDamage = 1 + (s.level - 1) * 0.42, levelSpeed = 1 + (s.level - 1) * 0.18;
-        const range = ASSETS[s.kind].range + (s.level - 1) * 0.65 + heights[terrainY][terrainX] * 0.9;
+        const range = s.kind === "flame" ? ASSETS.flame.range + (s.level - 1) * 0.15 : ASSETS[s.kind].range + (s.level - 1) * 0.65 + heights[terrainY][terrainX] * 0.9;
         const muzzle = s.group.userData.muzzle as THREE.Object3D | undefined, firingOrigin = muzzle ? muzzle.getWorldPosition(new THREE.Vector3()) : s.group.position.clone().add(new THREE.Vector3(0, 1.05, 0));
         const indirectFire = s.kind === "howitzer" || s.kind === "missile";
-        const candidates = enemies.filter(e => e.hp > 0 && isRevealed(e.x, e.y) && Math.hypot(e.x - s.x, e.y - s.y) <= range && (indirectFire || hasDirectLineOfFire(firingOrigin, e, keyOf(terrainX, terrainY), directFireObstacles)));
+        const candidates = enemies.filter(e => e.hp > 0 && (s.kind !== "flame" || !FLYING_ENEMIES.has(e.kind)) && isRevealed(e.x, e.y) && Math.hypot(e.x - s.x, e.y - s.y) <= range && (indirectFire || hasDirectLineOfFire(firingOrigin, e, keyOf(terrainX, terrainY), directFireObstacles)));
         const target = indirectFire ? chooseArtilleryTarget(candidates, stats.damage * levelDamage, aoeRadius(stats.splash)) : chooseDistributedTarget(candidates, s.id);
         if (target) {
           turnToward(s.group, Math.atan2(-(target.x - s.x), -(target.y - s.y)), stats.turnSpeed, dt);
-          if (s.cooldown <= 0) { const targetMultiplier = FLYING_ENEMIES.has(target.kind) ? stats.airDamageMultiplier ?? AIR_DAMAGE_MULTIPLIER : 1, shotDamage = stats.damage * levelDamage * targetMultiplier; if (stats.beam) laserStrike(firingOrigin, target, shotDamage, stats.color); else fire(firingOrigin, target, shotDamage, stats.splash, stats.color, stats.heavy, stats.arcHeight, false, indirectFire ? s.id : undefined); s.cooldown = stats.cooldown / levelSpeed; }
+          if (s.cooldown <= 0) { const targetMultiplier = FLYING_ENEMIES.has(target.kind) ? stats.airDamageMultiplier ?? AIR_DAMAGE_MULTIPLIER : 1, shotDamage = stats.damage * levelDamage * targetMultiplier; if (stats.flameCone) infernoCone(firingOrigin, s, range, shotDamage, keyOf(terrainX, terrainY), directFireObstacles); else if (stats.beam) laserStrike(firingOrigin, target, shotDamage, stats.color); else fire(firingOrigin, target, shotDamage, stats.splash, stats.color, stats.heavy, stats.arcHeight, false, indirectFire ? s.id : undefined); s.cooldown = stats.cooldown / levelSpeed; }
         }
       }
       for (const m of marines) {
