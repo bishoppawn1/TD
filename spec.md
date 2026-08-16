@@ -116,11 +116,11 @@ A single-use proximity explosive. It detonates when an enemy comes close and dea
 
 ### Field Barracks — 425 credits
 
-A support structure where the player can queue any number or mix of riflemen, heavy gunners, combat medics, and rocketeers. Every infantry order takes five seconds to train, and the selected barracks displays the full ordered queue while additional units wait to deploy beside the building.
+A support structure where the player can queue any number or mix of riflemen, heavy gunners, combat medics, and rocketeers. Every infantry order takes five seconds to train, and the selected barracks displays the full ordered queue. Right-clicking clear, reachable ground while the barracks is selected assigns a persistent rally point; completed infantry deploy beside the building and automatically route to it.
 
 ### Machining Factory — 700 credits
 
-A heavy-production structure occupying a true two-by-two grid footprint. Its entire footprint blocks movement and must be placed on four clear, dry construction cells. Tanks and M777 Howitzers cannot be placed directly from the construction panel: the player can queue any number or mix of both, the factory displays their full build order, each takes 30 seconds to assemble sequentially, and completed units deploy beside the factory.
+A heavy-production structure occupying a true two-by-two grid footprint. Its entire footprint blocks movement and must be placed on four clear, dry construction cells. Tanks and M777 Howitzers cannot be placed directly from the construction panel: the player can queue any number or mix of both, the factory displays their full build order, and each takes 30 seconds to assemble sequentially. A selected factory accepts a clear-ground rally point by right-click; completed vehicles deploy beside the factory and automatically route to it.
 
 ## Friendly Units
 

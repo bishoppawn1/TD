@@ -118,7 +118,7 @@ type Hud = { credits: number; integrity: number; wave: number; enemies: number; 
 type Cell = { x: number; y: number };
 type MoveWaypoint = Cell & { lift: number };
 type ProductionOrder = { category: "marine"; kind: MarineKind; name: string; duration: number } | { category: "factory"; kind: FactoryUnitKind; name: string; duration: number };
-type Structure = { id: number; kind: AssetKey; level: number; x: number; y: number; targetX: number; targetY: number; footprint: Cell[]; hp: number; maxHp: number; mountedOn?: number; mountTarget?: number; movePath: MoveWaypoint[]; pathIndex: number; lift: number; stackLevel: number; group: THREE.Group; cooldown: number; productionQueue: ProductionOrder[]; productionRemaining: number };
+type Structure = { id: number; kind: AssetKey; level: number; x: number; y: number; targetX: number; targetY: number; footprint: Cell[]; hp: number; maxHp: number; mountedOn?: number; mountTarget?: number; movePath: MoveWaypoint[]; pathIndex: number; lift: number; stackLevel: number; group: THREE.Group; cooldown: number; productionQueue: ProductionOrder[]; productionRemaining: number; rallyPoint?: Cell; rallyMarker?: THREE.Group };
 type Enemy = { id: number; kind: AlienKind; x: number; y: number; hp: number; maxHp: number; speed: number; damage: number; reward: number; path: Cell[]; index: number; group: THREE.Group; hitFlash: number; attackCooldown: number; pathTimer: number; targetBiasSeed: number; targetId: number | null; targetType: "marine" | "structure" | "base"; retaliateAgainstId?: number; wireContactId?: number };
 type Marine = { id: number; kind: MarineKind; x: number; y: number; targetX: number; targetY: number; vx: number; vy: number; hp: number; maxHp: number; memberHp: number[]; stacked: boolean; cooldown: number; supportCooldown: number; mountedOn?: number; mountTarget?: number; trenchId?: number; movePath: MoveWaypoint[]; pathIndex: number; lift: number; group: THREE.Group };
 type ProjectilePool = "light" | "heavy" | "rocket";
@@ -126,7 +126,7 @@ type Bullet = { mesh: THREE.Object3D; pool: ProjectilePool; from: THREE.Vector3;
 type HostileProjectile = { group: THREE.Group; kind: AlienKind; from: THREE.Vector3; to: THREE.Vector3; t: number; speed: number; arcHeight: number; targetId: number; targetType: "marine" | "structure"; damage: number; color: number; impactCount: number };
 type Particle = { mesh: THREE.Mesh; velocity: THREE.Vector3; life: number; maxLife: number };
 type SelectedUnit = { id: number; kind: UpgradableKey; name: string; level: number; maxLevel: number; upgradeCost: number | null; damage: number; range: number; maxHp: number; support: boolean };
-type ProductionBuildingInfo = { id: number; kind: "barracks" | "factory"; currentName: string | null; remaining: number; duration: number; queueLength: number; queue: Array<{ name: string; duration: number }> };
+type ProductionBuildingInfo = { id: number; kind: "barracks" | "factory"; currentName: string | null; remaining: number; duration: number; queueLength: number; queue: Array<{ name: string; duration: number }>; rallyPoint: Cell | null };
 type GameMode = "campaign" | "tester";
 type TestWaveConfig = { wave: number; enemyCount: number };
 type BattlefieldApi = { start: (config?: TestWaveConfig) => void; restart: () => void; rotate: () => void; upgradeSelected: () => void; recruit: (kind: MarineKind) => void; produce: (kind: FactoryUnitKind) => void };
@@ -1455,8 +1455,8 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
     function publishProductionSelection(force = false) {
       const building = structures.find(s => s.id === selectedProductionId && isProductionBuilding(s));
       const current = building?.productionQueue[0];
-      const info: ProductionBuildingInfo | null = building ? { id: building.id, kind: building.kind as "barracks" | "factory", currentName: current?.name ?? null, remaining: current ? Math.max(0, Math.ceil(building.productionRemaining)) : 0, duration: current?.duration ?? 0, queueLength: building.productionQueue.length, queue: building.productionQueue.map(order => ({ name: order.name, duration: order.duration })) } : null;
-      const snapshot = info ? `${info.id}:${info.currentName}:${info.remaining}:${info.queue.map(order => order.name).join(",")}` : "none";
+      const info: ProductionBuildingInfo | null = building ? { id: building.id, kind: building.kind as "barracks" | "factory", currentName: current?.name ?? null, remaining: current ? Math.max(0, Math.ceil(building.productionRemaining)) : 0, duration: current?.duration ?? 0, queueLength: building.productionQueue.length, queue: building.productionQueue.map(order => ({ name: order.name, duration: order.duration })), rallyPoint: building.rallyPoint ?? null } : null;
+      const snapshot = info ? `${info.id}:${info.currentName}:${info.remaining}:${info.queue.map(order => order.name).join(",")}:${info.rallyPoint ? `${info.rallyPoint.x},${info.rallyPoint.y}` : "none"}` : "none";
       if (!force && snapshot === lastProductionSnapshot) return;
       lastProductionSnapshot = snapshot; callbacks.current.onProductionSelected(info);
     }
@@ -1577,6 +1577,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
     }
     function destroyStructure(s: Structure, salvaged = false) {
       if (!structures.includes(s)) return;
+      if (s.rallyMarker) { discardWorldObject(s.rallyMarker); s.rallyMarker = undefined; }
       if (s.kind === "trench") marines.filter(m => m.trenchId === s.id).forEach(m => { m.trenchId = undefined; m.lift = 0; });
       const collapsingWalls = isWall(s) ? structures.filter(other => isWall(other) && other.x === s.x && other.y === s.y && other.stackLevel >= s.stackLevel) : [];
       const collapsingWallIds = new Set(collapsingWalls.map(wall => wall.id));
@@ -1665,7 +1666,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
     function selectProductionBuildingAt(x: number, y: number) {
       const building = structures.find(s => isProductionBuilding(s) && structureOccupiesCell(s, x, y)); if (!building) return false;
       selectedMarines.clear(); selectedEmplacements.clear(); refreshSelection(); publishStructureSelection(); selectedProductionId = building.id; publishProductionSelection(true);
-      message(building.kind === "factory" ? "MACHINING FACTORY SELECTED · HEAVY UNIT ASSEMBLY ONLINE" : "BARRACKS SELECTED · FIVE-SECOND INFANTRY TRAINING ONLINE"); return true;
+      message(building.kind === "factory" ? "MACHINING FACTORY SELECTED · RIGHT-CLICK CLEAR GROUND TO SET RALLY" : "BARRACKS SELECTED · RIGHT-CLICK CLEAR GROUND TO SET RALLY"); return true;
     }
     function queueProduction(building: Structure, order: ProductionOrder, cost: number) {
       if (gameOver) return message("PRODUCTION OFFLINE · OPERATION HAS ENDED");
@@ -1693,12 +1694,40 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       ].filter(cell => cell.x >= 0 && cell.y >= 0 && cell.x < GRID_W && cell.y < GRID_H && !isWaterCell(cell.x, cell.y));
       return candidates.find(cell => !structures.some(s => isPathBlocking(s) && structureOccupiesCell(s, cell.x, cell.y))) ?? candidates[0] ?? { x: clamp(Math.round(building.x + 1), 0, GRID_W - 1), y: clamp(Math.round(building.y), 0, GRID_H - 1) };
     }
+    function createRallyMarker(building: Structure, point: Cell) {
+      if (building.rallyMarker) discardWorldObject(building.rallyMarker);
+      const marker = new THREE.Group(), color = new THREE.Color(ASSETS[building.kind].accent);
+      const material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.94, depthTest: false, depthWrite: false, side: THREE.DoubleSide });
+      const outerRing = new THREE.Mesh(new THREE.RingGeometry(0.42, 0.55, 28), material);
+      outerRing.rotation.x = -Math.PI / 2; outerRing.renderOrder = 30; marker.add(outerRing);
+      const innerRing = new THREE.Mesh(new THREE.RingGeometry(0.16, 0.22, 20), material);
+      innerRing.rotation.x = -Math.PI / 2; innerRing.position.y = 0.015; innerRing.renderOrder = 30; marker.add(innerRing);
+      const indicator = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.42, 6), material);
+      indicator.rotation.x = Math.PI; indicator.position.y = 0.8; indicator.renderOrder = 30; marker.add(indicator);
+      marker.position.copy(worldPos(point.x, point.y, 0.065)); marker.userData.indicator = indicator; marker.userData.phase = building.id * 0.73; world.add(marker); building.rallyMarker = marker;
+    }
+    function setProductionRally(x: number, y: number) {
+      const building = structures.find(s => s.id === selectedProductionId && isProductionBuilding(s));
+      if (!building) return false;
+      if (isWaterCell(x, y)) { message("RALLY POINT REQUIRES DRY GROUND · WATER IS IMPASSABLE"); return true; }
+      if (structures.some(s => isPathBlocking(s) && structureOccupiesCell(s, x, y))) { message("RALLY POINT BLOCKED · CHOOSE CLEAR GROUND"); return true; }
+      if (!groundRoute(productionExit(building), { x, y }).length) { message("NO SAFE ROUTE TO RALLY POINT · WATER OR FORTIFICATIONS BLOCK THE WAY"); return true; }
+      building.rallyPoint = { x, y }; createRallyMarker(building, building.rallyPoint); publishProductionSelection(true);
+      message(`${building.kind === "factory" ? "FACTORY" : "BARRACKS"} RALLY POINT SET · NEW ${building.kind === "factory" ? "VEHICLES" : "INFANTRY"} WILL MOVE TO GRID ${x},${y}`); return true;
+    }
     function finishProduction(building: Structure, order: ProductionOrder) {
       const exit = productionExit(building);
-      if (order.category === "marine") spawnMarine(order.kind, exit.x, exit.y);
-      else addStructure(order.kind, exit.x, exit.y, true);
+      let dispatched = false;
+      if (order.category === "marine") {
+        const unitId = spawnMarine(order.kind, exit.x, exit.y, undefined, false), unit = marines.find(marine => marine.id === unitId)!;
+        dispatched = building.rallyPoint ? planFriendlyMove(unit, building.rallyPoint) : false;
+        if (!dispatched) compactMarineStacks();
+      } else {
+        const unit = addStructure(order.kind, exit.x, exit.y, true);
+        dispatched = building.rallyPoint ? planFriendlyMove(unit, building.rallyPoint) : false;
+      }
       burst(worldPos(exit.x, exit.y, 0.45), order.category === "marine" ? 0x67c8ff : 0xe5ba67, 10);
-      message(`${order.name.toUpperCase()} PRODUCTION COMPLETE · UNIT DEPLOYED BESIDE ${building.kind === "factory" ? "FACTORY" : "BARRACKS"}`);
+      message(`${order.name.toUpperCase()} PRODUCTION COMPLETE · UNIT DEPLOYED BESIDE ${building.kind === "factory" ? "FACTORY" : "BARRACKS"}${building.rallyPoint ? dispatched ? " · MOVING TO RALLY POINT" : " · RALLY ROUTE CURRENTLY BLOCKED" : ""}`);
     }
     function updateProduction(dt: number) {
       for (const building of structures.filter(isProductionBuilding)) {
@@ -1896,6 +1925,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       e.retaliateAgainstId = sourceStructureId; e.pathTimer = 0;
     }
     function restart() {
+      structures.forEach(s => { if (s.rallyMarker) discardWorldObject(s.rallyMarker); });
       [...structures, ...enemies, ...marines].forEach(o => { removeHealthBar(o.group); discardWorldObject(o.group); }); bullets.forEach(b => releaseProjectile(b.mesh, b.pool)); hostileProjectiles.forEach(p => discardWorldObject(p.group)); particles.forEach(p => discardWorldObject(p.mesh));
       structures = []; enemies = []; marines = []; bullets = []; hostileProjectiles = []; particles = []; enemyRouteCache.clear(); routeRevision++; selectedMarines.clear(); selectedEmplacements.clear(); selectedProductionId = null; lastProductionSnapshot = ""; callbacks.current.onUnitSelected(null); callbacks.current.onProductionSelected(null); credits = testerMode ? Infinity : 750; integrity = 100; wave = 0; kills = 0; active = false; buildTimer = 0; gameOver = false; victory = false; spawnLeft = 0; spawnTimer = 0; assaultFront = 0;
       deployStartingForces(); message(testerMode ? "UNIT TEST RANGE RESET · UNLIMITED ASSETS ONLINE" : "COMMAND SYSTEMS RESET · AWAITING DEPLOYMENT"); emitHud(true);
@@ -1935,7 +1965,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       if (stackOrder) { tryPlace(x, y); return; }
       if (selectProductionBuildingAt(x, y)) return; if (selectUnitAt(x, y, e.shiftKey)) { selectedProductionId = null; publishProductionSelection(true); return; } if (!selectedMarines.size && !selectedEmplacements.size) { selectedProductionId = null; publishProductionSelection(true); tryPlace(x, y); }
     }
-    function onContext(e: MouseEvent) { e.preventDefault(); if (Math.hypot(e.clientX - rightDownX, e.clientY - rightDownY) > 6) return; const tile = pick(e as PointerEvent); if (!tile) return; if (e.shiftKey) removeStructureAt(tile.cell.x, tile.cell.y); else if (!commandFormation(tile.cell.x, tile.cell.y)) message("SELECT RIFLEMEN OR CREWED WEAPONS WITH A CLICK OR DRAG BOX FIRST"); }
+    function onContext(e: MouseEvent) { e.preventDefault(); if (Math.hypot(e.clientX - rightDownX, e.clientY - rightDownY) > 6) return; const tile = pick(e as PointerEvent); if (!tile) return; if (e.shiftKey) removeStructureAt(tile.cell.x, tile.cell.y); else if (setProductionRally(tile.cell.x, tile.cell.y)) return; else if (!commandFormation(tile.cell.x, tile.cell.y)) message("SELECT INFANTRY, CREWED WEAPONS, OR A PRODUCTION BUILDING FIRST"); }
     function onKey(e: KeyboardEvent) { heldKeys.add(e.key.toLowerCase()); if (e.key.toLowerCase() === "r") rotate(); if (e.key === "Escape") { selectedMarines.clear(); selectedEmplacements.clear(); selectedProductionId = null; refreshSelection(); publishStructureSelection(); publishProductionSelection(true); } if (e.code === "Space") { e.preventDefault(); if (testerMode) message("USE THE UNIT TEST CONSOLE TO LAUNCH AN EXACT WAVE"); else startWave(); } }
     function onKeyUp(e: KeyboardEvent) { heldKeys.delete(e.key.toLowerCase()); }
     renderer.domElement.addEventListener("pointermove", onMove, true); renderer.domElement.addEventListener("pointerdown", onDown, true); renderer.domElement.addEventListener("pointerup", onUp, true); renderer.domElement.addEventListener("contextmenu", onContext); window.addEventListener("keydown", onKey); window.addEventListener("keyup", onKeyUp);
@@ -2129,6 +2159,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
         s.cooldown -= dt;
         const scanRig = s.group.userData.scanRig as THREE.Group | undefined; if (scanRig) scanRig.rotation.y += dt * 0.42;
         const factoryRig = s.group.userData.factoryRig as THREE.Group | undefined; if (factoryRig && s.productionQueue.length) factoryRig.rotation.y += dt * 0.7;
+        if (s.rallyMarker) { s.rallyMarker.rotation.y = elapsed * 0.55; const indicator = s.rallyMarker.userData.indicator as THREE.Mesh; indicator.position.y = 0.78 + Math.sin(elapsed * 2.6 + (s.rallyMarker.userData.phase as number)) * 0.1; }
         let isMoving = false;
         if (isMobileEmplacement(s)) {
           const movementSpeed = s.kind === "howitzer" ? 0.26 : s.kind === "tank" ? 0.58 : 0.42;
@@ -2241,7 +2272,7 @@ export default function Home() {
   const apiRef = useRef<BattlefieldApi | null>(null);
   const messageTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const testerMode = gameMode === "tester";
-  const showMessage = (text: string) => { setMessage(text); if (messageTimer.current) clearTimeout(messageTimer.current); messageTimer.current = setTimeout(() => setMessage(testerMode ? "UNIT TEST RANGE READY · ASSET SUPPLY UNLIMITED" : "COMMAND LINK STABLE · RIGHT-CLICK TO SALVAGE"), 4200); };
+  const showMessage = (text: string) => { setMessage(text); if (messageTimer.current) clearTimeout(messageTimer.current); messageTimer.current = setTimeout(() => setMessage(testerMode ? "UNIT TEST RANGE READY · ASSET SUPPLY UNLIMITED" : "COMMAND LINK STABLE · RIGHT-CLICK MOVES OR SETS RALLY · SHIFT SALVAGES"), 4200); };
   const map = MAPS[mapKey];
   const formatBuildTime = (seconds: number) => `00:${String(seconds).padStart(2, "0")}`;
   const selectMap = (nextMap: MapKey) => {
@@ -2282,7 +2313,7 @@ export default function Home() {
           <small>SELECTED BUILDING</small><div className="barracks-heading"><div><b>{selectedProduction.kind === "factory" ? "MACHINING FACTORY" : "FIELD BARRACKS"}</b><span>{selectedProduction.kind === "factory" ? "HEAVY VEHICLE ASSEMBLY · 2×2" : "INFANTRY TRAINING BAY"}</span></div><em>{selectedProduction.currentName ? `00:${String(selectedProduction.remaining).padStart(2, "0")}` : "READY"}</em></div>
           <div className="production-status"><span><b>{selectedProduction.currentName ?? "PRODUCTION IDLE"}</b><small>{selectedProduction.queueLength ? `${selectedProduction.queueLength} ORDER${selectedProduction.queueLength === 1 ? "" : "S"} IN QUEUE · ADD MORE ANY TIME` : "SELECT A UNIT TO BEGIN"}</small></span><i><b style={{ width: `${selectedProduction.currentName ? clamp((selectedProduction.duration - selectedProduction.remaining) / selectedProduction.duration * 100, 0, 100) : 0}%` }} /></i>{selectedProduction.queue.length > 0 && <ol className="production-queue" aria-label="Production queue">{selectedProduction.queue.map((order, index) => <li key={`${order.name}-${index}`}><em>{String(index + 1).padStart(2, "0")}</em><b>{order.name}</b><small>{index === 0 ? "BUILDING" : `${order.duration} SEC`}</small></li>)}</ol>}</div>
           {selectedProduction.kind === "barracks" ? <div className="recruit-list">{(Object.keys(MARINE_STATS) as MarineKind[]).map(kind => { const unit = MARINE_STATS[kind]; return <button key={kind} disabled={!testerMode && hud.credits < unit.cost} onClick={() => apiRef.current?.recruit(kind)} style={{ "--unit-color": unit.color } as React.CSSProperties}><span>{kind === "rifleman" ? "⌖" : kind === "gunner" ? "▣" : kind === "medic" ? "+" : "➶"}</span><div><b>{unit.name}</b><small>{unit.role} · 5 sec</small></div><em>{testerMode ? "FREE" : `¤ ${unit.cost}`}</em></button>; })}</div> : <div className="recruit-list">{(["tank", "howitzer"] as FactoryUnitKind[]).map(kind => { const unit = ASSETS[kind]; return <button key={kind} disabled={!testerMode && hud.credits < unit.cost} onClick={() => apiRef.current?.produce(kind)} style={{ "--unit-color": unit.accent } as React.CSSProperties}><span>{unit.icon}</span><div><b>{unit.name}</b><small>{unit.role} · 30 sec</small></div><em>{testerMode ? "FREE" : `¤ ${unit.cost}`}</em></button>; })}</div>}
-          <p>{selectedProduction.kind === "factory" ? "Queue any number of Tanks and M777 Howitzers in any order. Completed units deploy beside the factory." : "Queue any number or mix of infantry. Each specialist completes a five-second cycle before the next order begins."}</p>
+          <p><b>{selectedProduction.rallyPoint ? `RALLY GRID ${selectedProduction.rallyPoint.x},${selectedProduction.rallyPoint.y}` : "NO RALLY POINT"}</b> · Right-click clear ground to set where completed {selectedProduction.kind === "factory" ? "vehicles" : "infantry"} automatically move. {selectedProduction.kind === "factory" ? "Queue Tanks and M777 Howitzers in any order." : "Each infantry specialist completes a five-second training cycle."}</p>
         </div>}
         <div className="camera-tools"><button onClick={() => apiRef.current?.rotate()} aria-label="Rotate camera">↻</button><span>ORBIT</span></div>
         {briefing && <div className="briefing map-briefing"><div className="briefing-id">DEPLOYMENT MODE // FIVE ACTIVE SECTORS</div><h1>Choose how you want to play.</h1><p>Run each battlefield&apos;s progressive campaign or open a combat laboratory with exact wave controls and unlimited friendly assets.</p><div className="mode-selector" aria-label="Game mode"><button className={gameMode === "campaign" ? "active" : ""} aria-pressed={gameMode === "campaign"} onClick={() => selectMode("campaign")}><small>STANDARD OPERATION</small><b>CAMPAIGN</b><span>Credits, build windows, and progressively longer operations.</span></button><button className={gameMode === "tester" ? "active" : ""} aria-pressed={gameMode === "tester"} onClick={() => selectMode("tester")}><small>COMBAT LABORATORY</small><b>UNIT TESTER</b><span>Pick a wave and alien count. All defenses, upgrades, and infantry are free.</span></button></div><div className="map-selector" aria-label="Available battlefields">{MAP_ORDER.map(key => { const option = MAPS[key]; const pipPosition = (cell: Cell) => ({ left: `${(cell.x / (GRID_W - 1)) * 100}%`, top: `${(cell.y / (GRID_H - 1)) * 100}%` }); return <button key={key} className={`map-option ${mapKey === key ? "active" : ""}`} aria-pressed={mapKey === key} onClick={() => selectMap(key)}><span className={`map-preview ${key}`} aria-hidden="true"><i className="base-pip" style={pipPosition(option.baseCell)} />{option.spawnCells.map((cell, index) => <i key={`${cell.x}-${cell.y}-${index}`} className="portal-pip" style={pipPosition(cell)} />)}</span><small>{option.terrain}</small><b>{option.name}</b><em>{option.objective} · {option.waveCount} campaign waves</em></button>; })}</div><p className="map-description"><b>{testerMode ? "UNIT TEST RANGE" : `OPERATION ${map.operation} · SECTOR ${map.sector}`}</b>{testerMode ? `Use ${map.name} to test any wave from 1 to ${FINAL_MAP_WAVES} against a custom force of up to 5,000 aliens.` : map.description}</p><div className="brief-grid"><span><kbd>{testerMode ? "WAVE 1–25" : "LIGHT TOWER"}</kbd><b>{testerMode ? "Choose enemy strength and unit mix" : "Reveal a wide area"}</b></span><span><kbd>{testerMode ? "1–5,000" : "RIGHT CLICK"}</kbd><b>{testerMode ? "Set the exact alien population" : "Move scouts forward"}</b></span><span><kbd>{testerMode ? "UNLIMITED" : "STACK WALLS"}</kbd><b>{testerMode ? "Place, upgrade, and recruit for free" : "Shape every approach"}</b></span><span><kbd>MIDDLE DRAG</kbd><b>Orbit camera</b></span></div><button onClick={() => setBriefing(false)}>{testerMode ? `OPEN UNIT TESTER ON ${map.name.toUpperCase()}` : `DEPLOY TO ${map.name.toUpperCase()}`}</button></div>}
@@ -2293,7 +2324,7 @@ export default function Home() {
         {DEPLOYABLE_ASSET_KEYS.map(key => { const a = ASSETS[key]; return <button key={key} disabled={hud.gameOver || (!testerMode && hud.active)} className={`asset ${selected === key ? "active" : ""}`} onClick={() => setSelected(key)} style={{ "--asset-color": a.accent } as React.CSSProperties}><span>{a.icon}</span><div><b>{a.name}</b><small>{a.role}</small></div><em>{testerMode ? "∞" : a.cost}</em></button>; })}
         <div className="intel"><span>{testerMode ? "TESTER INTEL" : "FIELD INTEL"}</span><p>{testerMode ? "Asset supply, upgrades, and infantry recruitment are unlimited—even during an active test. Water blocks all ordinary ground units; only aquatic aliens can enter it, while flyers pass above. Select a wave and exact alien population in the top console, then rerun as many configurations as you want." : "Water blocks friendly units, construction, and ordinary ground aliens. Only aquatic aliens can enter it; winged Skyrazors pass above terrain. Friendly troops climb natural terrain far faster than aliens. Buildings deploy only before a wave or during the 30-second build window. Shift + right-click salvages."}</p></div>
       </aside>
-      <footer className="controls"><span><kbd>DRAG BOX</kbd> SELECT UNITS</span><span><kbd>RIGHT CLICK</kbd> FORMATION MOVE</span><span><kbd>MIDDLE DRAG</kbd> ORBIT</span><span><kbd>WASD</kbd> GLIDE CAMERA</span><span><kbd>{testerMode ? "TEST CONSOLE" : "SPACE"}</kbd> {testerMode ? "RUN EXACT WAVE" : "START WAVE"}</span><span className="online">● GITHUB PAGES</span></footer>
+      <footer className="controls"><span><kbd>DRAG BOX</kbd> SELECT UNITS</span><span><kbd>RIGHT CLICK</kbd> MOVE / RALLY</span><span><kbd>MIDDLE DRAG</kbd> ORBIT</span><span><kbd>WASD</kbd> GLIDE CAMERA</span><span><kbd>{testerMode ? "TEST CONSOLE" : "SPACE"}</kbd> {testerMode ? "RUN EXACT WAVE" : "START WAVE"}</span><span className="online">● GITHUB PAGES</span></footer>
     </main>
   );
 }
