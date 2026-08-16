@@ -6,6 +6,8 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 type AssetKey = "rifle" | "sentry" | "flak" | "flame" | "laser" | "railgun" | "tank" | "howitzer" | "missile" | "light" | "wall" | "bastion" | "trench" | "wire" | "mine" | "barracks" | "factory";
 type DeployableAssetKey = Exclude<AssetKey, "tank" | "howitzer">;
+type TerraformMode = "terrainRaise" | "terrainLower";
+type BuildSelection = DeployableAssetKey | TerraformMode;
 type CombatKey = "rifle" | "sentry" | "flak" | "flame" | "laser" | "railgun" | "tank" | "howitzer" | "missile";
 type UpgradableKey = CombatKey | "light";
 type MarineKind = "rifleman" | "gunner" | "medic" | "rocketeer";
@@ -52,11 +54,16 @@ const RAZOR_WIRE_SLOW_MULTIPLIER = 0.32;
 // shallow cut when entering it and while crawling through it.
 const RAZOR_WIRE_ENTRY_DAMAGE = 4.5;
 const RAZOR_WIRE_DAMAGE_PER_SECOND = 6;
+const TERRAFORM_COST = 10;
+const TERRAFORM_STEP = 0.16;
+const TERRAFORM_MIN_HEIGHT = 0.04;
+const TERRAFORM_MAX_HEIGHT = 6.4;
 const TRENCH_CAPACITY = 4;
 const TRENCH_DAMAGE_MULTIPLIER = 0.6;
 const TRENCH_AUTO_ENTRY_RANGE = 1;
 const AIR_DAMAGE_MULTIPLIER = 0.45;
-const WALL_CLIMBERS = new Set<AlienKind>(["stalker", "razortail"]);
+// Ground aliens must break through or route around a wall; none can climb it.
+const WALL_CLIMBERS = new Set<AlienKind>();
 const FLYING_ENEMIES = new Set<AlienKind>(["flyer"]);
 const WATER_ALIENS = new Set<string>(["tidecrawler"]);
 const RANGED_ENEMIES = new Set<AlienKind>(["spitter", "flyer"]);
@@ -326,7 +333,7 @@ const MAPS: Record<MapKey, MapConfig> = {
 };
 const MAP_ORDER: MapKey[] = ["ridge", "basin", "divide", "ruins", "homeworld"];
 
-function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSelected, onProductionSelected, apiRef }: { selected: DeployableAssetKey; mapKey: MapKey; testerMode: boolean; onHud: (h: Hud) => void; onMessage: (s: string) => void; onUnitSelected: (unit: SelectedUnit | null) => void; onProductionSelected: (building: ProductionBuildingInfo | null) => void; apiRef: React.MutableRefObject<BattlefieldApi | null> }) {
+function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSelected, onProductionSelected, apiRef }: { selected: BuildSelection; mapKey: MapKey; testerMode: boolean; onHud: (h: Hud) => void; onMessage: (s: string) => void; onUnitSelected: (unit: SelectedUnit | null) => void; onProductionSelected: (building: ProductionBuildingInfo | null) => void; apiRef: React.MutableRefObject<BattlefieldApi | null> }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const selectedRef = useRef(selected);
   const callbacks = useRef({ onHud, onMessage, onUnitSelected, onProductionSelected });
@@ -487,7 +494,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
         mesh.setMatrixAt(index, instanceMatrix);
         mesh.setColorAt(index, cell.base);
       });
-      mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       mesh.userData.cells = cells;
       mesh.computeBoundingSphere();
       world.add(mesh);
@@ -530,10 +537,28 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       instanceMatrix.compose(new THREE.Vector3(p.x, p.y + 0.045, p.z), fogRotation, new THREE.Vector3(1, 1, 1));
       fogMesh.setMatrixAt(cell.index, instanceMatrix);
     });
-    fogMesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+    fogMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     fogMesh.renderOrder = 8;
     fogMesh.computeBoundingSphere();
     world.add(fogMesh);
+    function refreshTerrainCellVisual(cell: TerrainCell) {
+      // Terrain uses individual stepped tile instances, so height changes can
+      // stay local instead of rebuilding the whole battlefield.
+      cell.base.setHSL(map.hue + ((cell.x * 7 + cell.y * 3) % 5) * 0.006, map.saturation, 0.20 + cell.height * 0.035);
+      for (const mesh of tileMeshes) {
+        const index = (mesh.userData.cells as TerrainCell[]).indexOf(cell);
+        if (index < 0) continue;
+        const p = worldPos(cell.x, cell.y);
+        instanceMatrix.compose(new THREE.Vector3(p.x, (cell.height - 0.55) / 2, p.z), identityRotation, new THREE.Vector3(1, 0.55 + cell.height, 1));
+        mesh.setMatrixAt(index, instanceMatrix); mesh.setColorAt(index, cell.base); mesh.instanceMatrix.needsUpdate = true;
+        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+        mesh.computeBoundingSphere();
+        break;
+      }
+      const p = worldPos(cell.x, cell.y);
+      instanceMatrix.compose(new THREE.Vector3(p.x, p.y + 0.045, p.z), fogRotation, new THREE.Vector3(1, 1, 1));
+      fogMesh.setMatrixAt(cell.y * GRID_W + cell.x, instanceMatrix); fogMesh.instanceMatrix.needsUpdate = true;
+    }
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(130, 130), new THREE.MeshStandardMaterial({ color: map.ground, roughness: 1 }));
     ground.rotation.x = -Math.PI / 2; ground.position.y = -0.58; scene.add(ground);
 
@@ -1557,7 +1582,9 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
     }
 
     function tryPlace(x: number, y: number) {
-      const kind = selectedRef.current, asset = ASSETS[kind];
+      const kind = selectedRef.current;
+      if (kind === "terrainRaise" || kind === "terrainLower") return;
+      const asset = ASSETS[kind];
       if (gameOver) return;
       if (active && !testerMode) return message("CONSTRUCTION LOCKED · BUILDINGS DEPLOY BETWEEN WAVES ONLY");
       if (!testerMode && credits < asset.cost) return message("INSUFFICIENT COMMAND CREDITS");
@@ -1576,6 +1603,24 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       if (kind !== "mine" && kind !== "wire" && !canMount) invalidateEnemyRoutes();
       const action = stackingWall ? `STACKED · WALL LEVEL ${stackLevel + 1}` : canMount ? "MOUNTED ON WALL" : "DEPLOYED";
       message(`${asset.name.toUpperCase()} ${action} · ELEVATION ${Math.round((heights[y][x] + placed.lift) * 100)}M`); emitHud(true);
+    }
+    function tryTerraform(x: number, y: number, direction: 1 | -1) {
+      if (gameOver) return;
+      if (active && !testerMode) return message("CONSTRUCTION LOCKED · TERRAFORM BETWEEN WAVES ONLY");
+      const cell = terrainCells[y * GRID_W + x];
+      if (cell.water) return message("WATER TERRAIN · TERRAFORMING PROHIBITED");
+      if (cell.bridge) return message("BRIDGE DECK MUST REMAIN CLEAR");
+      if (map.decorAt?.(x, y)) return message("LANDMARK TERRAIN · TERRAFORMING PROHIBITED");
+      if (x === baseCell.x && y === baseCell.y || spawnCells.some(spawn => spawn.x === x && spawn.y === y)) return message("DEPLOYMENT ZONE PROTECTED");
+      if (structures.some(structure => structureOccupiesCell(structure, x, y))) return message("CLEAR STRUCTURES BEFORE TERRAFORMING");
+      if (!testerMode && credits < TERRAFORM_COST) return message("INSUFFICIENT COMMAND CREDITS");
+      const nextHeight = steppedHeight(clamp(cell.height + direction * TERRAFORM_STEP, TERRAFORM_MIN_HEIGHT, TERRAFORM_MAX_HEIGHT));
+      if (Math.abs(nextHeight - cell.height) < 0.01) return message(direction > 0 ? "TERRAIN ALREADY AT MAXIMUM ELEVATION" : "TERRAIN ALREADY AT MINIMUM ELEVATION");
+      if (!testerMode) credits -= TERRAFORM_COST;
+      heights[y][x] = nextHeight; cell.height = nextHeight;
+      refreshTerrainCellVisual(cell); invalidateEnemyRoutes();
+      burst(worldPos(x, y).add(new THREE.Vector3(0, 0.12, 0)), direction > 0 ? 0xd6bd7b : 0x719ec0, 5, 0.45);
+      message(`TERRAIN ${direction > 0 ? "RAISED" : "LOWERED"} · ELEVATION ${Math.round(nextHeight * 100)}M · ¤ ${TERRAFORM_COST}`); emitHud(true);
     }
     function destroyStructure(s: Structure, salvaged = false) {
       if (!structures.includes(s)) return;
@@ -1963,6 +2008,8 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
         structures.filter(isUpgradableStructure).forEach(s => { const p = s.group.getWorldPosition(new THREE.Vector3()).project(camera), sx = r.left + (p.x + 1) * r.width / 2, sy = r.top + (-p.y + 1) * r.height / 2; if (sx >= minX && sx <= maxX && sy >= minY && sy <= maxY) selectedEmplacements.add(s.id); }); selectedProductionId = null; refreshSelection(); publishStructureSelection(); publishProductionSelection(true); const count = marines.filter(marine => selectedMarines.has(marine.id)).reduce((total, marine) => total + marineTroopCount(marine), 0) + selectedEmplacements.size; message(`${count} UNIT${count === 1 ? "" : "S"} BOX-SELECTED · RIGHT-CLICK FOR COMPACT FORMATION`); return;
       }
       const tile = pick(e); if (!tile) return; const x = tile.cell.x, y = tile.cell.y;
+      const terraformMode = selectedRef.current;
+      if (terraformMode === "terrainRaise" || terraformMode === "terrainLower") { tryTerraform(x, y, terraformMode === "terrainRaise" ? 1 : -1); return; }
       const stackOrder = (selectedRef.current === "wall" || selectedRef.current === "bastion") && !!topWallAt(x, y);
       if (stackOrder) { tryPlace(x, y); return; }
       if (selectProductionBuildingAt(x, y)) return; if (selectUnitAt(x, y, e.shiftKey)) { selectedProductionId = null; publishProductionSelection(true); return; } if (!selectedMarines.size && !selectedEmplacements.size) { selectedProductionId = null; publishProductionSelection(true); tryPlace(x, y); }
@@ -2271,7 +2318,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
 }
 
 export default function Home() {
-  const [selected, setSelected] = useState<DeployableAssetKey>("rifle");
+  const [selected, setSelected] = useState<BuildSelection>("rifle");
   const [mapKey, setMapKey] = useState<MapKey>("ridge");
   const [gameMode, setGameMode] = useState<GameMode>("campaign");
   const [testWave, setTestWave] = useState(1);
@@ -2334,7 +2381,10 @@ export default function Home() {
       <aside className={`build-panel ${testerMode ? "tester" : ""} ${(!testerMode && hud.active) || hud.gameOver ? "locked" : ""}`}>
         <div className="panel-title"><small>{testerMode ? "UNIT TEST SUPPLY · UNLIMITED" : hud.active ? "CONSTRUCTION LOCKED · WAVE ACTIVE" : hud.gameOver ? "OPERATION ENDED" : hud.buildSeconds === null ? "FORWARD ENGINEERING · STAGING" : `FORWARD ENGINEERING · ${formatBuildTime(hud.buildSeconds)} LEFT`}</small><b>DEPLOYABLE ASSETS</b></div>
         {DEPLOYABLE_ASSET_KEYS.map(key => { const a = ASSETS[key]; return <button key={key} disabled={hud.gameOver || (!testerMode && hud.active)} className={`asset ${selected === key ? "active" : ""}`} onClick={() => setSelected(key)} style={{ "--asset-color": a.accent } as React.CSSProperties}><span>{a.icon}</span><div><b>{a.name}</b><small>{a.role}</small></div><em>{testerMode ? "∞" : a.cost}</em></button>; })}
-        <div className="intel"><span>{testerMode ? "TESTER INTEL" : "FIELD INTEL"}</span><p>{testerMode ? "Asset supply, upgrades, and infantry recruitment are unlimited—even during an active test. Water blocks all ordinary ground units; only aquatic aliens can enter it, while flyers pass above. Select a wave and exact alien population in the top console, then rerun as many configurations as you want." : "Water blocks friendly units, construction, and ordinary ground aliens. Only aquatic aliens can enter it; winged Skyrazors pass above terrain. Friendly troops climb natural terrain far faster than aliens. Buildings deploy only before a wave or during the 30-second build window. Shift + right-click salvages."}</p></div>
+        <div className="panel-title"><small>{testerMode ? "UNIT TEST SUPPLY · UNLIMITED" : "FORWARD ENGINEERING · ¤ 10 PER TILE"}</small><b>TERRAFORMING</b></div>
+        <button disabled={hud.gameOver || (!testerMode && hud.active)} className={`asset ${selected === "terrainRaise" ? "active" : ""}`} onClick={() => setSelected("terrainRaise")} style={{ "--asset-color": "#d6bd7b" } as React.CSSProperties}><span>▲</span><div><b>Raise Terrain</b><small>Raise one grid tile · 0.16m</small></div><em>{testerMode ? "∞" : TERRAFORM_COST}</em></button>
+        <button disabled={hud.gameOver || (!testerMode && hud.active)} className={`asset ${selected === "terrainLower" ? "active" : ""}`} onClick={() => setSelected("terrainLower")} style={{ "--asset-color": "#719ec0" } as React.CSSProperties}><span>▼</span><div><b>Lower Terrain</b><small>Lower one grid tile · 0.16m</small></div><em>{testerMode ? "∞" : TERRAFORM_COST}</em></button>
+        <div className="intel"><span>{testerMode ? "TESTER INTEL" : "FIELD INTEL"}</span><p>{testerMode ? "Asset supply, upgrades, infantry recruitment, and terraforming are unlimited—even during an active test. Water blocks all ordinary ground units; only aquatic aliens can enter it, while flyers pass above. Select a wave and exact alien population in the top console, then rerun as many configurations as you want." : "Raise or lower a clear land tile by 0.16m for 10 credits between waves. Water, bridges, landmarks, structures, portals, and the command post are protected. Ground aliens cannot climb walls: they must attack or find a way around."}</p></div>
       </aside>
       <footer className="controls"><span><kbd>DRAG BOX</kbd> SELECT UNITS</span><span><kbd>RIGHT CLICK</kbd> MOVE / RALLY</span><span><kbd>MIDDLE DRAG</kbd> ORBIT</span><span><kbd>WASD</kbd> GLIDE CAMERA</span><span><kbd>{testerMode ? "TEST CONSOLE" : "SPACE"}</kbd> {testerMode ? "RUN EXACT WAVE" : "START WAVE"}</span><span className="online">● GITHUB PAGES</span></footer>
     </main>
