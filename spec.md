@@ -67,7 +67,7 @@ Protect the command post through all 25 enemy waves.
 ## Economy
 
 - A new operation begins with 750 command credits.
-- Destroyed enemies award credits according to their class.
+- Destroyed enemies award deliberately modest bounties according to their class: common bugs pay only 2–3 credits, dangerous specialists pay up to 8, and broodlings pay 1.
 - Completing a wave grants a resupply bonus that grows with the wave number.
 - A placed asset can be salvaged for 60 percent of its original cost.
 - Combat structures can be upgraded twice by spending additional command credits.

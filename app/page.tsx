@@ -70,15 +70,15 @@ const FLYING_ENEMIES = new Set<AlienKind>(["flyer"]);
 const WATER_ALIENS = new Set<string>(["tidecrawler"]);
 const RANGED_ENEMIES = new Set<AlienKind>(["spitter", "broodmother", "flyer"]);
 const ENEMY_STATS: Record<AlienKind, { hp: number; speed: number; damage: number; reward: number; attackRange: number; attackCooldown: number; gait: number; barHeight: number }> = {
-  drone: { hp: 82, speed: 0.9, damage: 6, reward: 24, attackRange: 0.95, attackCooldown: 0.82, gait: 11.5, barHeight: 1.05 },
-  spitter: { hp: 125, speed: 0.72, damage: 7, reward: 36, attackRange: 1.9, attackCooldown: 1.4, gait: 7.2, barHeight: 1.45 },
-  brute: { hp: 340, speed: 0.48, damage: 18, reward: 65, attackRange: 1.15, attackCooldown: 1.35, gait: 4.2, barHeight: 2.05 },
-  razortail: { hp: 245, speed: 0.68, damage: 14, reward: 56, attackRange: 1.1, attackCooldown: 1.15, gait: 6.2, barHeight: 1.75 },
-  stalker: { hp: 64, speed: 1.85, damage: 5, reward: 30, attackRange: 0.9, attackCooldown: 0.48, gait: 18, barHeight: 0.95 },
-  strider: { hp: 118, speed: 0.7, damage: 10, reward: 48, attackRange: 1.2, attackCooldown: 1.9, gait: 5.4, barHeight: 1.8 },
-  broodmother: { hp: 285, speed: 0.52, damage: 14, reward: 75, attackRange: 3, attackCooldown: 2.75, gait: 3.8, barHeight: 2.2 },
-  flyer: { hp: 70, speed: 1.18, damage: 7, reward: 42, attackRange: 2.05, attackCooldown: 1.25, gait: 14, barHeight: 3.1 },
-  prowler: { hp: 155, speed: 1.08, damage: 11, reward: 52, attackRange: 1.1, attackCooldown: 0.68, gait: 10.2, barHeight: 1.15 },
+  drone: { hp: 82, speed: 0.9, damage: 6, reward: 2, attackRange: 0.95, attackCooldown: 0.82, gait: 11.5, barHeight: 1.05 },
+  spitter: { hp: 125, speed: 0.72, damage: 7, reward: 3, attackRange: 1.9, attackCooldown: 1.4, gait: 7.2, barHeight: 1.45 },
+  brute: { hp: 340, speed: 0.48, damage: 18, reward: 7, attackRange: 1.15, attackCooldown: 1.35, gait: 4.2, barHeight: 2.05 },
+  razortail: { hp: 245, speed: 0.68, damage: 14, reward: 6, attackRange: 1.1, attackCooldown: 1.15, gait: 6.2, barHeight: 1.75 },
+  stalker: { hp: 64, speed: 1.85, damage: 5, reward: 2, attackRange: 0.9, attackCooldown: 0.48, gait: 18, barHeight: 0.95 },
+  strider: { hp: 118, speed: 0.7, damage: 10, reward: 4, attackRange: 1.2, attackCooldown: 1.9, gait: 5.4, barHeight: 1.8 },
+  broodmother: { hp: 285, speed: 0.52, damage: 14, reward: 8, attackRange: 3, attackCooldown: 2.75, gait: 3.8, barHeight: 2.2 },
+  flyer: { hp: 70, speed: 1.18, damage: 7, reward: 3, attackRange: 2.05, attackCooldown: 1.25, gait: 14, barHeight: 3.1 },
+  prowler: { hp: 155, speed: 1.08, damage: 11, reward: 5, attackRange: 1.1, attackCooldown: 0.68, gait: 10.2, barHeight: 1.15 },
 };
 
 const GRID_W = 44;
@@ -1855,7 +1855,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       const group = makeAlien("stalker"), matureScale = group.scale.x;
       group.scale.setScalar(matureScale * 0.62); group.userData.broodling = true;
       group.position.copy(worldPos(x, y)); group.rotation.y = (Math.random() - 0.5) * Math.PI * 2; attachHealthBar(group, stats.barHeight); world.add(group);
-      enemies.push({ id: nextId++, kind: "stalker", x, y, hp, maxHp: hp, speed: stats.speed * ALIEN_SPEED_MULTIPLIER * (1 + wave * 0.008), damage: stats.damage * (1 + wave * 0.022) * 0.75, reward: Math.max(8, Math.round(stats.reward * 0.35)), path: [], index: 0, group, hitFlash: 0, attackCooldown: 0.4 + index * 0.15, pathTimer: 0, targetBiasSeed: Math.random(), targetId: null, targetType: "base" });
+      enemies.push({ id: nextId++, kind: "stalker", x, y, hp, maxHp: hp, speed: stats.speed * ALIEN_SPEED_MULTIPLIER * (1 + wave * 0.008), damage: stats.damage * (1 + wave * 0.022) * 0.75, reward: 1, path: [], index: 0, group, hitFlash: 0, attackCooldown: 0.4 + index * 0.15, pathTimer: 0, targetBiasSeed: Math.random(), targetId: null, targetType: "base" });
     }
     function hatchBroodlings(at: THREE.Vector3, seed: number) {
       const remaining = MAX_ACTIVE_BROODLINGS - enemies.filter(enemy => enemy.group.userData.broodling === true).length;
