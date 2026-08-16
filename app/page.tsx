@@ -81,7 +81,7 @@ const ENEMY_STATS: Record<AlienKind, { hp: number; speed: number; damage: number
   broodmother: { hp: 285, speed: 0.52, damage: 14, reward: 8, attackRange: 3, attackCooldown: 2.75, gait: 3.8, barHeight: 2.2 },
   flyer: { hp: 70, speed: 1.18, damage: 7, reward: 3, attackRange: 2.05, attackCooldown: 1.25, gait: 14, barHeight: 3.1 },
   prowler: { hp: 155, speed: 1.08, damage: 11, reward: 5, attackRange: 1.1, attackCooldown: 0.68, gait: 10.2, barHeight: 1.15 },
-  tidecrawler: { hp: 145, speed: 1.05, damage: 10, reward: 4, attackRange: 1.1, attackCooldown: 0.72, gait: 9.4, barHeight: 1.2 },
+  tidecrawler: { hp: 145, speed: 1.05, damage: 10, reward: 8, attackRange: 1.1, attackCooldown: 0.72, gait: 9.4, barHeight: 1.2 },
 };
 
 const GRID_W = 44;
