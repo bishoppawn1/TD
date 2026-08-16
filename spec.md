@@ -68,7 +68,7 @@ Protect the command post through all 25 enemy waves.
 ## Economy
 
 - A new operation begins with 750 command credits.
-- Destroyed enemies award deliberately modest bounties according to their class: common bugs pay only 2–3 credits, dangerous specialists pay up to 8, and broodlings pay 1.
+- Destroyed enemies award deliberately modest bounties according to their class: common bugs pay only 2–3 credits, most dangerous specialists pay up to 8, Tidecrawlers pay 12, and broodlings pay 1.
 - Completing a wave grants a resupply bonus that grows with the wave number.
 - A placed asset can be salvaged for 60 percent of its original cost.
 - Combat structures can be upgraded twice by spending additional command credits.
@@ -179,7 +179,7 @@ A small, fragile airborne alien introduced in wave three. Skyrazors are the only
 
 ### Tidecrawler
 
-An aquatic alien with a flattened teal shell, luminous cyan markings, fins, and six crawling legs. Tidecrawlers emerge from submerged cyan portals, cross open water, and then crawl onto land to attack the command post; ordinary ground aliens cannot enter water cells. Their 8-credit bounty matches the most valuable normal specialist reward. Pelagic Atoll dedicates six of its eight invasion fronts to Tidecrawlers so their amphibious movement can be tested under sustained pressure.
+An aquatic alien with a flattened teal shell, luminous cyan markings, fins, and six crawling legs. Tidecrawlers emerge from submerged cyan portals, cross open water, and then crawl onto land to attack the command post; ordinary ground aliens cannot enter water cells. They are relatively fragile and lightly damaging, but their 12-credit bounty makes stopping an aquatic landing especially rewarding. Pelagic Atoll dedicates six of its eight invasion fronts to Tidecrawlers so their amphibious movement can be tested under sustained pressure.
 
 All ground alien classes are visually wingless. Their silhouettes use tall, angular, multi-jointed legs with tapered lower limbs, pronounced knee spikes, rear-facing barbs, and hooked claw points instead of broad or flattened feet. Crawling bodies, armor, tails, and class-specific proportions still communicate how each creature moves across or climbs over the battlefield.
 
