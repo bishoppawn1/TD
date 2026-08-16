@@ -61,6 +61,7 @@ Protect the command post through all 25 enemy waves.
 - Stalkers and razortails can climb directly over walls, including stacked wall sections, but taller climbs take proportionally longer and may make another route or target more attractive.
 - Flying enemies travel above terrain and fortifications, ignore trenches, razor wire, and mines, and choose valuable exposed targets instead of attacking walls.
 - Elevated weapon positions gain additional range, rewarding control of ridges and high ground.
+- Direct-fire infantry, gun teams, tanks, and turrets require a clear three-dimensional line from their muzzle to the target. Intervening terrain, walls, and solid buildings block straight shots unless the firing line genuinely clears their height; howitzers, missile batteries, and infantry rockets retain indirect fire over cover.
 - The camera supports orbiting, panning, zooming, and 90-degree rotation.
 
 ## Economy

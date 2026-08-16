@@ -1331,6 +1331,37 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
     const occupiedCellsFor = (s: Structure) => isMobileEmplacement(s) ? [{ x: Math.round(s.x), y: Math.round(s.y) }] : s.footprint;
     const structureOccupiesCell = (s: Structure, x: number, y: number) => occupiedCellsFor(s).some(cell => cell.x === x && cell.y === y);
     const isEntrenched = (m: Marine) => !m.movePath.length && !!m.trenchId && structures.some(s => s.id === m.trenchId && s.kind === "trench" && Math.hypot(s.x - m.x, s.y - m.y) < 0.72);
+    const directFireObstacleHeight = (structure: Structure, cell: Cell) => {
+      const groundHeight = terrainHeightAt(cell.x, cell.y);
+      if (isWall(structure)) return groundHeight + wallTopLift(structure);
+      if (structure.kind === "factory") return groundHeight + 2.25;
+      if (structure.kind === "barracks") return groundHeight + 1.8;
+      if (structure.kind === "light") return groundHeight + 2.5;
+      return groundHeight + structure.lift + 1.45;
+    };
+    function buildDirectFireObstacles() {
+      const obstacles = new Map<string, number>();
+      for (const structure of structures) {
+        if (!isPathBlocking(structure) || isMobileEmplacement(structure)) continue;
+        for (const cell of occupiedCellsFor(structure)) {
+          const cellKey = keyOf(cell.x, cell.y), height = directFireObstacleHeight(structure, cell);
+          obstacles.set(cellKey, Math.max(obstacles.get(cellKey) ?? -Infinity, height));
+        }
+      }
+      return obstacles;
+    }
+    function hasDirectLineOfFire(from: THREE.Vector3, target: Enemy, sourceCell: string, obstacles: Map<string, number>) {
+      const fromX = from.x / TILE + (GRID_W - 1) / 2, fromY = from.z / TILE + (GRID_H - 1) / 2;
+      const distance = Math.hypot(target.x - fromX, target.y - fromY), samples = Math.max(2, Math.ceil(distance * 2));
+      const targetHeight = target.group.position.y + 0.42;
+      for (let sample = 1; sample < samples; sample++) {
+        const progress = sample / samples, x = THREE.MathUtils.lerp(fromX, target.x, progress), y = THREE.MathUtils.lerp(fromY, target.y, progress), shotHeight = THREE.MathUtils.lerp(from.y, targetHeight, progress);
+        if (terrainHeightAt(x, y) + 0.08 > shotHeight) return false;
+        const cellKey = keyOf(clamp(Math.round(x), 0, GRID_W - 1), clamp(Math.round(y), 0, GRID_H - 1));
+        if (cellKey !== sourceCell && (obstacles.get(cellKey) ?? -Infinity) + 0.04 > shotHeight) return false;
+      }
+      return true;
+    }
     const enemyCollisionRadius = (enemy: Enemy) =>
       enemy.kind === "brute" || enemy.kind === "broodmother" ? 0.54
         : enemy.kind === "razortail" ? 0.46
@@ -2239,6 +2270,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
         const p = worldPos(e.x, e.y, flying ? 2.65 : climbLift); e.group.position.lerp(p, Math.min(1, dt * 12)); e.group.position.y += Math.sin(elapsed * (flying ? 4.8 : 9) + e.id) * (flying ? 0.16 : e.kind === "brute" ? 0.005 : 0.01); syncHealthBar(e.group);
       }
       resolveEnemyOverlaps();
+      const directFireObstacles = buildDirectFireObstacles();
       for (const s of structures) {
         s.cooldown -= dt;
         const scanRig = s.group.userData.scanRig as THREE.Group | undefined; if (scanRig) scanRig.rotation.y += dt * 0.42;
@@ -2256,11 +2288,13 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
         const terrainX = clamp(Math.round(s.x), 0, GRID_W - 1), terrainY = clamp(Math.round(s.y), 0, GRID_H - 1);
         const stats = TURRET_STATS[s.kind], levelDamage = 1 + (s.level - 1) * 0.42, levelSpeed = 1 + (s.level - 1) * 0.18;
         const range = ASSETS[s.kind].range + (s.level - 1) * 0.65 + heights[terrainY][terrainX] * 0.9;
-        const candidates = enemies.filter(e => e.hp > 0 && isRevealed(e.x, e.y) && Math.hypot(e.x - s.x, e.y - s.y) <= range);
-        const target = s.kind === "howitzer" || s.kind === "missile" ? chooseArtilleryTarget(candidates, stats.damage * levelDamage, aoeRadius(stats.splash)) : chooseDistributedTarget(candidates, s.id);
+        const muzzle = s.group.userData.muzzle as THREE.Object3D | undefined, firingOrigin = muzzle ? muzzle.getWorldPosition(new THREE.Vector3()) : s.group.position.clone().add(new THREE.Vector3(0, 1.05, 0));
+        const indirectFire = s.kind === "howitzer" || s.kind === "missile";
+        const candidates = enemies.filter(e => e.hp > 0 && isRevealed(e.x, e.y) && Math.hypot(e.x - s.x, e.y - s.y) <= range && (indirectFire || hasDirectLineOfFire(firingOrigin, e, keyOf(terrainX, terrainY), directFireObstacles)));
+        const target = indirectFire ? chooseArtilleryTarget(candidates, stats.damage * levelDamage, aoeRadius(stats.splash)) : chooseDistributedTarget(candidates, s.id);
         if (target) {
           turnToward(s.group, Math.atan2(-(target.x - s.x), -(target.y - s.y)), stats.turnSpeed, dt);
-          if (s.cooldown <= 0) { const muzzle = s.group.userData.muzzle as THREE.Object3D | undefined, targetMultiplier = FLYING_ENEMIES.has(target.kind) ? stats.airDamageMultiplier ?? AIR_DAMAGE_MULTIPLIER : 1, shotDamage = stats.damage * levelDamage * targetMultiplier; const from = muzzle ? muzzle.getWorldPosition(new THREE.Vector3()) : s.group.position.clone().add(new THREE.Vector3(0, 1.05, 0)); if (stats.beam) laserStrike(from, target, shotDamage, stats.color); else fire(from, target, shotDamage, stats.splash, stats.color, stats.heavy, stats.arcHeight, false, s.kind === "howitzer" || s.kind === "missile" ? s.id : undefined); s.cooldown = stats.cooldown / levelSpeed; }
+          if (s.cooldown <= 0) { const targetMultiplier = FLYING_ENEMIES.has(target.kind) ? stats.airDamageMultiplier ?? AIR_DAMAGE_MULTIPLIER : 1, shotDamage = stats.damage * levelDamage * targetMultiplier; if (stats.beam) laserStrike(firingOrigin, target, shotDamage, stats.color); else fire(firingOrigin, target, shotDamage, stats.splash, stats.color, stats.heavy, stats.arcHeight, false, indirectFire ? s.id : undefined); s.cooldown = stats.cooldown / levelSpeed; }
         }
       }
       for (const m of marines) {
@@ -2274,11 +2308,12 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
           const patient = marines.filter(other => (other.id !== m.id || marineTroopCount(m) > 1) && marineHealthRatio(other) < 1 && Math.hypot(other.x - m.x, other.y - m.y) < 2.4).sort((a, b) => marineHealthRatio(a) - marineHealthRatio(b))[0];
           if (patient) { healMarine(patient, 18 * marineTroopCount(m)); burst(patient.group.position.clone().add(new THREE.Vector3(0, 0.65, 0)), 0x63e9ff, 5); m.supportCooldown = 1.6; }
         }
-        const candidates = enemies.filter(e => e.hp > 0 && isRevealed(e.x, e.y) && Math.hypot(e.x - m.x, e.y - m.y) < (settledOnWall ? stats.range + 0.95 : stats.range));
+        const muzzle = m.group.userData.muzzle as THREE.Object3D | undefined, firingOrigin = muzzle ? muzzle.getWorldPosition(new THREE.Vector3()) : m.group.position.clone().add(new THREE.Vector3(0, 0.72, 0));
+        const candidates = enemies.filter(e => e.hp > 0 && isRevealed(e.x, e.y) && Math.hypot(e.x - m.x, e.y - m.y) < (settledOnWall ? stats.range + 0.95 : stats.range) && (m.kind === "rocketeer" || hasDirectLineOfFire(firingOrigin, e, keyOf(Math.round(m.x), Math.round(m.y)), directFireObstacles)));
         const target = chooseDistributedTarget(candidates, m.id);
         if (target && !isMoving) {
           turnToward(m.group, Math.atan2(-(target.x - m.x), -(target.y - m.y)), 10, dt);
-          if (m.cooldown <= 0) { const muzzle = m.group.userData.muzzle as THREE.Object3D | undefined, targetMultiplier = FLYING_ENEMIES.has(target.kind) ? AIR_DAMAGE_MULTIPLIER : 1; fire(muzzle ? muzzle.getWorldPosition(new THREE.Vector3()) : m.group.position.clone().add(new THREE.Vector3(0, 0.72, 0)), target, stats.damage * marineTroopCount(m) * (settledOnWall ? 1.32 : 1) * targetMultiplier, stats.splash ?? 0, stats.projectileColor, stats.heavy, stats.arcHeight, m.kind === "rocketeer", undefined, m.kind !== "rocketeer"); m.cooldown = stats.cooldown; }
+          if (m.cooldown <= 0) { const targetMultiplier = FLYING_ENEMIES.has(target.kind) ? AIR_DAMAGE_MULTIPLIER : 1; fire(firingOrigin, target, stats.damage * marineTroopCount(m) * (settledOnWall ? 1.32 : 1) * targetMultiplier, stats.splash ?? 0, stats.projectileColor, stats.heavy, stats.arcHeight, m.kind === "rocketeer", undefined, m.kind !== "rocketeer"); m.cooldown = stats.cooldown; }
         }
       }
       for (const s of [...structures]) if (s.kind === "mine") {
