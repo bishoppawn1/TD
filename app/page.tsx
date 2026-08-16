@@ -25,7 +25,7 @@ const MAX_FRAME_DELTA = 0.1;
 const ROUTE_CANDIDATE_LIMIT = 5;
 const ROUTE_CACHE_LIMIT = 900;
 const PROJECTILE_POOL_LIMIT = 80;
-const AOE_RADIUS_MULTIPLIER = 0.85;
+const AOE_RADIUS_MULTIPLIER = 0.4;
 const MARINE_STACK_THRESHOLD = 10;
 const MARINE_STACK_COLLECTION_DIAMETER = 1;
 const MARINE_STACK_COLLECTION_RADIUS = MARINE_STACK_COLLECTION_DIAMETER / 2;
@@ -106,7 +106,7 @@ const TURRET_STATS: Record<CombatKey, { damage: number; cooldown: number; splash
   railgun: { damage: 185, cooldown: 2.8, splash: 0, arcHeight: 0, color: 0xc090ff, heavy: true, turnSpeed: 4.4 },
   tank: { damage: 92, cooldown: 1.15, splash: 0.42, arcHeight: 0, color: 0xd8ef83, heavy: true, turnSpeed: 4.8 },
   howitzer: { damage: 105, cooldown: 2.35, splash: 1.25, arcHeight: 2.2, color: 0xffa64d, heavy: true, turnSpeed: 3.5 },
-  missile: { damage: 165, cooldown: 3.2, splash: 1.75, arcHeight: 2.8, color: 0xff667d, heavy: true, turnSpeed: 2.8 },
+  missile: { damage: 165, cooldown: 6.4, splash: 1.75, arcHeight: 2.8, color: 0xff667d, heavy: true, turnSpeed: 2.8 },
 };
 
 const MARINE_STATS: Record<MarineKind, { name: string; role: string; cost: number; hp: number; speed: number; damage: number; cooldown: number; range: number; color: string; projectileColor: number; splash?: number; arcHeight?: number; heavy?: boolean }> = {

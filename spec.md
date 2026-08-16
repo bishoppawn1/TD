@@ -51,7 +51,7 @@ Protect the command post through all 25 enemy waves.
 - Sentinel light towers project sweeping searchlights and reveal a substantially wider area than ordinary units. They can be mounted on top of Hesco or Bastion walls.
 - Enemies travel between adjacent grid cells and dynamically recalculate their route around structures.
 - Enemy bodies use size-aware collision spacing, forming a dense moving swarm without occupying the same physical space.
-- All friendly splash weapons and shock mines use a slightly tighter area-of-effect radius while retaining their direct-hit damage.
+- All friendly splash weapons and shock mines use only 40 percent of their authored area-of-effect radius while retaining their direct-hit damage. This compact blast rule applies consistently to infantry, vehicles, emplacements, turrets, artillery, and mines.
 - Enemies choose targets by estimated travel time rather than straight-line distance. The estimate uses the actual route, terrain grade, movement speed, and any wall ascent or descent required.
 - Ascending natural terrain adds explicit vertical climb time to both movement and route estimates, while downhill travel retains a modest speed advantage. Friendly units climb at more than ten times the aliens' vertical rate, so mountains delay soldiers without making repositioning painfully slow.
 - Each alien applies a stable individual preference of up to 17 percent in either direction to those travel-time estimates, spreading a swarm across near-equivalent targets without making obviously bad routes attractive.
@@ -96,7 +96,7 @@ A slow-firing long-range artillery piece produced exclusively by a Machining Fac
 
 ### Javelin Battery — 480 credits
 
-A static four-tube missile launcher with the longest base range and widest blast radius of any defense. It shares the Howitzer's coordinated targeting, avoiding targets and clusters already covered by lethal incoming fire. Its high damage is balanced by a slow reload and substantial purchase cost.
+A static four-tube missile launcher with the longest base range and widest blast radius of any defense, though its effective area follows the same compact 40-percent rule as every friendly splash weapon. It shares the Howitzer's coordinated targeting, avoiding targets and clusters already covered by lethal incoming fire. Its high damage is balanced by a 6.4-second base reload—twice its former reload time—and substantial purchase cost.
 
 ### Sentinel Light Tower — 135 credits
 
