@@ -56,17 +56,17 @@ const AIR_DAMAGE_MULTIPLIER = 0.45;
 const WALL_CLIMBERS = new Set<AlienKind>(["stalker", "razortail"]);
 const FLYING_ENEMIES = new Set<AlienKind>(["flyer"]);
 const WATER_ALIENS = new Set<string>(["tidecrawler"]);
-const RANGED_ENEMIES = new Set<AlienKind>(["spitter", "strider", "broodmother", "flyer"]);
+const RANGED_ENEMIES = new Set<AlienKind>(["spitter", "flyer"]);
 const ENEMY_STATS: Record<AlienKind, { hp: number; speed: number; damage: number; reward: number; attackRange: number; attackCooldown: number; gait: number; barHeight: number }> = {
-  drone: { hp: 82, speed: 0.9, damage: 6, reward: 24, attackRange: 1.45, attackCooldown: 0.82, gait: 11.5, barHeight: 1.05 },
-  spitter: { hp: 125, speed: 0.72, damage: 7, reward: 36, attackRange: 2.45, attackCooldown: 1.4, gait: 7.2, barHeight: 1.45 },
-  brute: { hp: 340, speed: 0.48, damage: 18, reward: 65, attackRange: 1.7, attackCooldown: 1.35, gait: 4.2, barHeight: 2.05 },
-  razortail: { hp: 245, speed: 0.68, damage: 14, reward: 56, attackRange: 1.55, attackCooldown: 1.15, gait: 6.2, barHeight: 1.75 },
-  stalker: { hp: 64, speed: 1.85, damage: 5, reward: 30, attackRange: 1.25, attackCooldown: 0.48, gait: 18, barHeight: 0.95 },
-  strider: { hp: 118, speed: 0.7, damage: 10, reward: 48, attackRange: 4.55, attackCooldown: 1.9, gait: 5.4, barHeight: 1.8 },
-  broodmother: { hp: 285, speed: 0.52, damage: 14, reward: 75, attackRange: 3.65, attackCooldown: 2.75, gait: 3.8, barHeight: 2.2 },
-  flyer: { hp: 70, speed: 1.18, damage: 7, reward: 42, attackRange: 2.7, attackCooldown: 1.25, gait: 14, barHeight: 3.1 },
-  prowler: { hp: 155, speed: 1.08, damage: 11, reward: 52, attackRange: 1.55, attackCooldown: 0.68, gait: 10.2, barHeight: 1.15 },
+  drone: { hp: 82, speed: 0.9, damage: 6, reward: 24, attackRange: 0.95, attackCooldown: 0.82, gait: 11.5, barHeight: 1.05 },
+  spitter: { hp: 125, speed: 0.72, damage: 7, reward: 36, attackRange: 1.9, attackCooldown: 1.4, gait: 7.2, barHeight: 1.45 },
+  brute: { hp: 340, speed: 0.48, damage: 18, reward: 65, attackRange: 1.15, attackCooldown: 1.35, gait: 4.2, barHeight: 2.05 },
+  razortail: { hp: 245, speed: 0.68, damage: 14, reward: 56, attackRange: 1.1, attackCooldown: 1.15, gait: 6.2, barHeight: 1.75 },
+  stalker: { hp: 64, speed: 1.85, damage: 5, reward: 30, attackRange: 0.9, attackCooldown: 0.48, gait: 18, barHeight: 0.95 },
+  strider: { hp: 118, speed: 0.7, damage: 10, reward: 48, attackRange: 1.2, attackCooldown: 1.9, gait: 5.4, barHeight: 1.8 },
+  broodmother: { hp: 285, speed: 0.52, damage: 14, reward: 75, attackRange: 1.45, attackCooldown: 2.75, gait: 3.8, barHeight: 2.2 },
+  flyer: { hp: 70, speed: 1.18, damage: 7, reward: 42, attackRange: 2.05, attackCooldown: 1.25, gait: 14, barHeight: 3.1 },
+  prowler: { hp: 155, speed: 1.08, damage: 11, reward: 52, attackRange: 1.1, attackCooldown: 0.68, gait: 10.2, barHeight: 1.15 },
 };
 
 const GRID_W = 44;
@@ -1707,6 +1707,17 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
         particles.push({ mesh, velocity: new THREE.Vector3((Math.random() - 0.5) * 2.8 * spread, Math.random() * 2.3 * spread, (Math.random() - 0.5) * 2.8 * spread), life: 0.5 + Math.random() * 0.5, maxLife: 1 });
       }
     }
+    function damageFriendlyTarget(targetType: "marine" | "structure", targetId: number, damage: number) {
+      if (targetType === "structure") {
+        const target = structures.find(s => s.id === targetId);
+        if (!target) return;
+        target.hp = clamp(target.hp - damage, 0, target.maxHp); setHealthVisual(target.group, target.hp, target.maxHp);
+        if (target.hp <= 0) { message(`${ASSETS[target.kind].name.toUpperCase()} DESTROYED BY HOSTILES`); destroyStructure(target); }
+        return;
+      }
+      const target = marines.find(m => m.id === targetId);
+      if (target) damageMarine(target, damage * (isEntrenched(target) ? TRENCH_DAMAGE_MULTIPLIER : 1));
+    }
     function hostileStrike(kind: AlienKind, from: THREE.Vector3, to: THREE.Vector3, targetType: "marine" | "structure", targetId: number, damage: number) {
       const group = new THREE.Group(), startHeight = kind === "flyer" ? 0.28 : kind === "brute" ? 0.85 : kind === "broodmother" ? 1.05 : kind === "razortail" ? 0.68 : kind === "spitter" ? 0.66 : kind === "strider" ? 0.92 : kind === "prowler" ? 0.44 : kind === "stalker" ? 0.25 : 0.38;
       const start = from.clone().add(new THREE.Vector3(0, startHeight, 0)), end = to.clone().add(new THREE.Vector3(0, 0.58, 0));
@@ -2006,8 +2017,10 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
         if (combatTarget && inAttackRange) {
           e.group.rotation.y = Math.atan2(-(tx - e.x), -(ty - e.y));
           if (e.attackCooldown <= 0) {
-            const hit = e.damage * (e.kind === "brute" ? 1.45 : e.kind === "razortail" ? 1.2 : e.kind === "stalker" ? 0.75 : 1); const targetPos = combatTarget.group.position;
-            hostileStrike(e.kind, e.group.position, targetPos, combatTarget.type, combatTarget.id, hit); e.attackCooldown = enemyStats.attackCooldown; firedThisFrame = true;
+            const hit = e.damage * (e.kind === "brute" ? 1.45 : e.kind === "razortail" ? 1.2 : e.kind === "stalker" ? 0.75 : 1);
+            if (rangedEnemy) hostileStrike(e.kind, e.group.position, combatTarget.group.position, combatTarget.type, combatTarget.id, hit);
+            else damageFriendlyTarget(combatTarget.type, combatTarget.id, hit);
+            e.attackCooldown = enemyStats.attackCooldown; firedThisFrame = true;
           }
           isAttacking = !rangedEnemy || firedThisFrame;
         }
@@ -2095,11 +2108,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
         shot.group.position.lerpVectors(shot.from, shot.to, progress); shot.group.position.y += arc; shot.group.rotateX(dt * (shot.kind === "spitter" ? 2.5 : 8)); shot.group.rotateZ(dt * (shot.kind === "brute" ? 5 : 11));
         if (shot.kind === "spitter" || shot.kind === "broodmother") shot.group.scale.setScalar(0.9 + Math.sin(elapsed * (shot.kind === "broodmother" ? 12 : 20)) * 0.12);
         if (shot.t >= 1) {
-          if (shot.targetType === "structure") {
-            const target = structures.find(s => s.id === shot.targetId); if (target) { target.hp = clamp(target.hp - shot.damage, 0, target.maxHp); setHealthVisual(target.group, target.hp, target.maxHp); if (target.hp <= 0) { message(`${ASSETS[target.kind].name.toUpperCase()} DESTROYED BY HOSTILES`); destroyStructure(target); } }
-          } else {
-            const target = marines.find(m => m.id === shot.targetId); if (target) { const damage = shot.damage * (isEntrenched(target) ? TRENCH_DAMAGE_MULTIPLIER : 1); damageMarine(target, damage); }
-          }
+          damageFriendlyTarget(shot.targetType, shot.targetId, shot.damage);
           burst(shot.to, shot.color, shot.impactCount); discardWorldObject(shot.group); hostileProjectiles.splice(hostileProjectiles.indexOf(shot), 1);
         }
       }
