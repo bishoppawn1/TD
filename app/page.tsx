@@ -54,6 +54,8 @@ const RAZOR_WIRE_SLOW_MULTIPLIER = 0.32;
 // shallow cut when entering it and while crawling through it.
 const RAZOR_WIRE_ENTRY_DAMAGE = 4.5;
 const RAZOR_WIRE_DAMAGE_PER_SECOND = 6;
+const BROODLINGS_PER_EGG = 2;
+const MAX_ACTIVE_BROODLINGS = 12;
 const TERRAFORM_COST = 10;
 const TERRAFORM_STEP = 0.16;
 const TERRAFORM_MIN_HEIGHT = 0.04;
@@ -66,7 +68,7 @@ const AIR_DAMAGE_MULTIPLIER = 0.45;
 const WALL_CLIMBERS = new Set<AlienKind>();
 const FLYING_ENEMIES = new Set<AlienKind>(["flyer"]);
 const WATER_ALIENS = new Set<string>(["tidecrawler"]);
-const RANGED_ENEMIES = new Set<AlienKind>(["spitter", "flyer"]);
+const RANGED_ENEMIES = new Set<AlienKind>(["spitter", "broodmother", "flyer"]);
 const ENEMY_STATS: Record<AlienKind, { hp: number; speed: number; damage: number; reward: number; attackRange: number; attackCooldown: number; gait: number; barHeight: number }> = {
   drone: { hp: 82, speed: 0.9, damage: 6, reward: 24, attackRange: 0.95, attackCooldown: 0.82, gait: 11.5, barHeight: 1.05 },
   spitter: { hp: 125, speed: 0.72, damage: 7, reward: 36, attackRange: 1.9, attackCooldown: 1.4, gait: 7.2, barHeight: 1.45 },
@@ -74,7 +76,7 @@ const ENEMY_STATS: Record<AlienKind, { hp: number; speed: number; damage: number
   razortail: { hp: 245, speed: 0.68, damage: 14, reward: 56, attackRange: 1.1, attackCooldown: 1.15, gait: 6.2, barHeight: 1.75 },
   stalker: { hp: 64, speed: 1.85, damage: 5, reward: 30, attackRange: 0.9, attackCooldown: 0.48, gait: 18, barHeight: 0.95 },
   strider: { hp: 118, speed: 0.7, damage: 10, reward: 48, attackRange: 1.2, attackCooldown: 1.9, gait: 5.4, barHeight: 1.8 },
-  broodmother: { hp: 285, speed: 0.52, damage: 14, reward: 75, attackRange: 1.45, attackCooldown: 2.75, gait: 3.8, barHeight: 2.2 },
+  broodmother: { hp: 285, speed: 0.52, damage: 14, reward: 75, attackRange: 3, attackCooldown: 2.75, gait: 3.8, barHeight: 2.2 },
   flyer: { hp: 70, speed: 1.18, damage: 7, reward: 42, attackRange: 2.05, attackCooldown: 1.25, gait: 14, barHeight: 3.1 },
   prowler: { hp: 155, speed: 1.08, damage: 11, reward: 52, attackRange: 1.1, attackCooldown: 0.68, gait: 10.2, barHeight: 1.15 },
 };
@@ -1812,6 +1814,35 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       const group = makeAlien(kind), p = worldPos(spawnX, spawnY, FLYING_ENEMIES.has(kind) ? 2.65 : 0); group.position.copy(p); group.rotation.y = (Math.random() - 0.5) * 0.7; attachHealthBar(group, stats.barHeight); world.add(group);
       enemies.push({ id: nextId++, kind, x: spawnX, y: spawnY, hp, maxHp: hp, speed: stats.speed * ALIEN_SPEED_MULTIPLIER * (1 + wave * 0.008), damage: stats.damage * (1 + wave * 0.022), reward: stats.reward, path: [], index: 0, group, hitFlash: 0, attackCooldown: Math.random() * 0.35, pathTimer: 0, targetBiasSeed: Math.random(), targetId: null, targetType: "base" });
     }
+    function spawnBroodling(x: number, y: number, index: number) {
+      const stats = ENEMY_STATS.stalker, waveScale = 1 + wave * 0.055, hp = stats.hp * waveScale * 0.58;
+      const group = makeAlien("stalker"), matureScale = group.scale.x;
+      group.scale.setScalar(matureScale * 0.62); group.userData.broodling = true;
+      group.position.copy(worldPos(x, y)); group.rotation.y = (Math.random() - 0.5) * Math.PI * 2; attachHealthBar(group, stats.barHeight); world.add(group);
+      enemies.push({ id: nextId++, kind: "stalker", x, y, hp, maxHp: hp, speed: stats.speed * ALIEN_SPEED_MULTIPLIER * (1 + wave * 0.008), damage: stats.damage * (1 + wave * 0.022) * 0.75, reward: Math.max(8, Math.round(stats.reward * 0.35)), path: [], index: 0, group, hitFlash: 0, attackCooldown: 0.4 + index * 0.15, pathTimer: 0, targetBiasSeed: Math.random(), targetId: null, targetType: "base" });
+    }
+    function hatchBroodlings(at: THREE.Vector3, seed: number) {
+      const remaining = MAX_ACTIVE_BROODLINGS - enemies.filter(enemy => enemy.group.userData.broodling === true).length;
+      if (remaining <= 0) return 0;
+      const impact = { x: clamp(Math.round(at.x / TILE + (GRID_W - 1) / 2), 0, GRID_W - 1), y: clamp(Math.round(at.z / TILE + (GRID_H - 1) / 2), 0, GRID_H - 1) };
+      const offsets: Cell[] = [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }, { x: 1, y: 1 }, { x: -1, y: 1 }, { x: 1, y: -1 }, { x: -1, y: -1 }, { x: 2, y: 0 }, { x: -2, y: 0 }, { x: 0, y: 2 }, { x: 0, y: -2 }];
+      let hatched = 0;
+      for (let broodlingIndex = 0; broodlingIndex < Math.min(BROODLINGS_PER_EGG, remaining); broodlingIndex++) {
+        let hatchCell: Cell | undefined;
+        for (let offsetIndex = 0; offsetIndex < offsets.length; offsetIndex++) {
+          const offset = offsets[(seed + broodlingIndex * 3 + offsetIndex) % offsets.length], candidate = { x: impact.x + offset.x, y: impact.y + offset.y };
+          if (candidate.x < 0 || candidate.y < 0 || candidate.x >= GRID_W || candidate.y >= GRID_H || isWaterCell(candidate.x, candidate.y)) continue;
+          if (structures.some(structure => isPathBlocking(structure) && structureOccupiesCell(structure, candidate.x, candidate.y))) continue;
+          if (enemies.some(enemy => Math.hypot(enemy.x - candidate.x, enemy.y - candidate.y) < 0.4)) continue;
+          hatchCell = candidate; break;
+        }
+        if (!hatchCell) continue;
+        spawnBroodling(hatchCell.x, hatchCell.y, broodlingIndex);
+        burst(worldPos(hatchCell.x, hatchCell.y, 0.2), 0x58ddff, 10, 0.55);
+        hatched++;
+      }
+      return hatched;
+    }
     function spawnSwarmPacket() {
       const groupSize = Math.min(spawnLeft, HOSTILE_SPAWN_PACKET_SIZE);
       if (groupSize <= 0 || maxActiveEnemies - enemies.length < groupSize) return false;
@@ -2258,7 +2289,8 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
         shot.group.position.lerpVectors(shot.from, shot.to, progress); shot.group.position.y += arc; shot.group.rotateX(dt * (shot.kind === "spitter" ? 2.5 : 8)); shot.group.rotateZ(dt * (shot.kind === "brute" ? 5 : 11));
         if (shot.kind === "spitter" || shot.kind === "broodmother") shot.group.scale.setScalar(0.9 + Math.sin(elapsed * (shot.kind === "broodmother" ? 12 : 20)) * 0.12);
         if (shot.t >= 1) {
-          damageFriendlyTarget(shot.targetType, shot.targetId, shot.damage);
+          if (shot.kind === "broodmother") hatchBroodlings(shot.to, shot.targetId);
+          else damageFriendlyTarget(shot.targetType, shot.targetId, shot.damage);
           burst(shot.to, shot.color, shot.impactCount); discardWorldObject(shot.group); hostileProjectiles.splice(hostileProjectiles.indexOf(shot), 1);
         }
       }
