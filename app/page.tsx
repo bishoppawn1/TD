@@ -48,8 +48,10 @@ const ARTILLERY_RETALIATION_CORRIDOR = 1.4;
 const TARGET_SELECTION_VARIANCE = 0.34;
 const RAZOR_WIRE_RADIUS = 1.05;
 const RAZOR_WIRE_SLOW_MULTIPLIER = 0.32;
-const RAZOR_WIRE_ENTRY_DAMAGE = 18;
-const RAZOR_WIRE_DAMAGE_PER_SECOND = 24;
+// Razor wire is primarily a movement obstacle. Ground aliens take only a
+// shallow cut when entering it and while crawling through it.
+const RAZOR_WIRE_ENTRY_DAMAGE = 4.5;
+const RAZOR_WIRE_DAMAGE_PER_SECOND = 6;
 const TRENCH_CAPACITY = 4;
 const TRENCH_DAMAGE_MULTIPLIER = 0.6;
 const TRENCH_AUTO_ENTRY_RANGE = 1;
@@ -87,7 +89,7 @@ const ASSETS: Record<AssetKey, { name: string; role: string; cost: number; range
   wall: { name: "Hesco Wall", role: "600 armor · Supports units", cost: 70, range: 0, icon: "▦", accent: "#d1b98e" },
   bastion: { name: "Bastion Wall", role: "1,050 armor · Reinforced cover", cost: 125, range: 0, icon: "▰", accent: "#aab8bd" },
   trench: { name: "Infantry Trench", role: "4 infantry · 40% damage reduction", cost: 85, range: 0, icon: "⌓", accent: "#b89568" },
-  wire: { name: "Razor Wire", role: "Snags hostiles · Heavy bleed", cost: 40, range: 0, icon: "〰", accent: "#e4cc9e" },
+  wire: { name: "Razor Wire", role: "Slows hostiles · Light bleed", cost: 40, range: 0, icon: "〰", accent: "#e4cc9e" },
   mine: { name: "Shock Mine", role: "Proximity · One use", cost: 100, range: 1.35, icon: "⌁", accent: "#ff655f" },
   barracks: { name: "Field Barracks", role: "Trains specialized infantry", cost: 425, range: 0, icon: "⌂", accent: "#67c8ff" },
   factory: { name: "Machining Factory", role: "2×2 · Builds tanks and howitzers", cost: 700, range: 0, icon: "⚙", accent: "#e5ba67" },
