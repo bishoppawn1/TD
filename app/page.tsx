@@ -12,7 +12,7 @@ type CombatKey = "rifle" | "sentry" | "flak" | "flame" | "laser" | "railgun" | "
 type UpgradableKey = CombatKey | "light";
 type MarineKind = "rifleman" | "gunner" | "medic" | "rocketeer";
 type FactoryUnitKind = "tank" | "howitzer";
-type AlienKind = "drone" | "spitter" | "brute" | "razortail" | "stalker" | "strider" | "broodmother" | "flyer" | "prowler";
+type AlienKind = "drone" | "spitter" | "brute" | "razortail" | "stalker" | "strider" | "broodmother" | "flyer" | "prowler" | "tidecrawler";
 
 const FINAL_MAP_WAVES = 25;
 const BETWEEN_WAVE_BUILD_SECONDS = 30;
@@ -69,7 +69,7 @@ const AIR_DAMAGE_MULTIPLIER = 0.45;
 // Ground aliens must break through or route around a wall; none can climb it.
 const WALL_CLIMBERS = new Set<AlienKind>();
 const FLYING_ENEMIES = new Set<AlienKind>(["flyer"]);
-const WATER_ALIENS = new Set<string>(["tidecrawler"]);
+const WATER_ALIENS = new Set<AlienKind>(["tidecrawler"]);
 const RANGED_ENEMIES = new Set<AlienKind>(["spitter", "broodmother", "flyer"]);
 const ENEMY_STATS: Record<AlienKind, { hp: number; speed: number; damage: number; reward: number; attackRange: number; attackCooldown: number; gait: number; barHeight: number }> = {
   drone: { hp: 82, speed: 0.9, damage: 6, reward: 2, attackRange: 0.95, attackCooldown: 0.82, gait: 11.5, barHeight: 1.05 },
@@ -81,6 +81,7 @@ const ENEMY_STATS: Record<AlienKind, { hp: number; speed: number; damage: number
   broodmother: { hp: 285, speed: 0.52, damage: 14, reward: 8, attackRange: 3, attackCooldown: 2.75, gait: 3.8, barHeight: 2.2 },
   flyer: { hp: 70, speed: 1.18, damage: 7, reward: 3, attackRange: 2.05, attackCooldown: 1.25, gait: 14, barHeight: 3.1 },
   prowler: { hp: 155, speed: 1.08, damage: 11, reward: 5, attackRange: 1.1, attackCooldown: 0.68, gait: 10.2, barHeight: 1.15 },
+  tidecrawler: { hp: 145, speed: 1.05, damage: 10, reward: 4, attackRange: 1.1, attackCooldown: 0.72, gait: 9.4, barHeight: 1.2 },
 };
 
 const GRID_W = 44;
@@ -144,7 +145,7 @@ type ProductionBuildingInfo = { id: number; kind: "barracks" | "factory"; curren
 type GameMode = "campaign" | "tester";
 type TestWaveConfig = { wave: number; enemyCount: number };
 type BattlefieldApi = { start: (config?: TestWaveConfig) => void; restart: () => void; rotate: () => void; upgradeSelected: () => void; recruit: (kind: MarineKind) => void; produce: (kind: FactoryUnitKind) => void };
-type MapKey = "ridge" | "basin" | "divide" | "ruins" | "homeworld";
+type MapKey = "ridge" | "basin" | "divide" | "archipelago" | "ruins" | "homeworld";
 type DecorKind = "supply" | "pine" | "cactus" | "bones" | "crystal" | "vent" | "pillar" | "obelisk" | "growth";
 type MapConfig = {
   key: MapKey;
@@ -282,6 +283,33 @@ const MAPS: Record<MapKey, MapConfig> = {
       return steppedHeight(0.08 + mountains + brokenGround - fracture);
     },
   },
+  archipelago: {
+    key: "archipelago", operation: "DEEP CURRENT", sector: "M-4", name: "Pelagic Atoll", objective: "Hold the island against the tide", terrain: "MOSTLY WATER · AQUATIC SURGE",
+    description: "More than four-fifths of this flooded sector is open water. Six submerged nests send Tidecrawlers across the lagoon while two land gates pressure the narrow east-west causeways.",
+    background: 0x03131a, ground: 0x17251d, fog: 0x01080b, hue: 0.35, saturation: 0.3,
+    baseCell: { x: 22, y: 22 },
+    spawnCells: [{ x: 0, y: 5 }, { x: 43, y: 8 }, { x: 0, y: 38 }, { x: 43, y: 35 }, { x: 22, y: 0 }, { x: 22, y: 43 }, { x: 0, y: 22 }, { x: 43, y: 22 }],
+    waveCount: 18,
+    startingStructures: [{ kind: "barracks", x: 19, y: 22 }, { kind: "factory", x: 24, y: 23 }, { kind: "rifle", x: 14, y: 22 }, { kind: "sentry", x: 29, y: 22 }, { kind: "flak", x: 22, y: 18 }, { kind: "missile", x: 22, y: 27 }, { kind: "light", x: 18, y: 18 }, { kind: "bastion", x: 26, y: 20 }],
+    startingMarines: [{ kind: "rifleman", x: 19, y: 20 }, { kind: "medic", x: 21, y: 24 }, { kind: "rifleman", x: 24, y: 20 }, { kind: "gunner", x: 27, y: 22 }, { kind: "rocketeer", x: 22, y: 17 }],
+    activeEnemyCap: 140, waveMultiplier: 1.1, spawnIntervalMultiplier: 0.86,
+    waterColor: 0x087f9b, waterGlow: 0x064a62,
+    waterAt: (x, y) => {
+      const island = Math.hypot((x - 21.5) / 10.5, (y - 21.5) / 8.5) <= 1;
+      const causeway = Math.abs(y - 21.5) <= 1;
+      return !island && !causeway;
+    },
+    decorAt: (x, y) => {
+      if (Math.abs(y - 21.5) <= 1 || Math.hypot(x - 22, y - 22) < 5) return null;
+      const scatter = terrainNoise(x, y, 59);
+      return scatter > 0.965 ? "supply" : scatter < 0.025 ? "bones" : null;
+    },
+    heightAt: (x, y) => {
+      const islandRise = Math.max(0, 1 - Math.hypot((x - 21.5) / 10.5, (y - 21.5) / 8.5));
+      const rollingSand = Math.max(0, Math.sin(x * 0.58 + y * 0.24) + Math.cos(y * 0.53) - 1.05) * 0.08;
+      return steppedHeight(0.04 + islandRise * 0.72 + rollingSand);
+    },
+  },
   ruins: {
     key: "ruins", operation: "PALIMPSEST", sector: "T-9", name: "Temple of Dust", objective: "Hold the sacred center", terrain: "ANCIENT RUINS · HIGH WALLS",
     description: "A central command post stands inside a shattered temple maze. Staggered gates and broken stone corridors bend eight invasion routes around the ruins.",
@@ -334,7 +362,7 @@ const MAPS: Record<MapKey, MapConfig> = {
     },
   },
 };
-const MAP_ORDER: MapKey[] = ["ridge", "basin", "divide", "ruins", "homeworld"];
+const MAP_ORDER: MapKey[] = ["ridge", "basin", "divide", "archipelago", "ruins", "homeworld"];
 
 function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSelected, onProductionSelected, apiRef }: { selected: BuildSelection; mapKey: MapKey; testerMode: boolean; onHud: (h: Hud) => void; onMessage: (s: string) => void; onUnitSelected: (unit: SelectedUnit | null) => void; onProductionSelected: (building: ProductionBuildingInfo | null) => void; apiRef: React.MutableRefObject<BattlefieldApi | null> }) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -412,6 +440,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
     const tileMeshes: THREE.InstancedMesh[] = [];
     const waterRipples: Array<{ mesh: THREE.Mesh; phase: number }> = [];
     const fogCells: Array<{ x: number; y: number; index: number }> = [];
+    const rippleThreshold = waterCells.size > GRID_W * GRID_H * 0.5 ? 0.94 : 0.78;
     for (let y = 0; y < GRID_H; y++) for (let x = 0; x < GRID_W; x++) {
       const h = heights[y][x];
       const water = isWaterCell(x, y), bridge = !!map.bridgeAt?.(x, y);
@@ -419,7 +448,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       const p = worldPos(x, y);
       terrainCells.push({ x, y, height: h, base: color, water, bridge });
       fogCells.push({ x, y, index: y * GRID_W + x });
-      if (water && terrainNoise(x, y, 71) > 0.78) {
+      if (water && terrainNoise(x, y, 71) > rippleThreshold) {
         const rippleMaterial = new THREE.MeshBasicMaterial({ color: new THREE.Color(map.waterColor).offsetHSL(0.02, 0.12, 0.25), transparent: true, opacity: 0.25, side: THREE.DoubleSide, depthWrite: false });
         const ripple = new THREE.Mesh(new THREE.RingGeometry(0.16, 0.2, 12), rippleMaterial);
         ripple.rotation.x = -Math.PI / 2; ripple.scale.y = 0.56; ripple.position.copy(p).add(new THREE.Vector3(0, 0.04, 0)); ripple.renderOrder = 2; world.add(ripple);
@@ -908,10 +937,10 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       const g = new THREE.Group();
       const bodyRig = new THREE.Group(); g.add(bodyRig);
       const legs: THREE.Group[] = [], legPhases: number[] = [], tails: THREE.Group[] = [], wings: THREE.Group[] = [];
-      const brute = kind === "brute", spitter = kind === "spitter", broodmother = kind === "broodmother", razortail = kind === "razortail", stalker = kind === "stalker", strider = kind === "strider", flyer = kind === "flyer", prowler = kind === "prowler";
-      const shellColor = brute ? 0x673832 : broodmother ? 0x5d3548 : spitter ? 0x28654b : razortail ? 0x57305f : stalker ? 0x27536b : strider ? 0x62572d : flyer ? 0x244f68 : prowler ? 0x62472f : 0x334d42;
-      const skinColor = brute ? 0x2c1c1b : broodmother ? 0x271824 : spitter ? 0x172e25 : razortail ? 0x29162f : stalker ? 0x102832 : strider ? 0x292614 : flyer ? 0x102735 : prowler ? 0x2a1c16 : 0x192a24;
-      const glowColor = broodmother ? 0xff8bb8 : spitter ? 0x63ff9f : razortail ? 0xe86bff : stalker ? 0x51dfff : strider ? 0xffe56d : flyer ? 0x79e8ff : prowler ? 0xffb36a : 0xff503f;
+      const brute = kind === "brute", spitter = kind === "spitter", broodmother = kind === "broodmother", razortail = kind === "razortail", stalker = kind === "stalker", strider = kind === "strider", flyer = kind === "flyer", prowler = kind === "prowler", tidecrawler = kind === "tidecrawler";
+      const shellColor = tidecrawler ? 0x176f78 : brute ? 0x673832 : broodmother ? 0x5d3548 : spitter ? 0x28654b : razortail ? 0x57305f : stalker ? 0x27536b : strider ? 0x62572d : flyer ? 0x244f68 : prowler ? 0x62472f : 0x334d42;
+      const skinColor = tidecrawler ? 0x0c343b : brute ? 0x2c1c1b : broodmother ? 0x271824 : spitter ? 0x172e25 : razortail ? 0x29162f : stalker ? 0x102832 : strider ? 0x292614 : flyer ? 0x102735 : prowler ? 0x2a1c16 : 0x192a24;
+      const glowColor = tidecrawler ? 0x69f5ff : broodmother ? 0xff8bb8 : spitter ? 0x63ff9f : razortail ? 0xe86bff : stalker ? 0x51dfff : strider ? 0xffe56d : flyer ? 0x79e8ff : prowler ? 0xffb36a : 0xff503f;
       const shell = new THREE.MeshStandardMaterial({ color: shellColor, roughness: 0.48, metalness: 0.18 });
       const skin = new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.82 });
       const glow = new THREE.MeshBasicMaterial({ color: glowColor });
@@ -979,7 +1008,21 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
         }
       };
 
-      if (kind === "drone") {
+      if (kind === "tidecrawler") {
+        addOrb(bodyRig, 0.54, [0, 0.34, 0.12], [1.2, 0.42, 1.38], shell);
+        addOrb(bodyRig, 0.36, [0, 0.31, -0.52], [1.15, 0.48, 0.96], skin);
+        addPlate([0, 0.52, 0.08], [1.22, 0.2, 1.32], 0x258b91);
+        addPlate([0, 0.47, -0.5], [0.92, 0.18, 0.78], 0x1d737c);
+        for (const side of [-1, 1]) {
+          addEye(side * 0.13, 0.32, -0.78, 0.047);
+          addAntenna(side, new THREE.Vector3(side * 0.12, 0.34, -0.72), new THREE.Vector3(side * 0.32, 0.48, -0.94), new THREE.Vector3(side * 0.58, 0.3, -1.14), 0.018);
+          const fin = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.78, 5), new THREE.MeshStandardMaterial({ color: 0x4bc3cb, emissive: 0x0d5961, emissiveIntensity: 0.62, roughness: 0.38 }));
+          fin.position.set(side * 0.52, 0.3, 0.24); fin.rotation.set(0, 0, side * Math.PI / 2); fin.scale.z = 0.48; bodyRig.add(fin);
+        }
+        [-0.3, 0.08, 0.4].forEach((z, i) => { addLeg(-1, z, i * Math.PI * 0.72, 0.48, 0.42, 0.052, 0.32); addLeg(1, z, Math.PI + i * Math.PI * 0.72, 0.48, 0.42, 0.052, 0.32); });
+        [-0.08, 0.2, 0.43].forEach((z, i) => addSpine(0, 0.67 - i * 0.025, z, 0.18 - i * 0.018, 0x53cbd1));
+        const aquaticGlow = new THREE.PointLight(0x69f5ff, 1.4, 2.8); aquaticGlow.position.set(0, 0.3, -0.65); bodyRig.add(aquaticGlow);
+      } else if (kind === "drone") {
         addOrb(bodyRig, 0.42, [0, 0.42, 0.18], [0.9, 0.56, 1.35], shell);
         addOrb(bodyRig, 0.3, [0, 0.37, -0.42], [1.05, 0.62, 0.9], skin);
         addOrb(bodyRig, 0.19, [0, 0.33, -0.7], [1.18, 0.56, 0.95], shell);
@@ -1103,7 +1146,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
         for (const side of [-1, 1]) addOrb(bodyRig, 0.25, [side * 0.6, 1.12, -0.2], [1.2, 0.7, 1], shell);
       }
 
-      const classScale = brute ? 0.9 : broodmother ? 0.82 : spitter ? 0.68 : razortail ? 0.74 : strider ? 0.72 : prowler ? 0.62 : stalker ? 0.4 : flyer ? 0.48 : 0.52;
+      const classScale = brute ? 0.9 : broodmother ? 0.82 : spitter ? 0.68 : razortail ? 0.74 : strider ? 0.72 : prowler ? 0.62 : tidecrawler ? 0.58 : stalker ? 0.4 : flyer ? 0.48 : 0.52;
       g.scale.setScalar(classScale * (0.94 + Math.random() * 0.12));
       g.userData.legs = legs; g.userData.legPhases = legPhases; g.userData.tails = tails; g.userData.wings = wings; g.userData.bodyRig = bodyRig; g.userData.kind = kind;
       return g;
@@ -1123,10 +1166,11 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
     const maxActiveEnemies = map.activeEnemyCap ?? MAX_ACTIVE_ENEMIES;
     const base = makeBase(); base.position.copy(worldPos(baseCell.x, baseCell.y)); base.rotation.y = 0.55; world.add(base);
     const spawnBeacons = spawnCells.map((cell, index) => {
-      const group = new THREE.Group();
-      const portal = new THREE.Mesh(new THREE.TorusGeometry(0.72, 0.08, 10, 30), new THREE.MeshStandardMaterial({ color: 0x6f1827, emissive: 0x7f0d26, emissiveIntensity: 2 })); portal.rotation.x = Math.PI / 2; portal.position.y = 0.18; group.add(portal);
-      const inner = new THREE.Mesh(new THREE.RingGeometry(0.32, 0.52, 26), new THREE.MeshBasicMaterial({ color: 0xff3157, transparent: true, opacity: 0.24, side: THREE.DoubleSide })); inner.rotation.x = -Math.PI / 2; inner.position.y = 0.12; group.add(inner);
-      const light = new THREE.PointLight(0xff234c, 3, 7); light.position.y = 0.35; group.add(light); group.position.copy(worldPos(cell.x, cell.y)); world.add(group);
+      const group = new THREE.Group(), aquatic = isWaterCell(cell.x, cell.y);
+      const portalColor = aquatic ? 0x2ad9ef : 0xff3157, portalEmissive = aquatic ? 0x087b91 : 0x7f0d26;
+      const portal = new THREE.Mesh(new THREE.TorusGeometry(0.72, 0.08, 10, 30), new THREE.MeshStandardMaterial({ color: portalColor, emissive: portalEmissive, emissiveIntensity: 2 })); portal.rotation.x = Math.PI / 2; portal.position.y = 0.18; group.add(portal);
+      const inner = new THREE.Mesh(new THREE.RingGeometry(0.32, 0.52, 26), new THREE.MeshBasicMaterial({ color: portalColor, transparent: true, opacity: 0.24, side: THREE.DoubleSide })); inner.rotation.x = -Math.PI / 2; inner.position.y = 0.12; group.add(inner);
+      const light = new THREE.PointLight(portalColor, 3, 7); light.position.y = 0.35; group.add(light); group.position.copy(worldPos(cell.x, cell.y)); world.add(group);
       return { group, portal, inner, light, phase: index * Math.PI * 0.67 };
     });
 
@@ -1835,6 +1879,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       return { x: lateral, y: -inward };
     }
     function spawnEnemy(spawnCell: Cell, formationIndex = 0) {
+      const aquaticGate = isWaterCell(spawnCell.x, spawnCell.y);
       const weights: Array<[AlienKind, number]> = [
         ["drone", Math.max(30, 82 - wave * 2)],
         ["spitter", wave >= 3 ? 10 + wave * 0.45 : 0],
@@ -1846,8 +1891,8 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
         ["razortail", wave >= 10 ? 5 + wave * 0.3 : 0],
         ["broodmother", wave >= 12 ? 1.5 + wave * 0.2 : 0],
       ];
-      let roll = Math.random() * weights.reduce((sum, [, weight]) => sum + weight, 0), kind: AlienKind = "drone";
-      for (const [candidate, weight] of weights) { roll -= weight; if (roll <= 0) { kind = candidate; break; } }
+      let roll = Math.random() * weights.reduce((sum, [, weight]) => sum + weight, 0), kind: AlienKind = aquaticGate ? "tidecrawler" : "drone";
+      if (!aquaticGate) for (const [candidate, weight] of weights) { roll -= weight; if (roll <= 0) { kind = candidate; break; } }
       const stats = ENEMY_STATS[kind], scale = 1 + wave * 0.055, hp = stats.hp * scale, offset = assaultOffset(spawnCell, formationIndex);
       const spawnX = clamp(spawnCell.x + offset.x, 0, GRID_W - 1), spawnY = clamp(spawnCell.y + offset.y, 0, GRID_H - 1);
       const group = makeAlien(kind), p = worldPos(spawnX, spawnY, FLYING_ENEMIES.has(kind) ? 2.65 : 0); group.position.copy(p); group.rotation.y = (Math.random() - 0.5) * 0.7; attachHealthBar(group, stats.barHeight); world.add(group);
@@ -2429,7 +2474,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       }
       for (const e of [...enemies]) {
         if (e.hp <= 0) {
-          const deathColor = e.kind === "flyer" ? 0x79e8ff : e.kind === "broodmother" ? 0xff73aa : e.kind === "spitter" ? 0x58ff96 : e.kind === "razortail" ? 0xe66bff : e.kind === "stalker" ? 0x58ddff : e.kind === "strider" ? 0xffe56d : e.kind === "prowler" ? 0xffb36a : 0xff573e;
+          const deathColor = e.kind === "tidecrawler" ? 0x69f5ff : e.kind === "flyer" ? 0x79e8ff : e.kind === "broodmother" ? 0xff73aa : e.kind === "spitter" ? 0x58ff96 : e.kind === "razortail" ? 0xe66bff : e.kind === "stalker" ? 0x58ddff : e.kind === "strider" ? 0xffe56d : e.kind === "prowler" ? 0xffb36a : 0xff573e;
           const deathCount = e.kind === "brute" ? 24 : e.kind === "broodmother" ? 22 : e.kind === "razortail" ? 20 : e.kind === "flyer" ? 15 : e.kind === "strider" ? 14 : e.kind === "prowler" ? 13 : e.kind === "stalker" ? 9 : 12;
           if (!testerMode) credits += e.reward; kills++; burst(e.group.position.clone().add(new THREE.Vector3(0, 0.4, 0)), deathColor, deathCount); removeHealthBar(e.group); discardWorldObject(e.group); enemies.splice(enemies.indexOf(e), 1); continue;
         }
@@ -2523,7 +2568,7 @@ export default function Home() {
           <p><b>{selectedProduction.rallyPoint ? `RALLY GRID ${selectedProduction.rallyPoint.x},${selectedProduction.rallyPoint.y}` : "NO RALLY POINT"}</b> · Right-click clear ground to set where completed {selectedProduction.kind === "factory" ? "vehicles" : "infantry"} automatically move. {selectedProduction.kind === "factory" ? "Queue Tanks and M777 Howitzers in any order." : "Each infantry specialist completes a five-second training cycle."}</p>
         </div>}
         <div className="camera-tools"><button onClick={() => apiRef.current?.rotate()} aria-label="Rotate camera">↻</button><span>ORBIT</span></div>
-        {briefing && <div className="briefing map-briefing"><div className="briefing-id">DEPLOYMENT MODE // FIVE ACTIVE SECTORS</div><h1>Choose how you want to play.</h1><p>Run each battlefield&apos;s progressive campaign or open a combat laboratory with exact wave controls and unlimited friendly assets.</p><div className="mode-selector" aria-label="Game mode"><button className={gameMode === "campaign" ? "active" : ""} aria-pressed={gameMode === "campaign"} onClick={() => selectMode("campaign")}><small>STANDARD OPERATION</small><b>CAMPAIGN</b><span>Credits, build windows, and progressively longer operations.</span></button><button className={gameMode === "tester" ? "active" : ""} aria-pressed={gameMode === "tester"} onClick={() => selectMode("tester")}><small>COMBAT LABORATORY</small><b>UNIT TESTER</b><span>Pick a wave and alien count. All defenses, upgrades, and infantry are free.</span></button></div><div className="map-selector" aria-label="Available battlefields">{MAP_ORDER.map(key => { const option = MAPS[key]; const pipPosition = (cell: Cell) => ({ left: `${(cell.x / (GRID_W - 1)) * 100}%`, top: `${(cell.y / (GRID_H - 1)) * 100}%` }); return <button key={key} className={`map-option ${mapKey === key ? "active" : ""}`} aria-pressed={mapKey === key} onClick={() => selectMap(key)}><span className={`map-preview ${key}`} aria-hidden="true"><i className="base-pip" style={pipPosition(option.baseCell)} />{option.spawnCells.map((cell, index) => <i key={`${cell.x}-${cell.y}-${index}`} className="portal-pip" style={pipPosition(cell)} />)}</span><small>{option.terrain}</small><b>{option.name}</b><em>{option.objective} · {option.waveCount} campaign waves</em></button>; })}</div><p className="map-description"><b>{testerMode ? "UNIT TEST RANGE" : `OPERATION ${map.operation} · SECTOR ${map.sector}`}</b>{testerMode ? `Use ${map.name} to test any wave from 1 to ${FINAL_MAP_WAVES} against a custom force of up to 5,000 aliens.` : map.description}</p><div className="brief-grid"><span><kbd>{testerMode ? "WAVE 1–25" : "LIGHT TOWER"}</kbd><b>{testerMode ? "Choose enemy strength and unit mix" : "Reveal a wide area"}</b></span><span><kbd>{testerMode ? "1–5,000" : "RIGHT CLICK"}</kbd><b>{testerMode ? "Set the exact alien population" : "Move scouts forward"}</b></span><span><kbd>{testerMode ? "UNLIMITED" : "STACK WALLS"}</kbd><b>{testerMode ? "Place, upgrade, and recruit for free" : "Shape every approach"}</b></span><span><kbd>MIDDLE DRAG</kbd><b>Orbit camera</b></span></div><button onClick={() => setBriefing(false)}>{testerMode ? `OPEN UNIT TESTER ON ${map.name.toUpperCase()}` : `DEPLOY TO ${map.name.toUpperCase()}`}</button></div>}
+        {briefing && <div className="briefing map-briefing"><div className="briefing-id">DEPLOYMENT MODE // SIX ACTIVE SECTORS</div><h1>Choose how you want to play.</h1><p>Run each battlefield&apos;s progressive campaign or open a combat laboratory with exact wave controls and unlimited friendly assets.</p><div className="mode-selector" aria-label="Game mode"><button className={gameMode === "campaign" ? "active" : ""} aria-pressed={gameMode === "campaign"} onClick={() => selectMode("campaign")}><small>STANDARD OPERATION</small><b>CAMPAIGN</b><span>Credits, build windows, and progressively longer operations.</span></button><button className={gameMode === "tester" ? "active" : ""} aria-pressed={gameMode === "tester"} onClick={() => selectMode("tester")}><small>COMBAT LABORATORY</small><b>UNIT TESTER</b><span>Pick a wave and alien count. All defenses, upgrades, and infantry are free.</span></button></div><div className="map-selector" aria-label="Available battlefields">{MAP_ORDER.map(key => { const option = MAPS[key]; const pipPosition = (cell: Cell) => ({ left: `${(cell.x / (GRID_W - 1)) * 100}%`, top: `${(cell.y / (GRID_H - 1)) * 100}%` }); return <button key={key} className={`map-option ${mapKey === key ? "active" : ""}`} aria-pressed={mapKey === key} onClick={() => selectMap(key)}><span className={`map-preview ${key}`} aria-hidden="true"><i className="base-pip" style={pipPosition(option.baseCell)} />{option.spawnCells.map((cell, index) => <i key={`${cell.x}-${cell.y}-${index}`} className={`portal-pip ${option.waterAt(cell.x, cell.y) ? "water" : ""}`} style={pipPosition(cell)} />)}</span><small>{option.terrain}</small><b>{option.name}</b><em>{option.objective} · {option.waveCount} campaign waves</em></button>; })}</div><p className="map-description"><b>{testerMode ? "UNIT TEST RANGE" : `OPERATION ${map.operation} · SECTOR ${map.sector}`}</b>{testerMode ? `Use ${map.name} to test any wave from 1 to ${FINAL_MAP_WAVES} against a custom force of up to 5,000 aliens.` : map.description}</p><div className="brief-grid"><span><kbd>{testerMode ? "WAVE 1–25" : "LIGHT TOWER"}</kbd><b>{testerMode ? "Choose enemy strength and unit mix" : "Reveal a wide area"}</b></span><span><kbd>{testerMode ? "1–5,000" : "RIGHT CLICK"}</kbd><b>{testerMode ? "Set the exact alien population" : "Move scouts forward"}</b></span><span><kbd>{testerMode ? "UNLIMITED" : "STACK WALLS"}</kbd><b>{testerMode ? "Place, upgrade, and recruit for free" : "Shape every approach"}</b></span><span><kbd>MIDDLE DRAG</kbd><b>Orbit camera</b></span></div><button onClick={() => setBriefing(false)}>{testerMode ? `OPEN UNIT TESTER ON ${map.name.toUpperCase()}` : `DEPLOY TO ${map.name.toUpperCase()}`}</button></div>}
         {hud.gameOver && <div className={`end-card ${hud.victory ? "won" : "lost"}`}><small>{testerMode ? "TEST RANGE OVERRUN" : hud.victory ? "OPERATION COMPLETE" : "SIGNAL LOST"}</small><h2>{testerMode ? "TEST COMPLETE" : hud.victory ? `${map.name.toUpperCase()} HOLDS` : "COMMAND OVERRUN"}</h2><p>{testerMode ? `${hud.kills} hostiles eliminated before the command post failed.` : `${hud.kills} hostiles eliminated across ${hud.wave} waves.`}</p><button onClick={() => apiRef.current?.restart()}>{testerMode ? "RESET TEST RANGE" : "RESTART OPERATION"}</button></div>}
       </section>
       <aside className={`build-panel ${testerMode ? "tester" : ""} ${(!testerMode && hud.active) || hud.gameOver ? "locked" : ""}`}>

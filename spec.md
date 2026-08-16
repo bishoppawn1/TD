@@ -40,8 +40,9 @@ Protect the command post through all 25 enemy waves.
 - Blackglass Divide uses seven distinct terraced peaks, smaller volcanic ridges, obsidian crystal clusters, heat vents, and a diagonal river to create many elevated positions and approach channels.
 - Three narrow permanent bridges cross the Blackglass river at the western, central, and eastern thirds of the battlefield. Infantry and ordinary ground aliens use these crossings, and construction is prohibited on the bridge decks so every crossing remains available.
 - Temple of Dust places the command post in the center of an ancient ruin maze. Staggered openings across concentric high walls and broken corridor baffles force eight invasion routes to bend through distinct approaches.
+- Pelagic Atoll is more than 80 percent water, with a central buildable island, two narrow land causeways, six submerged Tidecrawler nests, and two ordinary land gates. Roughly three quarters of each assault approaches through the lagoon as aquatic enemies.
 - The Breeding World is an alien homeworld with organic ridges, luminous growths, and twelve perimeter spawning pits surrounding a central command post.
-- Every battlefield contains map-specific shallow water: HQ has a frontier stream, Cinder Basin has an oasis, Blackglass has a diagonal fracture, Temple of Dust has two cisterns, and the homeworld has luminous alien pools.
+- Every battlefield contains map-specific shallow water: HQ has a frontier stream, Cinder Basin has an oasis, Blackglass has a diagonal fracture, Temple of Dust has two cisterns, Pelagic Atoll is a flooded archipelago, and the homeworld has luminous alien pools.
 - Water is impassable to infantry, mobile crewed weapons, structures, and every ordinary ground alien. Only dedicated aquatic aliens may enter and wade through water; flying enemies pass above it.
 - Ambient props are deterministic but naturally scattered by terrain rather than repeated in straight lines. HQ uses pines and supply caches, Cinder uses cacti and bones, Blackglass uses crystals and vents, Temple of Dust uses pillars and obelisks, and the homeworld uses organic growths.
 - Portal counts vary by battlefield. The homeworld more than doubles the usual wave population, deploys it at a faster cadence, and permits up to 170 simultaneous hostiles; multi-gate maps rotate each packet across their available fronts.
@@ -176,6 +177,10 @@ A durable ranged alien introduced in wave 12. Broodmothers launch slow, high-arc
 
 A small, fragile airborne alien introduced in wave three. Skyrazors are the only winged enemy class: their two pairs of translucent wings clearly signal that they fly over walls and difficult terrain. They trade durability for mobility, ignore ground hazards, and attack the command post, infantry, weapons, lights, or barracks from above. Flak turrets are the purpose-built counter, though suitable general-purpose direct-fire weapons can also engage them.
 
+### Tidecrawler
+
+An aquatic alien with a flattened teal shell, luminous cyan markings, fins, and six crawling legs. Tidecrawlers emerge from submerged cyan portals, cross open water, and then crawl onto land to attack the command post; ordinary ground aliens cannot enter water cells. Pelagic Atoll dedicates six of its eight invasion fronts to Tidecrawlers so their amphibious movement can be tested under sustained pressure.
+
 All ground alien classes are visually wingless. Their silhouettes use tall, angular, multi-jointed legs with tapered lower limbs, pronounced knee spikes, rear-facing barbs, and hooked claw points instead of broad or flattened feet. Crawling bodies, armor, tails, and class-specific proportions still communicate how each creature moves across or climbs over the battlefield.
 
 Enemy health and movement speed scale upward as the operation advances. Wave size also increases, creating steadily greater pressure on the player's defenses.
@@ -188,6 +193,7 @@ Enemy health and movement speed scale upward as the operation advances. Wave siz
 - Swarm density is six times the original deployment strength: wave one contains 96 hostiles and the count rises to 432 by wave 25.
 - HQ Command increases those totals to 168 hostiles on wave one and 756 by wave 25, with as many as 170 enemies active at once.
 - Assault groups arrive at a proportionally faster cadence, concentrating the larger population into intense mass attacks instead of merely extending wave duration.
+- Portals submerged in water spawn Tidecrawlers, while dry portals use the normal alien roster. Pelagic Atoll's six aquatic fronts make roughly three quarters of its attackers aquatic.
 - Advanced enemy classes enter the possible spawn pool as waves progress, with Skyrazors joining from wave three onward.
 - A wave ends after all scheduled enemies have spawned and no living enemies remain.
 - The player receives a resupply award after each cleared wave.
