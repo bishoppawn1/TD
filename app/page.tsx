@@ -2032,7 +2032,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
         if (spawnTimer <= 0) { spawnAssaultGroup(); spawnTimer = (Math.max(1.15, 2.1 - wave * 0.025) + Math.random() * 0.35) * (map.spawnIntervalMultiplier ?? 1); }
       }
       updateFogOfWar(dt);
-      type EnemyTargetChoice = { type: "marine" | "structure" | "base"; id: number | null; x: number; y: number; group: THREE.Group; directDistance: number };
+      type EnemyTargetChoice = { type: "marine" | "structure" | "base"; id: number | null; x: number; y: number; group: THREE.Group; directDistance: number; wallId?: number };
       const groundEnemyBlocked = blockedForEnemy("drone"), wallClimberBlocked = blockedForEnemy("stalker"), flyingEnemyBlocked = blockedForEnemy("flyer");
       const wallTraversalHeights = new Map<string, number>();
       structures.filter(isWall).forEach(wall => wallTraversalHeights.set(keyOf(wall.x, wall.y), Math.max(wallTraversalHeights.get(keyOf(wall.x, wall.y)) ?? 0, wallTopLift(wall))));
@@ -2067,8 +2067,14 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
         const flying = FLYING_ENEMIES.has(e.kind);
         const enemyStats = ENEMY_STATS[e.kind], climbsWalls = WALL_CLIMBERS.has(e.kind);
         const targets: EnemyTargetChoice[] = [{ type: "base", id: null, x: baseCell.x, y: baseCell.y, group: base, directDistance: Math.hypot(baseCell.x - e.x, baseCell.y - e.y) }];
-        marines.forEach(m => targets.push({ type: "marine", id: m.id, x: m.x, y: m.y, group: m.group, directDistance: Math.hypot(m.x - e.x, m.y - e.y) }));
-        structures.forEach(s => { if ((flying ? isCombatStructure(s) || s.kind === "light" || s.kind === "barracks" : (isPathBlocking(s) && (!climbsWalls || !isWall(s))) || isCombatStructure(s))) targets.push({ type: "structure", id: s.id, x: s.x, y: s.y, group: s.group, directDistance: Math.hypot(s.x - e.x, s.y - e.y) }); });
+        marines.forEach(m => {
+          if (m.mountedOn && !flying && !climbsWalls) return;
+          targets.push({ type: "marine", id: m.id, x: m.x, y: m.y, group: m.group, directDistance: Math.hypot(m.x - e.x, m.y - e.y), wallId: m.mountedOn });
+        });
+        structures.forEach(s => {
+          if (s.mountedOn && !flying && !climbsWalls) return;
+          if ((flying ? isCombatStructure(s) || s.kind === "light" || s.kind === "barracks" : (isPathBlocking(s) && (!climbsWalls || !isWall(s))) || isCombatStructure(s))) targets.push({ type: "structure", id: s.id, x: s.x, y: s.y, group: s.group, directDistance: Math.hypot(s.x - e.x, s.y - e.y), wallId: s.mountedOn });
+        });
         let targetChoice = targets.find(target => target.type === e.targetType && target.id === e.targetId);
         const retaliationTarget = targets.find(target => target.type === "structure" && target.id === e.retaliateAgainstId);
         if (e.retaliateAgainstId && !retaliationTarget) e.retaliateAgainstId = undefined;
@@ -2110,7 +2116,11 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
           damageEnemy(e, RAZOR_WIRE_DAMAGE_PER_SECOND * dt);
           if (Math.random() < dt * 5) burst(e.group.position.clone().add(new THREE.Vector3(0, 0.2, 0)), 0xd8cab0, 1);
         } else e.wireContactId = undefined;
-        const inAttackRange = !!combatTarget && targetDistance <= attackRange, rangedEnemy = RANGED_ENEMIES.has(e.kind);
+        const targetWall = combatTarget?.wallId ? structures.find(structure => structure.id === combatTarget.wallId && isWall(structure)) : undefined;
+        const requiredWallLift = targetWall ? wallTopLift(targetWall) : 0;
+        const currentWallLift = targetWall && climbsWalls ? requiredWallLift * clamp(1 - Math.hypot(targetWall.x - e.x, targetWall.y - e.y) / 1.05, 0, 1) : 0;
+        const reachedTargetElevation = !targetWall || flying || (climbsWalls && requiredWallLift - currentWallLift <= 0.08);
+        const inAttackRange = !!combatTarget && targetDistance <= attackRange && reachedTargetElevation, rangedEnemy = RANGED_ENEMIES.has(e.kind);
         let firedThisFrame = false;
         if (combatTarget && inAttackRange) {
           e.group.rotation.y = Math.atan2(-(tx - e.x), -(ty - e.y));

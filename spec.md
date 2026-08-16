@@ -106,6 +106,8 @@ A non-attacking reconnaissance structure with rotating searchlights. It reveals 
 
 A non-attacking fortification used to alter enemy paths and create kill zones. Walls can be stacked vertically without a height limit. Single-height sections omit elevator hardware; taller stacks display elevators only along exposed faces and automatically remove elevator sections wherever adjacent stacks touch.
 
+Ground aliens cannot attack infantry, turrets, or lights mounted on a wall from below. Wall-climbing aliens must reach the top elevation before striking them; non-climbers attack the supporting wall instead, while flying aliens may engage elevated defenders directly.
+
 ### Infantry Trench — 85 credits
 
 A recessed earthwork that protects up to four infantry with 40 percent incoming-damage reduction. Cardinally adjacent trenches automatically remove their shared sandbag wall and form one continuous duckboard-lined passage.
