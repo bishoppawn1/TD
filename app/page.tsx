@@ -32,6 +32,8 @@ const MARINE_STACK_THRESHOLD = 10;
 const MARINE_STACK_COLLECTION_DIAMETER = 1;
 const MARINE_STACK_COLLECTION_RADIUS = MARINE_STACK_COLLECTION_DIAMETER / 2;
 const ENEMY_COLLISION_BUCKET_SIZE = 1.12;
+const ENEMY_AVOIDANCE_LOOKAHEAD = 1.45;
+const ENEMY_AVOIDANCE_LATERAL_STRENGTH = 1.35;
 const WALL_STACK_HEIGHT = 0.62;
 const WALL_CLIMB_SPEED = 0.46;
 const WALL_LIFT_SPEED = 3.6;
@@ -2159,6 +2161,62 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       updateFogOfWar(dt);
       type EnemyTargetChoice = { type: "marine" | "structure" | "base"; id: number | null; x: number; y: number; group: THREE.Group; directDistance: number; wallId?: number };
       const groundEnemyBlocked = blockedForEnemy("drone"), wallClimberBlocked = blockedForEnemy("stalker"), flyingEnemyBlocked = blockedForEnemy("flyer");
+      const avoidanceBuckets = new Map<string, Enemy[]>();
+      for (const enemy of enemies) {
+        const bucketKey = keyOf(Math.floor(enemy.x / ENEMY_COLLISION_BUCKET_SIZE), Math.floor(enemy.y / ENEMY_COLLISION_BUCKET_SIZE));
+        const bucket = avoidanceBuckets.get(bucketKey);
+        if (bucket) bucket.push(enemy); else avoidanceBuckets.set(bucketKey, [enemy]);
+      }
+      const nearbyEnemies = (enemy: Enemy) => {
+        const nearby: Enemy[] = [], bucketX = Math.floor(enemy.x / ENEMY_COLLISION_BUCKET_SIZE), bucketY = Math.floor(enemy.y / ENEMY_COLLISION_BUCKET_SIZE);
+        for (let offsetY = -2; offsetY <= 2; offsetY++) for (let offsetX = -2; offsetX <= 2; offsetX++) nearby.push(...(avoidanceBuckets.get(keyOf(bucketX + offsetX, bucketY + offsetY)) ?? []));
+        return nearby;
+      };
+      const steerAroundAllies = (enemy: Enemy, dx: number, dy: number, distance: number, step: number, blocked: Set<string>) => {
+        const forwardX = dx / distance, forwardY = dy / distance, leftX = -forwardY, leftY = forwardX;
+        let separationX = 0, separationY = 0, leftCrowding = 0, rightCrowding = 0, closestBlocker: { lateral: number; distance: number } | undefined;
+        for (const other of nearbyEnemies(enemy)) {
+          if (other.id === enemy.id || FLYING_ENEMIES.has(other.kind) !== FLYING_ENEMIES.has(enemy.kind) || Math.abs(other.group.position.y - enemy.group.position.y) > 0.85) continue;
+          const offsetX = other.x - enemy.x, offsetY = other.y - enemy.y, apart = Math.max(0.001, Math.hypot(offsetX, offsetY));
+          if (apart > ENEMY_AVOIDANCE_LOOKAHEAD + enemyCollisionRadius(enemy) + enemyCollisionRadius(other)) continue;
+          const forwardDistance = offsetX * forwardX + offsetY * forwardY, lateral = offsetX * leftX + offsetY * leftY;
+          const clearance = enemyCollisionRadius(enemy) + enemyCollisionRadius(other) + 0.08;
+          const crowdWeight = Math.max(0, ENEMY_AVOIDANCE_LOOKAHEAD - apart) / ENEMY_AVOIDANCE_LOOKAHEAD;
+          if (lateral >= 0) leftCrowding += crowdWeight; else rightCrowding += crowdWeight;
+          if (apart < clearance * 1.18) {
+            const separation = (clearance * 1.18 - apart) / (clearance * 1.18);
+            separationX -= offsetX / apart * separation; separationY -= offsetY / apart * separation;
+          }
+          if (forwardDistance <= 0 || forwardDistance > ENEMY_AVOIDANCE_LOOKAHEAD || Math.abs(lateral) >= clearance * 1.3) continue;
+          if (!closestBlocker || forwardDistance < closestBlocker.distance) closestBlocker = { lateral, distance: forwardDistance };
+        }
+        let passingSide = 0;
+        if (closestBlocker) {
+          if (Math.abs(closestBlocker.lateral) > 0.06) passingSide = closestBlocker.lateral > 0 ? -1 : 1;
+          else if (Math.abs(leftCrowding - rightCrowding) > 0.08) passingSide = leftCrowding < rightCrowding ? 1 : -1;
+          else passingSide = enemy.id % 2 ? 1 : -1;
+        }
+        let steerX = forwardX + leftX * passingSide * ENEMY_AVOIDANCE_LATERAL_STRENGTH + separationX * 0.72;
+        let steerY = forwardY + leftY * passingSide * ENEMY_AVOIDANCE_LATERAL_STRENGTH + separationY * 0.72;
+        const forwardComponent = steerX * forwardX + steerY * forwardY;
+        if (forwardComponent < 0.35) { steerX += forwardX * (0.35 - forwardComponent); steerY += forwardY * (0.35 - forwardComponent); }
+        const steerLength = Math.max(0.001, Math.hypot(steerX, steerY)); steerX /= steerLength; steerY /= steerLength;
+        const candidateIsClear = (x: number, y: number) => x >= 0 && y >= 0 && x < GRID_W && y < GRID_H && !blocked.has(keyOf(Math.round(x), Math.round(y)));
+        let nextX = enemy.x + steerX * step, nextY = enemy.y + steerY * step;
+        if (!candidateIsClear(nextX, nextY)) {
+          if (passingSide) {
+            const oppositeX = forwardX - leftX * passingSide * ENEMY_AVOIDANCE_LATERAL_STRENGTH, oppositeY = forwardY - leftY * passingSide * ENEMY_AVOIDANCE_LATERAL_STRENGTH, oppositeLength = Math.hypot(oppositeX, oppositeY);
+            const alternateX = enemy.x + oppositeX / oppositeLength * step, alternateY = enemy.y + oppositeY / oppositeLength * step;
+            if (candidateIsClear(alternateX, alternateY)) { nextX = alternateX; nextY = alternateY; }
+          }
+          if (!candidateIsClear(nextX, nextY)) {
+            const directX = enemy.x + forwardX * step, directY = enemy.y + forwardY * step;
+            if (candidateIsClear(directX, directY)) { nextX = directX; nextY = directY; }
+            else { nextX = enemy.x; nextY = enemy.y; }
+          }
+        }
+        return { x: clamp(nextX, 0, GRID_W - 1), y: clamp(nextY, 0, GRID_H - 1) };
+      };
       const wallTraversalHeights = new Map<string, number>();
       structures.filter(isWall).forEach(wall => wallTraversalHeights.set(keyOf(wall.x, wall.y), Math.max(wallTraversalHeights.get(keyOf(wall.x, wall.y)) ?? 0, wallTopLift(wall))));
       const wallLiftAt = (cell: Cell) => wallTraversalHeights.get(keyOf(Math.round(cell.x), Math.round(cell.y))) ?? 0;
@@ -2265,7 +2323,13 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
             const waterRate = WATER_ALIENS.has(e.kind) && (isWaterCell(segmentStart.x, segmentStart.y) || isWaterCell(targetCell.x, targetCell.y)) ? ENEMY_WATER_SPEED_MULTIPLIER : 1;
             const groundRate = e.speed * terrainSpeedMultiplier(segmentStart, targetCell) * waterRate, terrainClimbDistance = flying ? 0 : Math.max(0, heights[targetCell.y][targetCell.x] - heights[segmentStart.y][segmentStart.x]), wallClimbDistance = climbsWalls ? Math.abs(wallLiftAt(targetCell) - wallLiftAt(segmentStart)) : 0;
             movementRate = flying ? e.speed : segmentLength / (segmentLength / Math.max(0.01, groundRate) + terrainClimbDistance / ENEMY_TERRAIN_CLIMB_SPEED + wallClimbDistance / WALL_CLIMB_SPEED) * (wire ? RAZOR_WIRE_SLOW_MULTIPLIER : 1);
-            if (dist < 0.025) e.index++; else { const step = Math.min(dist, movementRate * dt); e.x += dx / dist * step; e.y += dy / dist * step; e.group.rotation.y = Math.atan2(-dx, -dy); isMoving = true; }
+            if (dist < 0.08) e.index++; else {
+              const step = Math.min(dist, movementRate * dt), blocked = flying ? flyingEnemyBlocked : WATER_ALIENS.has(e.kind) ? blockedForEnemy(e.kind) : climbsWalls ? wallClimberBlocked : groundEnemyBlocked;
+              const next = steerAroundAllies(e, dx, dy, dist, step, blocked), moveX = next.x - e.x, moveY = next.y - e.y;
+              e.x = next.x; e.y = next.y; e.group.rotation.y = Math.atan2(-moveX, -moveY); isMoving = true;
+              const remainingX = targetCell.x - e.x, remainingY = targetCell.y - e.y;
+              if (Math.hypot(remainingX, remainingY) < 0.08 || dx * remainingX + dy * remainingY <= 0) e.index++;
+            }
           }
         }
         const gaitSpeed = enemyStats.gait;

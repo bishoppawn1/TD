@@ -50,7 +50,7 @@ Protect the command post through all 25 enemy waves.
 - Hostiles outside all friendly vision radii are hidden and cannot be targeted by weapons until they enter a revealed area.
 - Sentinel light towers project sweeping searchlights and reveal a substantially wider area than ordinary units. They can be mounted on top of Hesco or Bastion walls.
 - Enemies travel between adjacent grid cells and dynamically recalculate their route around structures.
-- Enemy bodies use size-aware collision spacing, forming a dense moving swarm without occupying the same physical space.
+- Enemy bodies use size-aware collision spacing and anticipatory local avoidance. Aliens that find another alien blocking the route ahead steer toward the less-crowded open side, pass around their ally without entering blocked terrain, and then rejoin their route instead of forming a stationary single-file pushing queue.
 - All friendly splash weapons and shock mines use only 40 percent of their authored area-of-effect radius while retaining their direct-hit damage. This compact blast rule applies consistently to infantry, vehicles, emplacements, turrets, artillery, and mines.
 - Enemies choose targets by estimated travel time rather than straight-line distance. The estimate uses the actual route, terrain grade, movement speed, and any wall ascent or descent required.
 - Ascending natural terrain adds explicit vertical climb time to both movement and route estimates, while downhill travel retains a modest speed advantage. Friendly units climb at more than ten times the aliens' vertical rate, so mountains delay soldiers without making repositioning painfully slow.
