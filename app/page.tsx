@@ -21,8 +21,8 @@ const FACTORY_PRODUCTION_SECONDS = 30;
 const ALIEN_SPEED_MULTIPLIER = 1.8;
 const ENEMY_SWARM_MULTIPLIER = 6;
 const MAX_ACTIVE_ENEMIES = 120;
-const MIN_ALIENS_PER_GATE_BURST = 20;
-const MAX_ALIENS_PER_GATE_BURST = 30;
+const HOSTILE_SPAWN_PACKET_SIZE = 10;
+const HOSTILE_SPAWN_INTERVAL = 0.5;
 const MAX_FRAME_DELTA = 0.1;
 const ROUTE_CANDIDATE_LIMIT = 5;
 const ROUTE_CACHE_LIMIT = 900;
@@ -161,7 +161,6 @@ type MapConfig = {
   startingMarines: Array<{ kind: MarineKind; x: number; y: number }>;
   activeEnemyCap?: number;
   waveMultiplier?: number;
-  burstScale?: number;
   spawnIntervalMultiplier?: number;
   waterColor: number;
   waterGlow: number;
@@ -213,7 +212,7 @@ const MAPS: Record<MapKey, MapConfig> = {
       { kind: "medic", x: 9, y: 36 }, { kind: "medic", x: 11, y: 36 },
       { kind: "rocketeer", x: 16, y: 32 }, { kind: "rocketeer", x: 16, y: 36 },
     ],
-    activeEnemyCap: 75, waveMultiplier: 0.7, burstScale: 0.5, spawnIntervalMultiplier: 1.15,
+    activeEnemyCap: 75, waveMultiplier: 0.7, spawnIntervalMultiplier: 1.15,
     waterColor: 0x176a78, waterGlow: 0x073d4b,
     waterAt: (x, y) => x >= 27 && Math.abs(y - (24 + (43 - x) * 0.28)) <= 1,
     decorAt: (x, y) => {
@@ -286,7 +285,6 @@ const MAPS: Record<MapKey, MapConfig> = {
     waveCount: 21,
     startingStructures: [{ kind: "barracks", x: 20, y: 20 }, { kind: "rifle", x: 24, y: 20 }, { kind: "wall", x: 19, y: 22 }, { kind: "factory", x: 25, y: 24 }, { kind: "wire", x: 22, y: 18 }, { kind: "flak", x: 22, y: 25 }, { kind: "light", x: 22, y: 16 }, { kind: "bastion", x: 18, y: 24 }],
     startingMarines: [{ kind: "rifleman", x: 21, y: 20 }, { kind: "medic", x: 23, y: 23 }, { kind: "rifleman", x: 24, y: 22 }, { kind: "gunner", x: 20, y: 24 }, { kind: "rocketeer", x: 25, y: 21 }],
-    burstScale: 0.42,
     waterColor: 0x287789, waterGlow: 0x103e4d,
     waterAt: (x, y) => Math.hypot(x - 22, y - 6) <= 3.2 || Math.hypot(x - 22, y - 37) <= 3.2,
     decorAt: (x, y) => ((x === 13 || x === 30) && (y === 13 || y === 30)) || ((x === 10 || x === 33) && y % 8 === 4) ? "pillar" : (x + y * 3) % 41 === 0 ? "obelisk" : null,
@@ -319,7 +317,7 @@ const MAPS: Record<MapKey, MapConfig> = {
     waveCount: FINAL_MAP_WAVES,
     startingStructures: [{ kind: "barracks", x: 20, y: 20 }, { kind: "rifle", x: 24, y: 20 }, { kind: "wall", x: 19, y: 22 }, { kind: "missile", x: 25, y: 24 }, { kind: "wire", x: 22, y: 18 }, { kind: "flak", x: 22, y: 25 }, { kind: "light", x: 22, y: 16 }, { kind: "bastion", x: 18, y: 24 }],
     startingMarines: [{ kind: "rifleman", x: 21, y: 20 }, { kind: "medic", x: 23, y: 23 }, { kind: "rifleman", x: 24, y: 22 }, { kind: "gunner", x: 20, y: 24 }, { kind: "rocketeer", x: 25, y: 21 }],
-    activeEnemyCap: 170, waveMultiplier: 2.15, burstScale: 0.55, spawnIntervalMultiplier: 0.58,
+    activeEnemyCap: 170, waveMultiplier: 2.15, spawnIntervalMultiplier: 0.58,
     waterColor: 0x68265f, waterGlow: 0x431052,
     waterAt: (x, y) => Math.hypot(x - 7, y - 28) <= 4.4 || Math.hypot(x - 37, y - 16) <= 4.4,
     decorAt: (x, y) => Math.hypot(x - 22, y - 22) > 7 && (x * 7 + y * 13) % 23 === 0 ? "growth" : null,
@@ -1814,20 +1812,16 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       const group = makeAlien(kind), p = worldPos(spawnX, spawnY, FLYING_ENEMIES.has(kind) ? 2.65 : 0); group.position.copy(p); group.rotation.y = (Math.random() - 0.5) * 0.7; attachHealthBar(group, stats.barHeight); world.add(group);
       enemies.push({ id: nextId++, kind, x: spawnX, y: spawnY, hp, maxHp: hp, speed: stats.speed * ALIEN_SPEED_MULTIPLIER * (1 + wave * 0.008), damage: stats.damage * (1 + wave * 0.022), reward: stats.reward, path: [], index: 0, group, hitFlash: 0, attackCooldown: Math.random() * 0.35, pathTimer: 0, targetBiasSeed: Math.random(), targetId: null, targetType: "base" });
     }
-    function spawnAssaultGroup() {
-      const baseAliensPerGate = Math.min(MAX_ALIENS_PER_GATE_BURST, MIN_ALIENS_PER_GATE_BURST + Math.floor((wave - 1) / 3) * 2);
-      const aliensPerGate = Math.max(3, Math.round(baseAliensPerGate * (map.burstScale ?? 1)));
-      const groupSize = Math.min(spawnLeft, maxActiveEnemies - enemies.length, aliensPerGate * spawnCells.length);
-      if (groupSize <= 0) return;
+    function spawnSwarmPacket() {
+      const groupSize = Math.min(spawnLeft, HOSTILE_SPAWN_PACKET_SIZE);
+      if (groupSize <= 0 || maxActiveEnemies - enemies.length < groupSize) return false;
       const gateCounts = Array.from({ length: spawnCells.length }, () => 0);
       for (let i = 0; i < groupSize; i++) {
-        const frontIndex = (assaultFront + i) % spawnCells.length, formationIndex = Math.floor(i / spawnCells.length);
-        spawnEnemy(spawnCells[frontIndex], formationIndex); gateCounts[frontIndex]++;
+        const frontIndex = (assaultFront + i) % spawnCells.length, formationIndex = gateCounts[frontIndex]++;
+        spawnEnemy(spawnCells[frontIndex], formationIndex);
       }
-      spawnLeft -= groupSize; assaultFront = (assaultFront + 1 + Math.floor(Math.random() * 2)) % spawnCells.length;
-      const smallestGateBurst = Math.min(...gateCounts.filter(count => count > 0)), largestGateBurst = Math.max(...gateCounts);
-      const gateBurstLabel = smallestGateBurst === largestGateBurst ? `${smallestGateBurst} PER GATE` : `${smallestGateBurst}–${largestGateBurst} PER GATE`;
-      message(`CONTACT · ${groupSize}-ALIEN MASS SURGE · ${gateBurstLabel}`);
+      spawnLeft -= groupSize; assaultFront = (assaultFront + groupSize) % spawnCells.length;
+      return true;
     }
     function startWave(config?: TestWaveConfig) {
       if (active || gameOver) return;
@@ -2076,7 +2070,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       const cameraStep = cameraVelocity.clone().multiplyScalar(dt); camera.position.add(cameraStep); controls.target.add(cameraStep); controls.target.x = clamp(controls.target.x, -30, 30); controls.target.z = clamp(controls.target.z, -30, 30);
       if (active && spawnLeft > 0 && enemies.length < maxActiveEnemies) {
         spawnTimer -= dt;
-        if (spawnTimer <= 0) { spawnAssaultGroup(); spawnTimer = (Math.max(1.15, 2.1 - wave * 0.025) + Math.random() * 0.35) * (map.spawnIntervalMultiplier ?? 1); }
+        if (spawnTimer <= 0) spawnTimer = spawnSwarmPacket() ? HOSTILE_SPAWN_INTERVAL * (map.spawnIntervalMultiplier ?? 1) : 0.1;
       }
       updateFogOfWar(dt);
       type EnemyTargetChoice = { type: "marine" | "structure" | "base"; id: number | null; x: number; y: number; group: THREE.Group; directDistance: number; wallId?: number };
