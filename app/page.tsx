@@ -1128,10 +1128,14 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
     });
 
     const STRUCTURE_HP: Record<AssetKey, number> = { rifle: 190, sentry: 280, flak: 290, flame: 245, laser: 275, railgun: 310, tank: 620, howitzer: 300, missile: 340, light: 230, wall: 600, bastion: 1050, trench: 360, wire: 180, mine: 45, barracks: 500, factory: 900 };
-    function attachHealthBar(group: THREE.Group, y = 1.75) {
-      // Health remains part of the combat simulation, but floating bars are
-      // intentionally disabled because they obscure the battlefield.
-      group.userData.healthBar = undefined; group.userData.healthFill = undefined; group.userData.healthOffset = y * group.scale.y;
+    function attachHealthBar(group: THREE.Group, y = 1.75, friendlyDamageOnly = false) {
+      group.userData.healthOffset = y * group.scale.y;
+      if (!friendlyDamageOnly) { group.userData.healthBar = undefined; group.userData.healthFill = undefined; return; }
+      const bar = new THREE.Group();
+      const backing = new THREE.Mesh(new THREE.PlaneGeometry(1.24, 0.16), new THREE.MeshBasicMaterial({ color: 0x07100d, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false }));
+      const fill = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.09), new THREE.MeshBasicMaterial({ color: 0x7dff79, depthTest: false, depthWrite: false }));
+      backing.renderOrder = 30; fill.position.z = 0.01; fill.renderOrder = 31; bar.add(backing, fill); bar.visible = false; world.add(bar);
+      group.userData.healthBar = bar; group.userData.healthFill = fill; group.userData.friendlyDamageOnlyHealthBar = true;
     }
     function updateTierBadge(group: THREE.Group, level: number) {
       const bar = group.userData.healthBar as THREE.Group | undefined; if (!bar) return;
@@ -1147,7 +1151,8 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       ctx.fillStyle = color; ctx.font = "bold 30px monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(`T${level}`, 64, 28); texture.needsUpdate = true;
     }
     function setHealthVisual(group: THREE.Group, hp: number, maxHp: number) {
-      const ratio = clamp(Number.isFinite(hp / maxHp) ? hp / maxHp : 0, 0, 1); const fill = group.userData.healthFill as THREE.Mesh | undefined;
+      const ratio = clamp(Number.isFinite(hp / maxHp) ? hp / maxHp : 0, 0, 1), bar = group.userData.healthBar as THREE.Group | undefined, fill = group.userData.healthFill as THREE.Mesh | undefined;
+      if (bar && group.userData.friendlyDamageOnlyHealthBar) bar.visible = ratio < 0.999;
       if (fill) { fill.scale.x = Math.max(0.001, ratio); fill.position.x = -0.55 * (1 - ratio); (fill.material as THREE.MeshBasicMaterial).color.setHex(ratio > 0.55 ? 0x7dff79 : ratio > 0.25 ? 0xffbd55 : 0xff5249); }
     }
     function syncHealthBar(group: THREE.Group) {
@@ -1168,7 +1173,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
     }
     function discardWorldObject(root: THREE.Object3D) { world.remove(root); disposeObjectResources(root); }
     function removeHealthBar(group: THREE.Group) {
-      const bar = group.userData.healthBar as THREE.Group | undefined; if (bar) world.remove(bar); (group.userData.tierTexture as THREE.CanvasTexture | undefined)?.dispose(); (group.userData.stackTexture as THREE.CanvasTexture | undefined)?.dispose(); (group.userData.stackBadge as THREE.Sprite | undefined)?.material.dispose(); group.userData.healthBar = undefined; group.userData.healthFill = undefined; group.userData.tierBadge = undefined; group.userData.tierTexture = undefined; group.userData.tierCanvas = undefined; group.userData.stackBadge = undefined; group.userData.stackTexture = undefined; group.userData.stackCanvas = undefined;
+      const bar = group.userData.healthBar as THREE.Group | undefined; if (bar) { world.remove(bar); disposeObjectResources(bar); } (group.userData.stackTexture as THREE.CanvasTexture | undefined)?.dispose(); (group.userData.stackBadge as THREE.Sprite | undefined)?.material.dispose(); group.userData.healthBar = undefined; group.userData.healthFill = undefined; group.userData.friendlyDamageOnlyHealthBar = undefined; group.userData.tierBadge = undefined; group.userData.tierTexture = undefined; group.userData.tierCanvas = undefined; group.userData.stackBadge = undefined; group.userData.stackTexture = undefined; group.userData.stackCanvas = undefined;
     }
     let credits = testerMode ? Infinity : 750, integrity = 100, wave = 0, kills = 0, active = false, buildTimer = 0, gameOver = false, victory = false;
     let spawnLeft = 0, spawnTimer = 0, assaultFront = 0, nextId = 1, elapsed = 0, lastHud = -1;
@@ -1202,7 +1207,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       ctx.fillStyle = color; ctx.font = "bold 42px monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(`×${count}`, 96, 38); texture.needsUpdate = true;
     }
     function syncMarineStackState(marine: Marine) {
-      marine.hp = marine.memberHp[0] ?? 0; setHealthVisual(marine.group, marine.hp, marine.maxHp); updateMarineStackBadge(marine);
+      marine.hp = marine.memberHp[0] ?? 0; setHealthVisual(marine.group, marineTotalHp(marine), marineTroopCount(marine) * marine.maxHp); updateMarineStackBadge(marine);
     }
     function damageMarine(marine: Marine, amount: number) {
       if (!marine.memberHp.length || amount <= 0) return;
@@ -1581,7 +1586,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       const mountCount = mountedOn ? structures.filter(s => s.mountedOn === mountedOn).length : 0;
       const lift = mountedWall ? wallTopLift(mountedWall) : kind === "wall" || kind === "bastion" ? stackLevel * WALL_STACK_HEIGHT : 0;
       const footprint = footprintFor(kind, x, y), centerX = footprint.reduce((sum, cell) => sum + cell.x, 0) / footprint.length, centerY = footprint.reduce((sum, cell) => sum + cell.y, 0) / footprint.length;
-      group.position.copy(worldPos(centerX + (mountedOn ? (mountCount - 1) * 0.26 : 0), centerY, lift)); group.rotation.y = kind === "trench" || kind === "factory" || kind === "wall" || kind === "bastion" ? 0 : kind === "wire" ? Math.PI / 2 : -0.35; group.scale.multiplyScalar(mountedOn ? 0.58 : 0.72); attachHealthBar(group, kind === "wall" || kind === "bastion" ? 1.25 : kind === "barracks" ? 2 : kind === "factory" ? 2.35 : kind === "tank" ? 1.85 : 1.65); world.add(group);
+      group.position.copy(worldPos(centerX + (mountedOn ? (mountCount - 1) * 0.26 : 0), centerY, lift)); group.rotation.y = kind === "trench" || kind === "factory" || kind === "wall" || kind === "bastion" ? 0 : kind === "wire" ? Math.PI / 2 : -0.35; group.scale.multiplyScalar(mountedOn ? 0.58 : 0.72); attachHealthBar(group, kind === "wall" || kind === "bastion" ? 1.25 : kind === "barracks" ? 2 : kind === "factory" ? 2.35 : kind === "tank" ? 1.85 : 1.65, true); world.add(group);
       if (kind in TURRET_STATS || kind === "light") {
         const radius = kind === "tank" || kind === "howitzer" || kind === "missile" || kind === "railgun" ? 1.04 : 0.9;
         const ring = new THREE.Mesh(new THREE.RingGeometry(radius * 0.82, radius, 28), new THREE.MeshBasicMaterial({ color: 0x7dff92, transparent: true, opacity: 0.95, side: THREE.DoubleSide })); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.035; ring.visible = false; group.add(ring); group.userData.selectionRing = ring;
@@ -1685,7 +1690,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       const stats = MARINE_STATS[kind], mountedWall = mountedOn ? structures.find(s => s.id === mountedOn && isWall(s)) : undefined, lift = mountedWall ? wallTopLift(mountedWall) : 0;
       const m = makeSoldier(0.68, kind); m.position.copy(worldPos(x, y, lift));
       const ring = new THREE.Mesh(new THREE.RingGeometry(0.28, 0.34, 24), new THREE.MeshBasicMaterial({ color: new THREE.Color(stats.color), transparent: true, opacity: 0.95, side: THREE.DoubleSide })); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.025; ring.visible = false; m.add(ring); m.userData.selectionRing = ring;
-      attachHealthBar(m, 1.22); world.add(m); const id = nextId++;
+      attachHealthBar(m, 1.22, true); world.add(m); const id = nextId++;
       marines.push({ id, kind, x, y, targetX: x, targetY: y, vx: 0, vy: 0, hp: stats.hp, maxHp: stats.hp, memberHp: [stats.hp], stacked: false, cooldown: 0, supportCooldown: 0, mountedOn, movePath: [], pathIndex: 0, lift, group: m }); if (compactAfterSpawn) compactMarineStacks(); return id;
     }
     function refreshSelection() {

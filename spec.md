@@ -127,6 +127,7 @@ A heavy-production structure occupying a true two-by-two grid footprint. Its ent
 
 ## Friendly Units
 
+- Friendly infantry, vehicles, defenses, and buildings display a floating health bar only while damaged. The bar hides at full health and uses green, amber, and red states as durability falls; troop stacks show their combined surviving health.
 - Idle infantry automatically move into the nearest trench with open capacity when they stop within one grid square. Troop stacks split off enough members to fill available trench slots while the remainder stays outside.
 - Ten or more stationary infantry of the same class within a one-grid-square-diameter collection area collapse into a single rendered troop stack with a persistent `×N` badge. The stack can grow beyond ten and moves as one selectable formation member.
 - Troop stacks retain the health of every soldier. Incoming hits damage only the front soldier, removing one member when that soldier falls, while the representative's outgoing damage and medical support scale with the number of surviving members.
