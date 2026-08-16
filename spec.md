@@ -56,7 +56,7 @@ Protect the command post through all 25 enemy waves.
 - Ascending natural terrain adds explicit vertical climb time to both movement and route estimates, while downhill travel retains a modest speed advantage. Friendly units climb at more than ten times the aliens' vertical rate, so mountains delay soldiers without making repositioning painfully slow.
 - Each alien applies a stable individual preference of up to 17 percent in either direction to those travel-time estimates, spreading a swarm across near-equivalent targets without making obviously bad routes attractive.
 - Friendly infantry and mobile crewed weapons use grid routes around walls and other solid fortifications instead of moving through them.
-- Every wall has visible access stairs on all four sides. A move order onto a wall chooses the shortest safe north, south, east, or west stair approach, animates the climb, and leaves units stationed on top.
+- A single-height wall does not display an elevator because friendly units can step onto its low fighting platform directly. Taller wall stacks show modular elevator sections only on exposed outer faces. Shared faces between neighboring stacks hide both elevator models so their geometry never overlaps, while a move order still chooses the shortest safe north, south, east, or west approach.
 - Construction may redirect or completely seal the route to the command post. Blocked ground enemies attack fortifications to reopen a path.
 - Stalkers and razortails can climb directly over walls, including stacked wall sections, but taller climbs take proportionally longer and may make another route or target more attractive.
 - Flying enemies travel above terrain and fortifications, ignore trenches, razor wire, and mines, and choose valuable exposed targets instead of attacking walls.
@@ -104,7 +104,7 @@ A non-attacking reconnaissance structure with rotating searchlights. It reveals 
 
 ### Hesco Wall — 70 credits
 
-A non-attacking fortification used to alter enemy paths and create kill zones. Walls can be stacked vertically without a height limit and include access stairs on all four sides for friendly units ordered onto the top section.
+A non-attacking fortification used to alter enemy paths and create kill zones. Walls can be stacked vertically without a height limit. Single-height sections omit elevator hardware; taller stacks display elevators only along exposed faces and automatically remove elevator sections wherever adjacent stacks touch.
 
 ### Infantry Trench — 85 credits
 

@@ -755,16 +755,22 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       return g;
     }
     function addWallElevators(g: THREE.Group, top = 0.72) {
-      for (const side of [-1, 1]) {
-        const lift = new THREE.Group(); lift.position.set(side * 1.08, 0, 0); g.add(lift);
+      const elevators: Record<"north" | "south" | "east" | "west", THREE.Group> = { north: new THREE.Group(), south: new THREE.Group(), east: new THREE.Group(), west: new THREE.Group() };
+      const faces = [
+        { key: "east", x: 1.08, z: 0, rotation: 0 }, { key: "west", x: -1.08, z: 0, rotation: Math.PI },
+        { key: "north", x: 0, z: -1.08, rotation: Math.PI / 2 }, { key: "south", x: 0, z: 1.08, rotation: -Math.PI / 2 },
+      ] as const;
+      faces.forEach(({ key, x, z, rotation }) => {
+        const lift = elevators[key]; lift.position.set(x, 0, z); lift.rotation.y = rotation; lift.visible = false; g.add(lift);
         box(lift, [0.12, top + 0.16, 0.62], [-0.24, (top + 0.16) / 2, 0], 0x3b4544, 0.42);
         box(lift, [0.12, top + 0.16, 0.62], [0.24, (top + 0.16) / 2, 0], 0x3b4544, 0.42);
         const platform = box(lift, [0.56, 0.09, 0.66], [0, 0.09, 0], 0x6b746f, 0.5);
         box(platform, [0.46, 0.025, 0.54], [0, 0.06, 0], 0x91a69b, 0.36);
-        const callPanel = box(lift, [0.06, 0.16, 0.03], [side * -0.31, 0.43, -0.34], 0x4bcfa3, 0.22); callPanel.material = new THREE.MeshStandardMaterial({ color: 0x4bcfa3, emissive: 0x17634f, emissiveIntensity: 1.3, roughness: 0.25 });
+        const callPanel = box(lift, [0.06, 0.16, 0.03], [-0.31, 0.43, -0.34], 0x4bcfa3, 0.22); callPanel.material = new THREE.MeshStandardMaterial({ color: 0x4bcfa3, emissive: 0x17634f, emissiveIntensity: 1.3, roughness: 0.25 });
         beam(lift, new THREE.Vector3(-0.24, top + 0.12, -0.28), new THREE.Vector3(0.24, top + 0.12, -0.28), 0.028, 0xa9b9ae);
         beam(lift, new THREE.Vector3(-0.24, top + 0.12, 0.28), new THREE.Vector3(0.24, top + 0.12, 0.28), 0.028, 0xa9b9ae);
-      }
+      });
+      g.userData.wallElevators = elevators;
     }
     function makeWall() {
       const g = new THREE.Group();
@@ -1452,13 +1458,31 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
         });
       });
     }
+    function refreshWallElevators() {
+      const walls = structures.filter(isWall);
+      const directions = [
+        { key: "north", dx: 0, dy: -1 }, { key: "south", dx: 0, dy: 1 },
+        { key: "east", dx: 1, dy: 0 }, { key: "west", dx: -1, dy: 0 },
+      ] as const;
+      const topLevelAt = new Map<string, number>();
+      walls.forEach(wall => topLevelAt.set(keyOf(wall.x, wall.y), Math.max(topLevelAt.get(keyOf(wall.x, wall.y)) ?? -1, wall.stackLevel)));
+      walls.forEach(wall => {
+        const elevators = wall.group.userData.wallElevators as Record<(typeof directions)[number]["key"], THREE.Group> | undefined;
+        if (!elevators) return;
+        const stackIsTall = (topLevelAt.get(keyOf(wall.x, wall.y)) ?? 0) >= 1;
+        directions.forEach(({ key, dx, dy }) => {
+          const neighborCoversThisLevel = (topLevelAt.get(keyOf(wall.x + dx, wall.y + dy)) ?? -1) >= wall.stackLevel;
+          elevators[key].visible = stackIsTall && !neighborCoversThisLevel;
+        });
+      });
+    }
     function addStructure(kind: AssetKey, x: number, y: number, free = false, mountedOn?: number, stackLevel = 0) {
       const group = kind === "rifle" ? makeRifleTeam() : kind === "sentry" ? makeSentry() : kind === "flak" ? makeFlakTurret() : kind === "flame" ? makeFlameTurret() : kind === "laser" ? makeLaserTower() : kind === "railgun" ? makeRailgun() : kind === "tank" ? makeTank() : kind === "howitzer" ? makeHowitzer() : kind === "missile" ? makeMissileBattery() : kind === "light" ? makeLightTower() : kind === "wall" ? makeWall() : kind === "bastion" ? makeBastion() : kind === "trench" ? makeTrench() : kind === "wire" ? makeWire() : kind === "mine" ? makeMine() : kind === "factory" ? makeMachiningFactory() : makeBarracks();
       const mountedWall = mountedOn ? structures.find(s => s.id === mountedOn && isWall(s)) : undefined;
       const mountCount = mountedOn ? structures.filter(s => s.mountedOn === mountedOn).length : 0;
       const lift = mountedWall ? wallTopLift(mountedWall) : kind === "wall" || kind === "bastion" ? stackLevel * WALL_STACK_HEIGHT : 0;
       const footprint = footprintFor(kind, x, y), centerX = footprint.reduce((sum, cell) => sum + cell.x, 0) / footprint.length, centerY = footprint.reduce((sum, cell) => sum + cell.y, 0) / footprint.length;
-      group.position.copy(worldPos(centerX + (mountedOn ? (mountCount - 1) * 0.26 : 0), centerY, lift)); group.rotation.y = kind === "trench" || kind === "factory" ? 0 : kind === "wall" || kind === "bastion" || kind === "wire" ? Math.PI / 2 : -0.35; group.scale.multiplyScalar(mountedOn ? 0.58 : 0.72); attachHealthBar(group, kind === "wall" || kind === "bastion" ? 1.25 : kind === "barracks" ? 2 : kind === "factory" ? 2.35 : kind === "tank" ? 1.85 : 1.65); world.add(group);
+      group.position.copy(worldPos(centerX + (mountedOn ? (mountCount - 1) * 0.26 : 0), centerY, lift)); group.rotation.y = kind === "trench" || kind === "factory" || kind === "wall" || kind === "bastion" ? 0 : kind === "wire" ? Math.PI / 2 : -0.35; group.scale.multiplyScalar(mountedOn ? 0.58 : 0.72); attachHealthBar(group, kind === "wall" || kind === "bastion" ? 1.25 : kind === "barracks" ? 2 : kind === "factory" ? 2.35 : kind === "tank" ? 1.85 : 1.65); world.add(group);
       if (kind in TURRET_STATS || kind === "light") {
         const radius = kind === "tank" || kind === "howitzer" || kind === "missile" || kind === "railgun" ? 1.04 : 0.9;
         const ring = new THREE.Mesh(new THREE.RingGeometry(radius * 0.82, radius, 28), new THREE.MeshBasicMaterial({ color: 0x7dff92, transparent: true, opacity: 0.95, side: THREE.DoubleSide })); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.035; ring.visible = false; group.add(ring); group.userData.selectionRing = ring;
@@ -1466,6 +1490,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       }
       const maxHp = STRUCTURE_HP[kind], structure = { id: nextId++, kind, level: 1, x: centerX, y: centerY, targetX: centerX, targetY: centerY, footprint, hp: maxHp, maxHp, mountedOn, movePath: [], pathIndex: 0, lift, stackLevel, group, cooldown: Math.random(), productionQueue: [], productionRemaining: 0 } satisfies Structure; structures.push(structure);
       if (kind === "trench") refreshTrenchConnections();
+      if (isWall(structure)) refreshWallElevators();
       if (!free && !testerMode) credits -= ASSETS[kind].cost;
       return structure;
     }
@@ -1528,6 +1553,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       burst(s.group.position.clone().add(new THREE.Vector3(0, 0.5, 0)), salvaged ? 0x9dff8b : 0xff553f, salvaged ? 5 : 15);
       removeHealthBar(s.group); discardWorldObject(s.group); structures.splice(structures.indexOf(s), 1);
       if (s.kind === "trench") refreshTrenchConnections();
+      if (isWall(s)) refreshWallElevators();
       invalidateEnemyRoutes();
     }
     function removeStructureAt(x: number, y: number) {
