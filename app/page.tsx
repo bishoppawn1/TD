@@ -64,7 +64,7 @@ const TERRAFORM_MIN_HEIGHT = 0.04;
 const TERRAFORM_MAX_HEIGHT = 6.4;
 const TRENCH_CAPACITY = 4;
 const TRENCH_DAMAGE_MULTIPLIER = 0.6;
-const TRENCH_AUTO_ENTRY_RANGE = 1;
+const TRENCH_AUTO_ENTRY_RANGE = 1.75;
 const AIR_DAMAGE_MULTIPLIER = 0.45;
 // Ground aliens must break through or route around a wall; none can climb it.
 const WALL_CLIMBERS = new Set<AlienKind>();
@@ -99,7 +99,7 @@ const ASSETS: Record<AssetKey, { name: string; role: string; cost: number; range
   light: { name: "Sentinel Light Tower", role: "Wide vision · Sweeping searchlights", cost: 135, range: 0, icon: "☼", accent: "#fff1a3" },
   wall: { name: "Hesco Wall", role: "600 armor · Supports units", cost: 70, range: 0, icon: "▦", accent: "#d1b98e" },
   bastion: { name: "Bastion Wall", role: "1,050 armor · Reinforced cover", cost: 125, range: 0, icon: "▰", accent: "#aab8bd" },
-  trench: { name: "Infantry Trench", role: "4 infantry · 40% damage reduction", cost: 85, range: 0, icon: "⌓", accent: "#b89568" },
+  trench: { name: "Infantry Trench", role: "4 any-class infantry · 40% reduction", cost: 85, range: 0, icon: "⌓", accent: "#b89568" },
   wire: { name: "Razor Wire", role: "Slows hostiles · Light bleed", cost: 40, range: 0, icon: "〰", accent: "#e4cc9e" },
   mine: { name: "Shock Mine", role: "Proximity · One use", cost: 100, range: 1.35, icon: "⌁", accent: "#ff655f" },
   barracks: { name: "Field Barracks", role: "Trains specialized infantry", cost: 425, range: 0, icon: "⌂", accent: "#67c8ff" },
@@ -126,6 +126,7 @@ const MARINE_STATS: Record<MarineKind, { name: string; role: string; cost: numbe
   medic: { name: "Combat Medic", role: "Heals nearby infantry", cost: 90, hp: 85, speed: 1.75, damage: 5, cooldown: 0.72, range: 2.9, color: "#63e9ff", projectileColor: 0x63e9ff },
   rocketeer: { name: "Rocketeer", role: "Long-range anti-swarm rockets", cost: 155, hp: 95, speed: 1.08, damage: 62, cooldown: 2.15, range: 5.2, color: "#ff8a5b", projectileColor: 0xff7048, splash: 1.05, arcHeight: 0.65, heavy: true },
 };
+const TRENCH_ELIGIBLE_INFANTRY = new Set<MarineKind>(["rifleman", "gunner", "medic", "rocketeer"]);
 
 type Hud = { credits: number; integrity: number; wave: number; enemies: number; kills: number; active: boolean; buildSeconds: number | null; gameOver: boolean; victory: boolean };
 type Cell = { x: number; y: number };
@@ -1282,7 +1283,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       while (true) {
         let nearest: { marine: Marine; trench: Structure; distance: number } | undefined;
         for (const marine of marines) {
-          if (marine.movePath.length || marine.trenchId || marine.mountedOn || marine.mountTarget) continue;
+          if (!TRENCH_ELIGIBLE_INFANTRY.has(marine.kind) || marine.movePath.length || marine.trenchId || marine.mountedOn || marine.mountTarget) continue;
           for (const trench of trenches) {
             if ((occupied.get(trench.id) ?? 0) >= TRENCH_CAPACITY || rejectedPairs.has(`${marine.id}:${trench.id}`)) continue;
             const distance = Math.hypot(marine.x - trench.x, marine.y - trench.y);
@@ -1715,7 +1716,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
     function commandFormation(x: number, y: number) {
       const trench = structures.find(s => s.kind === "trench" && s.x === x && s.y === y);
       if (trench) {
-        const infantry = marines.filter(m => selectedMarines.has(m.id));
+        const infantry = marines.filter(m => selectedMarines.has(m.id) && TRENCH_ELIGIBLE_INFANTRY.has(m.kind));
         if (!infantry.length) { message("TRENCHES ACCEPT INFANTRY ONLY · CREWED WEAPONS CANNOT ENTER"); return selectedEmplacements.size > 0; }
         const occupied = marines.filter(m => m.trenchId === trench.id && !selectedMarines.has(m.id)).reduce((total, marine) => total + marineTroopCount(marine), 0), available = Math.max(0, TRENCH_CAPACITY - occupied);
         if (!available) { message("TRENCH AT CAPACITY · FOUR INFANTRY MAXIMUM"); return true; }

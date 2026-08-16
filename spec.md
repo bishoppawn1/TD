@@ -111,7 +111,7 @@ Ground aliens cannot attack infantry, turrets, or lights mounted on a wall from 
 
 ### Infantry Trench — 85 credits
 
-A recessed earthwork that protects up to four infantry with 40 percent incoming-damage reduction. Cardinally adjacent trenches automatically remove their shared sandbag wall and form one continuous duckboard-lined passage.
+A recessed earthwork that protects up to four foot soldiers with 40 percent incoming-damage reduction. Riflemen, Heavy Gunners, Combat Medics, and Rocketeers can all occupy its firing positions. Cardinally adjacent trenches automatically remove their shared sandbag wall and form one continuous duckboard-lined passage.
 
 ### Shock Mine — 100 credits
 
@@ -128,7 +128,7 @@ A heavy-production structure occupying a true two-by-two grid footprint. Its ent
 ## Friendly Units
 
 - Friendly infantry, vehicles, defenses, and buildings display a floating health bar only while damaged. The bar hides at full health and uses green, amber, and red states as durability falls; troop stacks show their combined surviving health.
-- Idle infantry automatically move into the nearest trench with open capacity when they stop within one grid square. Troop stacks split off enough members to fill available trench slots while the remainder stays outside.
+- Idle Riflemen, Heavy Gunners, Combat Medics, and Rocketeers automatically move into the nearest trench with open capacity when they stop within 1.75 grid squares. Troop stacks split off enough members to fill available trench slots while the remainder stays outside.
 - Ten or more stationary infantry of the same class within a one-grid-square-diameter collection area collapse into a single rendered troop stack with a persistent `×N` badge. The stack can grow beyond ten and moves as one selectable formation member.
 - Troop stacks retain the health of every soldier. Incoming hits damage only the front soldier, removing one member when that soldier falls, while the representative's outgoing damage and medical support scale with the number of surviving members.
 
