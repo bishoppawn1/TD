@@ -52,6 +52,7 @@ const RAZOR_WIRE_ENTRY_DAMAGE = 18;
 const RAZOR_WIRE_DAMAGE_PER_SECOND = 24;
 const TRENCH_CAPACITY = 4;
 const TRENCH_DAMAGE_MULTIPLIER = 0.6;
+const TRENCH_AUTO_ENTRY_RANGE = 1;
 const AIR_DAMAGE_MULTIPLIER = 0.45;
 const WALL_CLIMBERS = new Set<AlienKind>(["stalker", "razortail"]);
 const FLYING_ENEMIES = new Set<AlienKind>(["flyer"]);
@@ -1154,6 +1155,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
     let routeRevision = 0, marineStackTimer = 0, lastProductionSnapshot = "";
     const selectedMarines = new Set<number>();
     const selectedEmplacements = new Set<number>();
+    const trenchSlots: Cell[] = [{ x: -0.23, y: -0.22 }, { x: 0.23, y: -0.22 }, { x: -0.23, y: 0.22 }, { x: 0.23, y: 0.22 }];
     let selectedProductionId: number | null = null;
     const marineTroopCount = (marine: Marine) => marine.memberHp.length;
     const marineTotalHp = (marine: Marine) => marine.memberHp.reduce((total, hp) => total + hp, 0);
@@ -1227,6 +1229,45 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
         syncMarineStackState(representative); changed = true;
       }
       if (changed) refreshSelection();
+    }
+    function detachMarineTroops(marine: Marine, count: number) {
+      const detachedHp = marine.memberHp.splice(Math.max(0, marine.memberHp.length - count), count);
+      const detachedId = spawnMarine(marine.kind, marine.x, marine.y, undefined, false), detached = marines.find(candidate => candidate.id === detachedId)!;
+      detached.memberHp = detachedHp; detached.stacked = detachedHp.length > 1; detached.cooldown = marine.cooldown; detached.supportCooldown = marine.supportCooldown;
+      if (selectedMarines.has(marine.id)) { selectedMarines.add(detached.id); refreshSelection(); }
+      syncMarineStackState(marine); syncMarineStackState(detached);
+      return detached;
+    }
+    function restoreDetachedTroops(marine: Marine, detached: Marine) {
+      marine.memberHp.push(...detached.memberHp); syncMarineStackState(marine); selectedMarines.delete(detached.id); removeHealthBar(detached.group); discardWorldObject(detached.group); marines.splice(marines.indexOf(detached), 1); refreshSelection();
+    }
+    function autoFillNearbyTrenches() {
+      const trenches = structures.filter(structure => structure.kind === "trench"), occupied = new Map<number, number>();
+      trenches.forEach(trench => occupied.set(trench.id, marines.filter(marine => marine.trenchId === trench.id).reduce((total, marine) => total + marineTroopCount(marine), 0)));
+      const rejectedPairs = new Set<string>();
+      while (true) {
+        let nearest: { marine: Marine; trench: Structure; distance: number } | undefined;
+        for (const marine of marines) {
+          if (marine.movePath.length || marine.trenchId || marine.mountedOn || marine.mountTarget) continue;
+          for (const trench of trenches) {
+            if ((occupied.get(trench.id) ?? 0) >= TRENCH_CAPACITY || rejectedPairs.has(`${marine.id}:${trench.id}`)) continue;
+            const distance = Math.hypot(marine.x - trench.x, marine.y - trench.y);
+            if (distance > TRENCH_AUTO_ENTRY_RANGE || (nearest && distance >= nearest.distance)) continue;
+            nearest = { marine, trench, distance };
+          }
+        }
+        if (!nearest) break;
+        const { marine, trench } = nearest, usedSlots = occupied.get(trench.id) ?? 0, available = TRENCH_CAPACITY - usedSlots;
+        const enteringCount = Math.min(available, marineTroopCount(marine));
+        const entrant = enteringCount < marineTroopCount(marine) ? detachMarineTroops(marine, enteringCount) : marine;
+        const slot = trenchSlots[usedSlots], destination = { x: trench.x + slot.x, y: trench.y + slot.y };
+        if (planFriendlyMove(entrant, destination, undefined, undefined, -0.16)) {
+          entrant.trenchId = trench.id; occupied.set(trench.id, usedSlots + enteringCount);
+        } else {
+          if (entrant !== marine) restoreDetachedTroops(marine, entrant);
+          rejectedPairs.add(`${marine.id}:${trench.id}`);
+        }
+      }
     }
     function invalidateEnemyRoutes() {
       routeRevision++; enemyRouteCache.clear();
@@ -1561,12 +1602,12 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       destroyStructure(s, true);
       message(testerMode ? `${ASSETS[s.kind].name.toUpperCase()} REMOVED FROM TEST RANGE` : `${ASSETS[s.kind].name.toUpperCase()} SALVAGED · +${Math.floor(ASSETS[s.kind].cost * 0.6)} CREDITS`); emitHud(true);
     }
-    function spawnMarine(kind: MarineKind, x: number, y: number, mountedOn?: number) {
+    function spawnMarine(kind: MarineKind, x: number, y: number, mountedOn?: number, compactAfterSpawn = true) {
       const stats = MARINE_STATS[kind], mountedWall = mountedOn ? structures.find(s => s.id === mountedOn && isWall(s)) : undefined, lift = mountedWall ? wallTopLift(mountedWall) : 0;
       const m = makeSoldier(0.68, kind); m.position.copy(worldPos(x, y, lift));
       const ring = new THREE.Mesh(new THREE.RingGeometry(0.28, 0.34, 24), new THREE.MeshBasicMaterial({ color: new THREE.Color(stats.color), transparent: true, opacity: 0.95, side: THREE.DoubleSide })); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.025; ring.visible = false; m.add(ring); m.userData.selectionRing = ring;
       attachHealthBar(m, 1.22); world.add(m); const id = nextId++;
-      marines.push({ id, kind, x, y, targetX: x, targetY: y, vx: 0, vy: 0, hp: stats.hp, maxHp: stats.hp, memberHp: [stats.hp], stacked: false, cooldown: 0, supportCooldown: 0, mountedOn, movePath: [], pathIndex: 0, lift, group: m }); compactMarineStacks(); return id;
+      marines.push({ id, kind, x, y, targetX: x, targetY: y, vx: 0, vy: 0, hp: stats.hp, maxHp: stats.hp, memberHp: [stats.hp], stacked: false, cooldown: 0, supportCooldown: 0, mountedOn, movePath: [], pathIndex: 0, lift, group: m }); if (compactAfterSpawn) compactMarineStacks(); return id;
     }
     function refreshSelection() {
       marines.forEach(m => { const ring = m.group.userData.selectionRing as THREE.Mesh; if (ring) ring.visible = selectedMarines.has(m.id); });
@@ -1592,11 +1633,10 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
         if (!infantry.length) { message("TRENCHES ACCEPT INFANTRY ONLY · CREWED WEAPONS CANNOT ENTER"); return selectedEmplacements.size > 0; }
         const occupied = marines.filter(m => m.trenchId === trench.id && !selectedMarines.has(m.id)).reduce((total, marine) => total + marineTroopCount(marine), 0), available = Math.max(0, TRENCH_CAPACITY - occupied);
         if (!available) { message("TRENCH AT CAPACITY · FOUR INFANTRY MAXIMUM"); return true; }
-        const positions: Cell[] = [{ x: -0.23, y: -0.22 }, { x: 0.23, y: -0.22 }, { x: -0.23, y: 0.22 }, { x: 0.23, y: 0.22 }];
         let routed = 0, remainingCapacity = available;
         infantry.forEach(unit => {
           const troopCount = marineTroopCount(unit); if (troopCount > remainingCapacity) return;
-          const slot = positions[TRENCH_CAPACITY - remainingCapacity], destination = { x: trench.x + slot.x, y: trench.y + slot.y };
+          const slot = trenchSlots[TRENCH_CAPACITY - remainingCapacity], destination = { x: trench.x + slot.x, y: trench.y + slot.y };
           if (planFriendlyMove(unit, destination, undefined, undefined, -0.16)) { unit.trenchId = trench.id; routed += troopCount; remainingCapacity -= troopCount; }
         });
         message(routed ? `${routed} INFANTRY ENTERING TRENCH · 40% INCOMING DAMAGE REDUCTION${remainingCapacity === 0 ? " · CAPACITY REACHED" : ""}` : "NO SAFE ROUTE TO TRENCH · STACK MAY EXCEED CAPACITY"); return true;
@@ -1945,7 +1985,7 @@ function Battlefield({ selected, mapKey, testerMode, onHud, onMessage, onUnitSel
       waterRipples.forEach(({ mesh, phase }) => { const pulse = 0.82 + (Math.sin(elapsed * 1.7 + phase) + 1) * 0.2; mesh.scale.set(pulse, pulse * 0.56, pulse); (mesh.material as THREE.MeshBasicMaterial).opacity = 0.14 + (Math.sin(elapsed * 1.7 + phase) + 1) * 0.08; });
       incomingDamageCache.clear();
       marineStackTimer -= dt;
-      if (marineStackTimer <= 0) { compactMarineStacks(); marineStackTimer = 0.2; }
+      if (marineStackTimer <= 0) { autoFillNearbyTrenches(); compactMarineStacks(); marineStackTimer = 0.2; }
       if (!testerMode && !active && !gameOver && wave > 0 && wave < map.waveCount && buildTimer > 0) {
         buildTimer = Math.max(0, buildTimer - dt);
         if (buildTimer === 0) { message("BUILD WINDOW CLOSED · NEXT WAVE DEPLOYING"); startWave(); }
