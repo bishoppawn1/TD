@@ -285,13 +285,13 @@ const MAPS: Record<MapKey, MapConfig> = {
   },
   archipelago: {
     key: "archipelago", operation: "DEEP CURRENT", sector: "M-4", name: "Pelagic Atoll", objective: "Hold the island against the tide", terrain: "MOSTLY WATER · AQUATIC SURGE",
-    description: "More than four-fifths of this flooded sector is open water. Six submerged nests send Tidecrawlers across the lagoon while two land gates pressure the narrow east-west causeways.",
+    description: "More than four-fifths of this flooded sector is open water. Six submerged nests send Tidecrawlers across the lagoon, so reinforced firing teams begin deployed around the island shoreline while two land gates pressure the east-west causeways.",
     background: 0x03131a, ground: 0x17251d, fog: 0x01080b, hue: 0.35, saturation: 0.3,
     baseCell: { x: 22, y: 22 },
     spawnCells: [{ x: 0, y: 5 }, { x: 43, y: 8 }, { x: 0, y: 38 }, { x: 43, y: 35 }, { x: 22, y: 0 }, { x: 22, y: 43 }, { x: 0, y: 22 }, { x: 43, y: 22 }],
     waveCount: 18,
-    startingStructures: [{ kind: "barracks", x: 19, y: 22 }, { kind: "factory", x: 24, y: 23 }, { kind: "rifle", x: 14, y: 22 }, { kind: "sentry", x: 29, y: 22 }, { kind: "flak", x: 22, y: 18 }, { kind: "missile", x: 22, y: 27 }, { kind: "light", x: 18, y: 18 }, { kind: "bastion", x: 26, y: 20 }],
-    startingMarines: [{ kind: "rifleman", x: 19, y: 20 }, { kind: "medic", x: 21, y: 24 }, { kind: "rifleman", x: 24, y: 20 }, { kind: "gunner", x: 27, y: 22 }, { kind: "rocketeer", x: 22, y: 17 }],
+    startingStructures: [{ kind: "barracks", x: 19, y: 22 }, { kind: "factory", x: 24, y: 23 }, { kind: "rifle", x: 14, y: 22 }, { kind: "sentry", x: 29, y: 22 }, { kind: "flak", x: 22, y: 18 }, { kind: "missile", x: 22, y: 27 }, { kind: "light", x: 18, y: 18 }, { kind: "bastion", x: 26, y: 20 }, { kind: "sentry", x: 15, y: 16 }, { kind: "sentry", x: 28, y: 16 }, { kind: "sentry", x: 15, y: 28 }, { kind: "sentry", x: 28, y: 28 }, { kind: "flame", x: 22, y: 14 }, { kind: "flame", x: 22, y: 29 }],
+    startingMarines: [{ kind: "rifleman", x: 19, y: 20 }, { kind: "medic", x: 21, y: 24 }, { kind: "rifleman", x: 24, y: 20 }, { kind: "gunner", x: 27, y: 22 }, { kind: "rocketeer", x: 22, y: 17 }, { kind: "gunner", x: 17, y: 16 }, { kind: "rifleman", x: 26, y: 16 }, { kind: "gunner", x: 17, y: 27 }, { kind: "rifleman", x: 26, y: 27 }],
     activeEnemyCap: 140, waveMultiplier: 1.1, spawnIntervalMultiplier: 0.86,
     waterColor: 0x087f9b, waterGlow: 0x064a62,
     waterAt: (x, y) => {
